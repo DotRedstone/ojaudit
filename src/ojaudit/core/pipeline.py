@@ -1,7 +1,8 @@
 """
-Module: Analysis Pipeline
+Module: Core / pipeline
 Description: 编排数据源采集与检测器执行顺序。
 Scope: Core
+Notes: 按显式顺序运行，不隐式并发或联网。
 """
 
 from dataclasses import dataclass

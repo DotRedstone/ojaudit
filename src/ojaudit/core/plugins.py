@@ -1,8 +1,7 @@
 """
-Module: Plugin Registry
+Module: Core / plugins
 Description: 校验插件清单并发现已安装的插件元信息。
 Scope: Core
-
 Notes:
 - 发现插件不等于执行插件；第三方代码默认禁用。
 - 只有显式启用且版本锁定后，后续运行阶段才允许加载入口点。

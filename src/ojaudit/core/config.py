@@ -1,8 +1,7 @@
 """
-Module: User Configuration
+Module: Core / config
 Description: 读取和保存符合 XDG 约定的用户配置。
 Scope: Core
-
 Notes:
 - 配置目录只存用户配置，不存采集数据库。
 - 凭据不在普通 TOML 配置中明文保存。

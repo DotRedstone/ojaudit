@@ -1,7 +1,7 @@
 # ruff: noqa: I001
 """
 
-Module: SQLite Store
+Module: Core / store
 Description: 管理本地审查数据库及其版本迁移。
 Scope: Core
 

@@ -1,7 +1,8 @@
 """
-Module: Standard Schema
+Module: Core / schema
 Description: 定义平台无关的审查数据对象与字段约束。
 Scope: Core
+Notes: 标准对象只描述数据，不包含平台会话或 I/O 行为。
 """
 
 from dataclasses import dataclass, field

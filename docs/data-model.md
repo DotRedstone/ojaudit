@@ -2,7 +2,7 @@
 
 ## 状态
 
-本阶段定义 schema v1；数据库由核心层维护，插件只返回标准对象。
+本阶段 schema v2；数据库由核心层维护，插件只返回标准对象。schema v2 在 v1 基础上新增全局隐藏人员表，不删除或重写既有数据。
 
 ## 实体与主键
 
@@ -18,17 +18,16 @@
 | single_signals | run_id、uid、problem_index、plugin、signal | value、reason |
 | finding_reviews | run_id、双方 UID、problem_index、language | status、note、updated_at |
 | person_marks | platform、contest_id、uid | mark、note、updated_at |
+| hidden_people | platform、uid | nickname |
 
-人工复核表与检测输出分离。重新分析写入新的 run，不覆盖旧 run 的人工记录。数据库通过 `schema_version` 管理迁移；程序发现数据库版本高于自身时拒绝降级打开。
+人工复核表与检测输出分离。重新分析写入新的 run，不覆盖旧 run 的人工记录；旧线索在新 run 中不存在时，应用层标记为“已失效”，但不删除记录。人员标记为 normal / suspect / cheater，线索复核状态沿用“已核查 / 无需跟进 / 需进一步核实”。
+
+隐藏人员名单为全局配置，以 platform + uid 为键，附昵称备注；该名单在检测分组前过滤提交，最终排行榜默认剔除管理者。数据库通过 schema_version 管理迁移；程序发现数据库版本高于自身时拒绝降级打开。
 
 ## 标准化约束
 
-- 所有比赛内实体使用 `platform + contest_id` 作为归属范围。
-- 语言归一为 `cpp / python / java / other`。
-- 提交阶段为 `before / contest / after`，时间戳统一使用毫秒。
-- 原始平台字段放入 JSON 文本 `raw_meta`，不得替代标准字段。
+- 所有比赛内实体使用 platform + contest_id 作为归属范围。
+- 语言归一为 cpp / python / java / other。
+- 提交阶段为 before / contest / after，时间戳统一使用毫秒。
+- 原始平台字段放入 JSON 文本 raw_meta，不得替代标准字段。
 - 样例和测试数据只能使用合成标识与代码。
-
-## 当前实现边界
-
-`core.schema` 提供 Contest、Problem、Participant、Submission 数据对象及提交记录校验；`core.store` 建立 schema v1 并提供比赛元数据写入。其余表结构已建立，完整 CRUD 与后续迁移将在后续阶段扩展。

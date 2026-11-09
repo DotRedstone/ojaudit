@@ -5,3 +5,59 @@ api_version = 1
 description = "牛客旧检测器确定性分级规则"
 languages = ["cpp", "python", "java"]
 module = "ojaudit.plugins.detectors.classify"
+
+[params]
+
+[params.solid_l2]
+type = "float"
+label = "实锤候选的 L2 相似度阈值"
+description = "实锤候选的 L2 相似度阈值"
+default = 0.98
+min = 0
+max = 1
+
+[params.solid_delta_seconds]
+type = "int"
+label = "方向有效时的最大提交时间差（秒，不含边界）"
+description = "方向有效时的最大提交时间差（秒，不含边界）"
+default = 1800
+min = 1
+
+[params.mid_strong_rare]
+type = "float"
+label = "中偏强等级的稀有片段相似度阈值"
+description = "中偏强等级的稀有片段相似度阈值"
+default = 0.5
+min = 0
+max = 1
+
+[params.mid_strong_l3]
+type = "float"
+label = "中偏强等级的 L3 相似度阈值"
+description = "中偏强等级的 L3 相似度阈值"
+default = 0.85
+min = 0
+max = 1
+
+[params.suspicious_l3]
+type = "float"
+label = "存疑等级的 L3 相似度阈值"
+description = "存疑等级的 L3 相似度阈值"
+default = 0.8
+min = 0
+max = 1
+
+[params.suspicious_rare]
+type = "float"
+label = "存疑等级的稀有片段相似度阈值"
+description = "存疑等级的稀有片段相似度阈值"
+default = 0.3
+min = 0
+max = 1
+
+[params.crowd_threshold]
+type = "int"
+label = "完全相同代码的人群模板排除阈值"
+description = "完全相同代码的人群模板排除阈值"
+default = 3
+min = 1

@@ -5,3 +5,26 @@ api_version = 1
 description = "牛客旧检测器高频片段与人群模板剔除"
 languages = ["cpp", "python", "java"]
 module = "ojaudit.plugins.detectors.template"
+
+[params]
+
+[params.ngram_size]
+type = "int"
+label = "模板 n-gram 窗口长度"
+description = "模板 n-gram 窗口长度"
+default = 5
+min = 1
+
+[params.rare_threshold]
+type = "int"
+label = "高频片段的稀有用户阈值"
+description = "高频片段的稀有用户阈值"
+default = 3
+min = 1
+
+[params.crowd_threshold]
+type = "int"
+label = "相同代码被视为人群模板的最少用户数"
+description = "相同代码被视为人群模板的最少用户数"
+default = 3
+min = 1

@@ -1,0 +1,10 @@
+name = "builtin_markdown"
+kind = "exporter"
+version = "1.0.0"
+api_version = 1
+description = "Markdown 表格导出"
+languages = []
+module = "ojaudit.plugins.exporters.markdown"
+
+# 导出器只接受 rows 和 destination，没有额外运行参数。
+[params]

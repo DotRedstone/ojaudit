@@ -30,13 +30,20 @@ def export_csv(rows: Iterable[dict], destination: str | Path) -> Path:
             str(row.get("pair", row.get("uid", ""))),
         ),
     )
+    columns = (
+        ("rank", "uid", "name", "score", "person_mark")
+        if ordered and "rank" in ordered[0]
+        else _COLUMNS
+    )
+    if columns[0] == "rank":
+        ordered.sort(key=lambda row: (int(row["rank"]), str(row.get("uid", ""))))
     path = Path(destination)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as stream:
         writer = csv.DictWriter(
-            stream, fieldnames=_COLUMNS, extrasaction="ignore", lineterminator="\n"
+            stream, fieldnames=columns, extrasaction="ignore", lineterminator="\n"
         )
         writer.writeheader()
         for row in ordered:
-            writer.writerow({key: _safe(row.get(key, "")) for key in _COLUMNS})
+            writer.writerow({key: _safe(row.get(key, "")) for key in columns})
     return path

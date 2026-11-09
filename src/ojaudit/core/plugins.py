@@ -16,9 +16,7 @@ from pathlib import Path
 from typing import Any
 
 _PLUGIN_NAME = re.compile(r"^[a-z][a-z0-9_-]*$")
-_ALLOWED_KINDS = {
-    "source", "detector.pair", "detector.single", "detector.classifier", "exporter"
-}
+_ALLOWED_KINDS = {"source", "detector.pair", "detector.single", "detector.classifier", "exporter"}
 
 
 @dataclass(frozen=True, slots=True)

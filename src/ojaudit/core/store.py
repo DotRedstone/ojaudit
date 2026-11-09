@@ -123,7 +123,11 @@ class Store:
             )
 
     def put_contest(
-        self, platform: str, contest_id: str, name: str, raw_meta: dict[str, typing.Any] | None = None
+        self,
+        platform: str,
+        contest_id: str,
+        name: str,
+        raw_meta: dict[str, typing.Any] | None = None,
     ) -> None:
         self.upsert_platform(platform)
         with self.connection:

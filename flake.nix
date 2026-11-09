@@ -38,9 +38,7 @@
       checks = forAllSystems (system: pkgs: {
         default = pkgs.runCommand "ojaudit-check" {
           nativeBuildInputs = [
-            pkgs.python311
-            pkgs.python311Packages.pytest
-            pkgs.python311Packages.tomli-w
+            (pkgs.python311.withPackages (ps: [ ps.pytest ps.tomli-w ]))
             pkgs.ruff
           ];
         } ''

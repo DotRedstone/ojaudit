@@ -14,6 +14,7 @@
           pyproject = true;
           src = self;
           build-system = [ pkgs.python311Packages.hatchling ];
+          dependencies = [ pkgs.python311Packages.tomli-w ];
           doCheck = false;
         };
       });
@@ -28,6 +29,7 @@
           packages = [
             pkgs.python311
             pkgs.python311Packages.pytest
+            pkgs.python311Packages.tomli-w
             pkgs.ruff
             pkgs.uv
           ];
@@ -38,6 +40,7 @@
           nativeBuildInputs = [
             pkgs.python311
             pkgs.python311Packages.pytest
+            pkgs.python311Packages.tomli-w
             pkgs.ruff
           ];
         } ''

@@ -11,8 +11,7 @@ from typing import ClassVar
 
 from textual import on
 from textual.app import ComposeResult
-from textual.containers import Horizontal
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Input, Label, ListItem, ListView, Static
 
@@ -120,8 +119,8 @@ class EntryDialog(ModalScreen[str | None]):
         self.query_one("#entry-value", Input).focus()
 
     @on(Input.Submitted)
-    def submit_input(self) -> None:
-        self.dismiss(self.query_one("#entry-value", Input).value)
+    def submit_input(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value)
 
     @on(Button.Pressed)
     def press_button(self, event: Button.Pressed) -> None:

@@ -92,7 +92,7 @@ class ShellScreen(Screen):
 class HomeScreen(ShellScreen):
     TITLE = "ojaudit · 首页"
     PATH = "首页"
-    OPTIONS = ("比赛列表", "打开比赛 ID（后续阶段）", "账户 / 登录（后续阶段）", "设置（后续阶段）")
+    OPTIONS = ("比赛列表", "打开比赛 ID（后续阶段）", "账户 / 登录（后续阶段）", "设置")
 
     def compose(self) -> ComposeResult:
         yield from self.shell([ListView(*(ListItem(Label(item)) for item in self.OPTIONS))])
@@ -100,6 +100,10 @@ class HomeScreen(ShellScreen):
     def open_index(self, index: int) -> None:
         if index == 0:
             self.app.push_screen(ContestListScreen(self.app.contests))
+        elif index == 3:
+            from ojaudit.tui.settings_screen import SettingsScreen
+
+            self.app.push_screen(SettingsScreen())
         else:
             self.notify("此入口将在后续阶段实现", severity="information")
 
@@ -192,7 +196,9 @@ class ContestOverviewScreen(ShellScreen):
         from ojaudit.tui.review_screens import FindingsScreen, PeopleScreen, ProblemsScreen
 
         if index == 3:
-            self.notify("排行榜页面将在第八阶段实现", severity="information")
+            from ojaudit.tui.ranking_screen import RankingScreen
+
+            self.app.push_screen(RankingScreen(ReviewData(self.contests, self.contest)))
             return
         data = ReviewData(self.contests, self.contest)
         screen_type = (FindingsScreen, PeopleScreen, ProblemsScreen)[index]

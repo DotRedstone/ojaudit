@@ -1,0 +1,7 @@
+name = "nowcoder_similarity"
+kind = "detector.pair"
+version = "1.0.0"
+api_version = 1
+description = "牛客旧检测器三口径相似度与稀有 n-gram"
+languages = ["cpp", "python", "java"]
+module = "ojaudit.plugins.detectors.similarity"

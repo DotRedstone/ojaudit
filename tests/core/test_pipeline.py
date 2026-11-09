@@ -29,7 +29,9 @@ class DemoDetector:
 
 def test_pipeline_preserves_detector_order():
     result = run_analysis(
-        DemoSource(), [(DemoDetector("a"), {}), (DemoDetector("b"), {"x": 1})],
-        None, "contest-1",
+        DemoSource(),
+        [(DemoDetector("a"), {}), (DemoDetector("b"), {"x": 1})],
+        None,
+        "contest-1",
     )
     assert [item[0] for item in result.outputs] == ["a", "b"]

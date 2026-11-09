@@ -25,11 +25,11 @@ class Detector(Protocol):
     def analyze(self, bundle: Any, parameters: dict[str, Any]) -> Any: ...
 
 
-def run_analysis(source: Source, detectors: list[tuple[Detector, dict[str, Any]]],
-                 session: Any, contest_id: str) -> PipelineResult:
+def run_analysis(
+    source: Source, detectors: list[tuple[Detector, dict[str, Any]]], session: Any, contest_id: str
+) -> PipelineResult:
     """按传入顺序运行检测器；不在核心层隐式并发或访问网络。"""
     bundle = source.fetch_contest(session, contest_id)
-    outputs = tuple(detector.analyze(bundle, parameters)
-                    for detector, parameters in detectors)
+    outputs = tuple(detector.analyze(bundle, parameters) for detector, parameters in detectors)
     contest = getattr(bundle, "contest", None)
     return PipelineResult(contest=contest, bundle=bundle, outputs=outputs)

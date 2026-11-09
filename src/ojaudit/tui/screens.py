@@ -11,9 +11,10 @@ from typing import ClassVar
 
 from textual import on
 from textual.app import ComposeResult
+from textual.containers import Horizontal
 from textual.containers import Vertical
-from textual.screen import Screen
-from textual.widgets import Label, ListItem, ListView, Static
+from textual.screen import ModalScreen, Screen
+from textual.widgets import Button, Input, Label, ListItem, ListView, Static
 
 from ojaudit.core.schema import Contest
 from ojaudit.tui.data import LocalContests
@@ -89,10 +90,52 @@ class ShellScreen(Screen):
             self.open_index(event.list_view.index)
 
 
+class EntryDialog(ModalScreen[str | None]):
+    """比赛 ID / Cookie 输入框；Cookie 仅通过密码输入控件传递。"""
+
+    CSS = """
+    EntryDialog { align: center middle; }
+    #entry-dialog { width: 68; height: auto; border: round $accent;
+                    background: $panel; padding: 1 2; }
+    #entry-buttons { height: auto; }
+    """
+
+    def __init__(self, *, login: bool = False) -> None:
+        super().__init__()
+        self.login = login
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="entry-dialog"):
+            yield Label("牛客 Cookie（输入内容隐藏）" if self.login else "比赛 ID（本地查找）")
+            yield Input(
+                placeholder="粘贴 Cookie" if self.login else "输入比赛 ID",
+                password=self.login,
+                id="entry-value",
+            )
+            with Horizontal(id="entry-buttons"):
+                yield Button("保存" if self.login else "打开", id="entry-confirm", variant="primary")
+                yield Button("取消", id="entry-cancel")
+
+    def on_mount(self) -> None:
+        self.query_one("#entry-value", Input).focus()
+
+    @on(Input.Submitted)
+    def submit_input(self) -> None:
+        self.dismiss(self.query_one("#entry-value", Input).value)
+
+    @on(Button.Pressed)
+    def press_button(self, event: Button.Pressed) -> None:
+        self.dismiss(
+            self.query_one("#entry-value", Input).value
+            if event.button.id == "entry-confirm"
+            else None
+        )
+
+
 class HomeScreen(ShellScreen):
     TITLE = "ojaudit · 首页"
     PATH = "首页"
-    OPTIONS = ("比赛列表", "打开比赛 ID（后续阶段）", "账户 / 登录（后续阶段）", "设置")
+    OPTIONS = ("比赛列表", "打开比赛 ID", "账户 / 登录", "设置")
 
     def compose(self) -> ComposeResult:
         yield from self.shell([ListView(*(ListItem(Label(item)) for item in self.OPTIONS))])
@@ -100,12 +143,49 @@ class HomeScreen(ShellScreen):
     def open_index(self, index: int) -> None:
         if index == 0:
             self.app.push_screen(ContestListScreen(self.app.contests))
+        elif index == 1:
+            self.app.push_screen(EntryDialog(), self.open_contest_id)
+        elif index == 2:
+            self.app.push_screen(EntryDialog(login=True), self.save_login)
         elif index == 3:
             from ojaudit.tui.settings_screen import SettingsScreen
 
             self.app.push_screen(SettingsScreen())
+
+    def open_contest_id(self, raw: str | None) -> None:
+        if raw is None:
+            return
+        cid = raw.strip()
+        if not cid:
+            self.notify("比赛 ID 不能为空", severity="warning")
+            return
+        matches = [
+            entry.contest
+            for entry in self.app.contests.list_contests(show_all=True)
+            if entry.contest.contest_id == cid
+        ]
+        if len(matches) == 1:
+            self.app.push_screen(ContestOverviewScreen(matches[0], self.app.contests))
+        elif len(matches) > 1:
+            self.notify("多个平台存在该 ID，请从比赛列表选择", severity="warning")
         else:
-            self.notify("此入口将在后续阶段实现", severity="information")
+            self.notify(
+                f"本地没有比赛 {cid}；请先运行 ojaudit collect {cid} 采集",
+                severity="warning",
+                timeout=8,
+            )
+
+    def save_login(self, value: str | None) -> None:
+        if value is None:
+            return
+        from ojaudit.cli_operations import save_cookie
+
+        try:
+            save_cookie(value)
+        except (OSError, ValueError):
+            self.notify("Cookie 保存失败：请检查内容及配置目录权限", severity="error")
+        else:
+            self.notify("Cookie 已保存到本地配置目录（权限 0600）")
 
 
 class ContestListScreen(ShellScreen):

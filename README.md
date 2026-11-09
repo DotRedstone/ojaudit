@@ -8,7 +8,7 @@
 
 Python 3.11+：`python -m pip install -e '.[dev]'`，运行 `pytest`、`ruff check .`。
 
-规划与进度：[docs/roadmap.md](docs/roadmap.md)。架构与维护文档见 [docs/](docs/)。
+规划与进度唯一来源：[docs/roadmap.md](docs/roadmap.md)。TODO、Issue 与 PR 管理规则：[docs/development-workflow.md](docs/development-workflow.md)。架构与维护文档见 [docs/](docs/)。
 
 ## 入口
 

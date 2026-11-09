@@ -39,3 +39,13 @@ label = "n-gram 窗口"
 ## 当前实现
 
 `core.plugins` 已实现 plugin.toml 解析、API 版本校验、目录清单发现、entry point 元信息发现和参数默认值/类型/范围校验。实际插件执行入口将在后续阶段实现，不能把“发现”视为“已启用”。
+
+## 内置插件实现
+
+- Source：`plugins.sources.nowcoder.NowcoderSource`，Cookie 通过 `NOWCODER_COOKIE` 或配置指定的环境变量读取；支持最近比赛、比赛信息、榜单主源、代码页和赛后补题列表。默认只采比赛期间数据；配置 `phase` 可选 `contest`、`after` 或 `all`。Cookie 不写入标准对象、数据库或日志。
+- Pair detector：`plugins.detectors.pair.analyze_pair`，Winnowing/Jaccard。
+- Single detector：`plugins.detectors.single.analyze_single`，代码规模与注释比例信号。
+- Classifier：`plugins.detectors.classifier.classify`，按显式阈值生成解释等级。
+- Exporter：`plugins.exporters.markdown.export_markdown` 与 `plugins.exporters.csv.export_csv`，输出排序稳定；CSV 对公式前缀做转义。
+
+上述检测与导出阶段不联网；牛客 Source 是唯一需要网络的阶段。所有结果仅为人工复核线索。

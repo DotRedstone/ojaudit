@@ -4,7 +4,7 @@
 
 - [ ] 1. 仓库骨架 — PR：https://github.com/DotRedstone/ojaudit/pull/1
 - [ ] 2. 核心：schema/store/config/plugin/pipeline — PR：https://github.com/DotRedstone/ojaudit/pull/3
-- [ ] 3. 内置插件迁移与确定性回归 — PR：待创建
+- [ ] 3. 内置插件迁移与确定性回归 — PR：https://github.com/DotRedstone/ojaudit/pull/4
 - [ ] 4. 比赛筛选、人员标记与排名 — PR：待创建
 - [ ] 5. CLI 与旧数据迁移 — PR：待创建
 - [ ] 6. TUI 框架与导航 — PR：待创建

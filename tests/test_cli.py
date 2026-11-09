@@ -8,5 +8,5 @@ from ojaudit.cli import main
 
 
 def test_cli_smoke(capsys):
-    main()
+    main([])
     assert "仓库骨架阶段" in capsys.readouterr().out

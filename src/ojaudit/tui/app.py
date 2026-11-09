@@ -27,6 +27,13 @@ class AuditApp(App[None]):
     ListItem { padding: 0 2; }
     ListItem.--highlight { background: $accent; color: $background; text-style: bold; }
     #status { dock: bottom; height: 1; background: $primary; color: $background; text-style: bold; }
+    #evidence-meta { height: 6; padding: 0 1; }
+    #code-pair { height: 1fr; }
+    .source-pane { width: 1fr; height: 1fr; margin: 0 1; border: round $panel;
+                   overflow: auto; padding: 0 1; }
+    .source-pane:focus { border: round $accent; }
+    #code-meta { height: 3; padding: 0 1; }
+    #code-body { height: 1fr; overflow: auto; padding: 0 1; }
     """
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("q", "quit", "退出"),

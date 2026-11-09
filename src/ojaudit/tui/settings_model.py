@@ -63,8 +63,16 @@ STATIC_OPTIONS = (
     Option("采集", "collect.retry_count", "失败重试次数", "int", 2, minimum=0, maximum=10),
     Option("采集", "collect.readonly", "只读采集", "bool", True),
     Option("检测", "detector.enabled", "启用检测", "bool", True),
-    Option("外观", "appearance.theme", "主题", "enum", "dark", ("dark", "light")),
+    Option(
+        "外观",
+        "appearance.theme",
+        "主题",
+        "enum",
+        "ansi",
+        ("catppuccin", "nord", "gruvbox", "ansi"),
+    ),
     Option("外观", "appearance.compact", "紧凑列表", "bool", False),
+    Option("外观", "appearance.nerd_font", "使用 Nerd Font 图标", "bool", False),
     Option(
         "快捷键",
         "help.keys",
@@ -184,7 +192,7 @@ class SettingsModel:
         db_path: str | Path | None = None,
     ) -> None:
         self.path = path
-        self.db_path = Path(db_path) if db_path is not None else data_dir() / "ojaudit.db"
+        self.db_path = Path(db_path) if db_path is not None else data_dir() / "ojaudit.sqlite"
         self.manifests = manifests if manifests is not None else plugin_manifests()
         self.options = generated_options(self.manifests)
         self.saved = load_config(path)

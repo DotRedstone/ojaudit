@@ -38,7 +38,7 @@ class LocalContests:
         db_path: str | Path | None = None,
         contest_filter: ContestFilter | None = None,
     ) -> None:
-        self.db_path = Path(db_path) if db_path is not None else data_dir() / "ojaudit.db"
+        self.db_path = Path(db_path) if db_path is not None else data_dir() / "ojaudit.sqlite"
         self.contest_filter = contest_filter
 
     def _connect(self) -> sqlite3.Connection | None:

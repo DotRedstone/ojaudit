@@ -181,16 +181,12 @@ def _analyze(
 
 
 def _rank_rows(store: Store, platform: str, cid: str) -> list[dict]:
-    rows = store.execute(
-        """SELECT p.platform, p.uid, p.name, COALESCE(MAX(s.score), 0) AS score
-           FROM participants p LEFT JOIN submissions s
-             ON s.platform=p.platform AND s.contest_id=p.contest_id AND s.uid=p.uid
-           WHERE p.platform=? AND p.contest_id=?
-           GROUP BY p.platform, p.uid, p.name
-           ORDER BY score DESC, p.uid""",
-        (platform, cid),
-    ).fetchall()
-    return [{**dict(row), "rank": i} for i, row in enumerate(rows, 1)]
+    """复用 TUI 的同一份本地推导算法，保证 CLI 与 TUI 榜单一致。"""
+    from ojaudit.tui.data import LocalContests
+    from ojaudit.tui.ranking_data import derived_rows
+    from ojaudit.tui.review_data import ReviewData
+
+    return derived_rows(ReviewData(LocalContests(store.path), Contest(platform, cid, cid)))
 
 
 def _export(store: Store, args: argparse.Namespace) -> Path:

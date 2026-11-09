@@ -12,3 +12,6 @@ build/
 *.db
 *.sqlite*
 *.jsonl
+/result
+/result-*
+.direnv/

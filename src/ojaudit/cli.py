@@ -7,9 +7,9 @@ Scope: CLI
 import argparse
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="ojaudit", description="训练赛代码审查框架")
-    parser.parse_args()
+    parser.parse_args(argv)
     print("ojaudit 尚处于仓库骨架阶段；功能将在后续 PR 实现。")
 
 

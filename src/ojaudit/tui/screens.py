@@ -2,7 +2,7 @@
 Module: TUI / screens
 Description: 实现首页、比赛列表与比赛总览的分层导航。
 Scope: TUI
-Notes: 第七、八阶段的详情页暂不实现，入口只显示提示。
+Notes: 第七阶段详情页由 review_screens 实现，排行榜保留第八阶段入口。
 """
 
 from __future__ import annotations
@@ -42,7 +42,9 @@ class ShellScreen(Screen):
     def on_mount(self) -> None:
         self.query_one("#pane", Vertical).border_title = self.TITLE
         self._update_status()
-        self.query_one(ListView).focus()
+        for view in self.query(ListView):
+            view.focus()
+            break
 
     def _update_status(self) -> None:
         app = self.app
@@ -186,4 +188,12 @@ class ContestOverviewScreen(ShellScreen):
             yield Static("", id="status")
 
     def open_index(self, index: int) -> None:
-        self.notify(f"{self.OPTIONS[index]}页面将在第七或八阶段实现", severity="information")
+        from ojaudit.tui.review_data import ReviewData
+        from ojaudit.tui.review_screens import FindingsScreen, PeopleScreen, ProblemsScreen
+
+        if index == 3:
+            self.notify("排行榜页面将在第八阶段实现", severity="information")
+            return
+        data = ReviewData(self.contests, self.contest)
+        screen_type = (FindingsScreen, PeopleScreen, ProblemsScreen)[index]
+        self.app.push_screen(screen_type(data, self.PATH))

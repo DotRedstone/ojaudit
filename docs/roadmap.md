@@ -9,7 +9,7 @@
 - [ ] 5. CLI 与旧数据迁移 — PR：待创建
 - [ ] 6. TUI 框架与导航 — PR：https://github.com/DotRedstone/ojaudit/pull/7
 - [ ] 7. TUI 证据审查与代码浏览 — PR：https://github.com/DotRedstone/ojaudit/pull/13
-- [ ] 8. TUI 设置与排行榜 — PR：待创建
+- [ ] 8. TUI 设置与排行榜 — PR：https://github.com/DotRedstone/ojaudit/pull/14
 - [ ] 9. 视觉、文档与发布打磨 — PR：待创建
 
 跨 PR 遗留问题使用 GitHub Issues；PR 内临时任务清单不复制到这里。

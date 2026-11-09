@@ -20,3 +20,26 @@ ojaudit --db /tmp/synthetic.sqlite export synthetic c1 --output /tmp/ranking.csv
 比赛筛选读取用户 `config.toml` 中的 `contest_filter`；隐藏管理者名单全局按 platform + uid 存储，检测分组前剔除。
 
 CLI 默认不联网、不读取 Cookie，不操作 TUI。
+
+## 第 10 轮补充命令
+
+```bash
+ojaudit migrate --from-nowcoder-collect --db ~/.dsh/nowcoder/nowcoder.db --reviews reviews.json
+ojaudit contests --all
+ojaudit login --platform nowcoder
+ojaudit collect 123456
+ojaudit analyze 123456 --json-out report.json
+ojaudit rank 123456 --cheaters drop --format md --output ranking.md
+ojaudit rank 123456 --format csv --output ranking.csv
+ojaudit rank 123456 --format html --output ranking.html
+ojaudit plugins list
+ojaudit plugins install /path/to/local-git-repo@<commit-sha>
+ojaudit plugins enable plugin-name
+ojaudit plugins disable plugin-name
+```
+
+- `migrate --from-nowcoder-collect` 从旧版 SQLite 的 contests/submissions 表只读导入；原数据库不修改、不删除。可选 `--reviews` 接收显式数组格式的复核 JSON（run_id、uid_a、uid_b、problem_index、language、status、updated_at，note 可选）；不支持未知 reviews.json 格式时会报错。
+- `login` 交互式读取 Cookie，保存至 XDG 配置目录 `nowcoder.cookie`，权限 0600，不在命令行传入。采集仅通过现有 NowcoderSource 的只读接口；测试不联网。
+- `plugins install` 当前只做 git commit 固定版本检出、plugin.toml 校验及登记，默认禁用。enable/disable 只更新登记状态，**不执行第三方插件**。
+- `rank` 通过现有 md/csv/html 导出插件。旧 `export` 保留为兼容入口。
+- 无子命令时尝试调用 `ojaudit.tui.app.main`，如 TUI 尚未就绪则给出提示，不在本阶段修改 TUI 实现。

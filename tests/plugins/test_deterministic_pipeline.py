@@ -13,28 +13,55 @@ from ojaudit.plugins.exporters.markdown import export_markdown
 
 
 def _database(path):
+    if not path.exists():
+        store = Store(path)
+        store.put_contest("synthetic", "demo", "Synthetic Contest")
+        with store.connection:
+            store.connection.executemany(
+                "INSERT INTO participants(platform, contest_id, uid, name) VALUES (?, ?, ?, ?)",
+                [
+                    ("synthetic", "demo", "u1", "Synthetic A"),
+                    ("synthetic", "demo", "u2", "Synthetic B"),
+                ],
+            )
+            store.connection.executemany(
+                """INSERT INTO submissions(
+                    platform, contest_id, submission_id, uid, problem_index, language,
+                    verdict, score, submit_time, phase, code, raw_meta
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        "synthetic",
+                        "demo",
+                        "s1",
+                        "u1",
+                        0,
+                        "cpp",
+                        "Accepted",
+                        100,
+                        1000,
+                        "contest",
+                        "int main(){return 0;}",
+                        "{}",
+                    ),
+                    (
+                        "synthetic",
+                        "demo",
+                        "s2",
+                        "u2",
+                        0,
+                        "cpp",
+                        "Accepted",
+                        100,
+                        1200,
+                        "contest",
+                        "int main(){return 0;}",
+                        "{}",
+                    ),
+                ],
+            )
+        store.close()
     store = Store(path)
-    store.put_contest("synthetic", "demo", "Synthetic Contest")
-    with store.connection:
-        store.connection.executemany(
-            "INSERT INTO participants(platform, contest_id, uid, name) VALUES (?, ?, ?, ?)",
-            [
-                ("synthetic", "demo", "u1", "Synthetic A"),
-                ("synthetic", "demo", "u2", "Synthetic B"),
-            ],
-        )
-        store.connection.executemany(
-            """INSERT INTO submissions(
-                platform, contest_id, submission_id, uid, problem_index, language,
-                verdict, score, submit_time, phase, code, raw_meta
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            [
-                ("synthetic", "demo", "s1", "u1", 0, "cpp", "Accepted", 100, 1000, "contest",
-                 "int main(){return 0;}", "{}"),
-                ("synthetic", "demo", "s2", "u2", 0, "cpp", "Accepted", 100, 1200, "contest",
-                 "int main(){return 0;}", "{}"),
-            ],
-        )
     rows = store.execute(
         """SELECT * FROM submissions
            WHERE platform=? AND contest_id=? ORDER BY uid, submit_time, submission_id""",
@@ -87,18 +114,39 @@ def _run_once(db_path, output_dir):
 
 def test_same_synthetic_database_three_runs_are_byte_identical(tmp_path):
     outputs = [
-        _run_once(tmp_path / "source.sqlite", tmp_path / f"run-{index}")
-        for index in range(3)
+        _run_once(tmp_path / "source.sqlite", tmp_path / f"run-{index}") for index in range(3)
     ]
     assert outputs[0] == outputs[1] == outputs[2]
 
 
 def test_migrated_legacy_detector_matches_synthetic_golden_result():
     submissions = [
-        Submission("synthetic", "demo", "s1", "u1", 0, "cpp", "Accepted", 100, 1000,
-                   "contest", "int main(){return 0;}"),
-        Submission("synthetic", "demo", "s2", "u2", 0, "cpp", "Accepted", 100, 1200,
-                   "contest", "int main(){return 0;}"),
+        Submission(
+            "synthetic",
+            "demo",
+            "s1",
+            "u1",
+            0,
+            "cpp",
+            "Accepted",
+            100,
+            1000,
+            "contest",
+            "int main(){return 0;}",
+        ),
+        Submission(
+            "synthetic",
+            "demo",
+            "s2",
+            "u2",
+            0,
+            "cpp",
+            "Accepted",
+            100,
+            1200,
+            "contest",
+            "int main(){return 0;}",
+        ),
     ]
     result = analyze(submissions)
     assert len(result) == 1

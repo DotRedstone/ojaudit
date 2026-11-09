@@ -49,3 +49,15 @@ label = "n-gram 窗口"
 - Exporter：`plugins.exporters.markdown.export_markdown` 与 `plugins.exporters.csv.export_csv`，输出排序稳定；CSV 对公式前缀做转义。
 
 上述检测与导出阶段不联网；牛客 Source 是唯一需要网络的阶段。所有结果仅为人工复核线索。
+
+### 五个牛客算法模块清单
+
+原始检测流水线中的预处理由核心标准对象承担；五个算法模块均有独立文件和 plugin.toml：
+
+- 归一化：plugins/detectors/normalize.py + plugins/detectors/normalize/plugin.toml
+- 相似度：plugins/detectors/similarity.py + plugins/detectors/similarity/plugin.toml
+- 模板统计：plugins/detectors/template.py + plugins/detectors/template/plugin.toml
+- 时间线：plugins/detectors/timeline.py + plugins/detectors/timeline/plugin.toml
+- 分级：plugins/detectors/classify.py + plugins/detectors/classify/plugin.toml
+
+这些模块按 API v1 的 pair/classifier 类型声明清单；它们是算法流水线组件，不代表五个都直接接收独立的最终用户任务。

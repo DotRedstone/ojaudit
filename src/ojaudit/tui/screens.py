@@ -112,7 +112,9 @@ class EntryDialog(ModalScreen[str | None]):
                 id="entry-value",
             )
             with Horizontal(id="entry-buttons"):
-                yield Button("保存" if self.login else "打开", id="entry-confirm", variant="primary")
+                yield Button(
+                    "保存" if self.login else "打开", id="entry-confirm", variant="primary"
+                )
                 yield Button("取消", id="entry-cancel")
 
     def on_mount(self) -> None:

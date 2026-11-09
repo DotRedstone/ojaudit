@@ -20,3 +20,17 @@
 ## 第三阶段内置检测器
 
 新增可独立组合的 pair、single、classifier：pair 使用 Winnowing 指纹与 Jaccard，single 输出代码规模与注释比例，classifier 将相似度映射为可配置的解释等级。三者均按稳定键排序，阈值显式配置，不联网。所有结果均为人工复核线索，不是违规认定。
+
+## 原始五个算法模块的迁移映射
+
+原仓库 DotRedstone/nowcoder-collect 的 detector/ 中，preprocess.py 是数据读取与分组预处理，不计入五个算法插件；五个算法模块逐项映射如下：
+
+| 原始模块 | 新实现文件 | 插件清单 | 迁移职责 |
+| --- | --- | --- | --- |
+| detectors/normalize.py | plugins/detectors/normalize.py | plugins/detectors/normalize/plugin.toml | L1/L2/L3 归一化 |
+| detectors/similarity.py | plugins/detectors/similarity.py | plugins/detectors/similarity/plugin.toml | difflib 三口径、稀有 n-gram |
+| detectors/template.py | plugins/detectors/template.py | plugins/detectors/template/plugin.toml | 高频片段占比、人群模板 |
+| detectors/timeline.py | plugins/detectors/timeline.py | plugins/detectors/timeline/plugin.toml | AC 顺序、失败序列、方向有效性 |
+| detectors/classify.py | plugins/detectors/classify.py | plugins/detectors/classify/plugin.toml | 实锤/中偏强/存疑/排除规则 |
+
+综合入口 plugins/detectors/nowcoder.py 保留原检测结果的编排与兼容输出；五个独立模块暴露可单独测试的算法入口。清单中的 module 字段用于标识实现模块，插件发现仍与执行分离。

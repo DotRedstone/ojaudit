@@ -6,7 +6,7 @@
 - [ ] 2. 核心：schema/store/config/plugin/pipeline — PR：https://github.com/DotRedstone/ojaudit/pull/3
 - [ ] 3. 内置插件迁移与确定性回归 — PR：https://github.com/DotRedstone/ojaudit/pull/4
 - [ ] 4. 比赛筛选、人员标记与排名 — PR：https://github.com/DotRedstone/ojaudit/pull/5
-- [ ] 5. CLI 与旧数据迁移 — PR：待创建
+- [ ] 5. CLI 与旧数据迁移 — PR：https://github.com/DotRedstone/ojaudit/pull/6
 - [ ] 6. TUI 框架与导航 — PR：待创建
 - [ ] 7. TUI 证据审查与代码浏览 — PR：待创建
 - [ ] 8. TUI 设置与排行榜 — PR：待创建

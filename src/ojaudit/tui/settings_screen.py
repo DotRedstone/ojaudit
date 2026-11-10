@@ -157,6 +157,10 @@ class SettingsScreen(ShellScreen):
         self.query_one("#categories", ListView).focus()
         self.status()
 
+    def refresh_count(self) -> None:
+        """计数以当前分类的右栏设置项为准，而非左栏分类数。"""
+        self.query_one("#pane", Vertical).border_subtitle = f"{len(self.rows)} 项"
+
     def status(self) -> None:
         self.CURRENT = "设置 · " + ("● 未保存" if self.model.dirty else "已保存")
         self._update_status()
@@ -188,6 +192,7 @@ class SettingsScreen(ShellScreen):
         if not self.rows:
             view.append(StatusRow("本类暂无可编辑项"))
         view.call_after_refresh(setattr, view, "index", min(previous, len(self.rows) - 1))
+        self.refresh_count()
         self.detail()
         self.status()
 

@@ -15,6 +15,8 @@ from textual.screen import Screen
 from textual.widgets import Footer, Label, ListView, Static
 
 from ojaudit.core.ranking import RankingOptions
+from ojaudit.tui.icons import breadcrumb
+from ojaudit.tui.icons import label as label_icon
 from ojaudit.tui.interaction import Breadcrumb
 from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.ranking_data import export_ranking, final_ranking, pending_warnings
@@ -53,9 +55,15 @@ class RankingScreen(Screen):
         self.choice_indices = [0, 0, 0, 0]
 
     def compose(self) -> ComposeResult:
-        yield Breadcrumb(f"首页 › 比赛列表 › {self.data.contest.name} › 排行榜", id="breadcrumb")
+        yield Breadcrumb(
+            breadcrumb(f"首页 › 比赛列表 › {self.data.contest.name} › 排行榜", self.app.nerd_font),
+            id="breadcrumb",
+        )
         with Vertical(id="pane"):
-            yield Static("本地提交成绩推导，非官方排名", id="ranking-note")
+            yield Static(
+                label_icon("ranking", "本地提交成绩推导，非官方排名", self.app.nerd_font),
+                id="ranking-note",
+            )
             yield ListView(id="ranking-options")
             yield Static("", id="ranking-warning")
             yield ListView(id="ranking-preview")
@@ -63,9 +71,15 @@ class RankingScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one("#pane", Vertical).border_title = self.TITLE
-        self.query_one("#ranking-options", ListView).border_title = "导出策略"
-        self.query_one("#ranking-preview", ListView).border_title = "预览"
+        self.query_one("#pane", Vertical).border_title = label_icon(
+            "ranking", self.TITLE, self.app.nerd_font
+        )
+        self.query_one("#ranking-options", ListView).border_title = label_icon(
+            "settings", "导出策略", self.app.nerd_font
+        )
+        self.query_one("#ranking-preview", ListView).border_title = label_icon(
+            "ranking", "预览", self.app.nerd_font
+        )
         self.refresh_ranking()
         self.query_one("#ranking-options", ListView).focus()
 
@@ -84,11 +98,25 @@ class RankingScreen(Screen):
         selected = view.index or 0
         view.clear()
         for index, (label, titles, _) in enumerate(POLICIES):
-            view.append(ListItem(Label(f"{label}   ‹ {titles[self.choice_indices[index]]} ›")))
+            view.append(
+                ListItem(
+                    Label(
+                        label_icon(
+                            ("cheater", "suspect", "manager", "export")[index],
+                            f"{label}   ‹ {titles[self.choice_indices[index]]} ›",
+                            self.app.nerd_font,
+                        )
+                    )
+                )
+            )
         view.call_after_refresh(setattr, view, "index", selected)
         warnings = pending_warnings(self.data)
         self.query_one("#ranking-warning", Static).update(
-            "提示：" + ("；".join(warnings) if warnings else "暂无待处理项") + "（不阻止导出）"
+            label_icon(
+                "warning",
+                "提示：" + ("；".join(warnings) if warnings else "暂无待处理项") + "（不阻止导出）",
+                self.app.nerd_font,
+            )
         )
         preview = self.query_one("#ranking-preview", ListView)
         preview.clear()
@@ -99,13 +127,19 @@ class RankingScreen(Screen):
             preview.append(
                 ListItem(
                     Label(
-                        f"#{row['rank']}  {row['name']} · {row['score']:g} 分"
-                        f"{' · ' + mark if mark else ''}"
+                        label_icon(
+                            "ranking",
+                            f"#{row['rank']}  {row['name']} · {row['score']:g} 分"
+                            f"{' · ' + mark if mark else ''}",
+                            self.app.nerd_font,
+                        )
                     )
                 )
             )
         if not preview.children:
-            preview.append(ListItem(Label("当前策略下无可展示人员")))
+            preview.append(
+                ListItem(Label(label_icon("people", "当前策略下无可展示人员", self.app.nerd_font)))
+            )
         self.query_one("#status", Static).update(
             self.app.status_line("排行榜 · 非官方推导", str(self.data.contest.contest_id))
         )

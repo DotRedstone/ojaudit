@@ -22,6 +22,7 @@ from textual.widgets import Button, Footer, Input, Label, ListView, Select, Stat
 
 from ojaudit.core.reviews import REVIEW_STATUSES
 from ojaudit.tui import palette
+from ojaudit.tui.icons import breadcrumb, label
 from ojaudit.tui.interaction import Breadcrumb
 from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView as NavigationListView
@@ -60,7 +61,7 @@ class ChoiceDialog(ModalScreen[tuple[str, str] | None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="dialog"):
-            yield Label(self.heading)
+            yield Label(label("mark", self.heading, self.app.nerd_font))
             yield Select(
                 [(label, key) for label, key in self.options],
                 value=self.value if self.value else self.options[0][1],
@@ -69,8 +70,10 @@ class ChoiceDialog(ModalScreen[tuple[str, str] | None]):
             )
             yield Input(value=self.note, placeholder="备注（可选）", id="note")
             with Horizontal():
-                yield Button("保存", id="save", variant="primary")
-                yield Button("取消", id="cancel")
+                yield Button(
+                    label("save", "保存", self.app.nerd_font), id="save", variant="primary"
+                )
+                yield Button(label("cancel", "取消", self.app.nerd_font), id="cancel")
 
     @on(Input.Submitted)
     def submit_note(self, event: Input.Submitted) -> None:
@@ -130,13 +133,22 @@ class ReviewListScreen(ShellScreen):
     def label_for(self, row: dict[str, Any]) -> str:
         return str(row)
 
+    def icon_for(self, row: dict[str, Any]) -> str:
+        if row.get("hidden"):
+            return "manager"
+        return {"cheater": "cheater", "suspect": "suspect", "normal": "normal"}.get(
+            row.get("mark"), "list"
+        )
+
     def reload(self) -> None:
         view = self.query_one("#items", ListView)
         previous = view.index or 0
         self.rows = self.items()
         view.clear()
         for item in self.rows:
-            widget = ListItem(Label(self.label_for(item)))
+            widget = ListItem(
+                Label(label(self.icon_for(item), self.label_for(item), self.app.nerd_font))
+            )
             if item.get("hidden"):
                 widget.styles.color = palette.MANAGER
             elif item.get("mark") == "cheater":
@@ -147,7 +159,7 @@ class ReviewListScreen(ShellScreen):
                 widget.styles.color = palette.NORMAL
             view.append(widget)
         if not self.rows:
-            view.append(ListItem(Label("暂无数据")))
+            view.append(ListItem(Label(label("list", "暂无数据", self.app.nerd_font))))
         view.call_after_refresh(setattr, view, "index", min(previous, len(self.rows) - 1))
 
     def selected_row(self, index: int) -> dict[str, Any] | None:
@@ -159,6 +171,9 @@ class FindingsScreen(ReviewListScreen):
 
     def items(self) -> list[dict[str, Any]]:
         return self.data.findings()
+
+    def icon_for(self, row: dict[str, Any]) -> str:
+        return "warning" if row["is_stale"] else "findings"
 
     def label_for(self, row: dict[str, Any]) -> str:
         flag = " · 已失效" if row["is_stale"] else ""
@@ -205,7 +220,7 @@ class EvidenceScreen(ShellScreen):
         self.CURRENT = f"{self.finding['uid_a']} ↔ {self.finding['uid_b']}"
 
     def compose(self) -> ComposeResult:
-        yield Breadcrumb(self.PATH, id="breadcrumb")
+        yield Breadcrumb(breadcrumb(self.PATH, self.app.nerd_font), id="breadcrumb")
         with Vertical(id="pane"):
             yield Static("", id="evidence-meta")
             with Horizontal(id="code-pair"):
@@ -215,7 +230,9 @@ class EvidenceScreen(ShellScreen):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one("#pane", Vertical).border_title = self.TITLE
+        self.query_one("#pane", Vertical).border_title = label(
+            "evidence", self.TITLE, self.app.nerd_font
+        )
         self.render_evidence()
         self._update_status()
 
@@ -238,8 +255,12 @@ class EvidenceScreen(ShellScreen):
         reason_text = "；".join(str(x) for x in reason) if isinstance(reason, list) else str(reason)
         stale = "【已失效】" if finding["is_stale"] else ""
         self.query_one("#evidence-meta", Static).update(
-            f"{stale}分级：{finding['verdict_level']} · 复核：{finding['status']}\n"
-            f"插件评分：{score_text or '无'}\n理由 / 时间线：{reason_text or '无'}"
+            label(
+                "evidence",
+                f"{stale}分级：{finding['verdict_level']} · 复核：{finding['status']}\n"
+                f"插件评分：{score_text or '无'}\n理由 / 时间线：{reason_text or '无'}",
+                self.app.nerd_font,
+            )
         )
         left = self.data.representative(
             finding["uid_a"], int(finding["problem_index"]), finding["language"]
@@ -271,7 +292,7 @@ class EvidenceScreen(ShellScreen):
             "low": palette.SUSPECT,
         }.get(str(finding["verdict_level"]).lower(), palette.EXCLUDED)
         self.query_one("#evidence-meta", Static).styles.border_left = ("solid", color)
-        self.query_one("#breadcrumb", Static).update(self.PATH)
+        self.query_one("#breadcrumb", Static).update(breadcrumb(self.PATH, self.app.nerd_font))
         self._update_status()
 
     def action_first_evidence(self) -> None:
@@ -385,6 +406,15 @@ class PeopleScreen(ReviewListScreen):
     def items(self) -> list[dict[str, Any]]:
         return self.data.people()
 
+    def icon_for(self, row: dict[str, Any]) -> str:
+        return (
+            "manager"
+            if row["hidden"]
+            else {"cheater": "cheater", "suspect": "suspect", "normal": "normal"}.get(
+                row["mark"], "person"
+            )
+        )
+
     def label_for(self, row: dict[str, Any]) -> str:
         marks = {"normal": "正常", "suspect": "存疑", "cheater": "作弊者"}
         suffix = (
@@ -411,6 +441,9 @@ class PersonScreen(ReviewListScreen):
         super().__init__(data, f"{path} › {data.person(uid)['name']}")
         self.uid = uid
         self.CURRENT = uid
+
+    def icon_for(self, row: dict[str, Any]) -> str:
+        return "problem"
 
     def items(self) -> list[dict[str, Any]]:
         indexes = {row["problem_index"] for row in self.data.submissions(self.uid)}
@@ -450,6 +483,9 @@ class SubmissionScreen(ReviewListScreen):
         self.uid = uid
         self.problem = problem
 
+    def icon_for(self, row: dict[str, Any]) -> str:
+        return "submissions"
+
     def items(self) -> list[dict[str, Any]]:
         return self.data.submissions(self.uid, self.problem)
 
@@ -466,6 +502,9 @@ class SubmissionScreen(ReviewListScreen):
 
 class ProblemsScreen(ReviewListScreen):
     TITLE = "题目"
+
+    def icon_for(self, row: dict[str, Any]) -> str:
+        return "problem"
 
     def items(self) -> list[dict[str, Any]]:
         return self.data.problems()
@@ -493,6 +532,9 @@ class ProblemScreen(ReviewListScreen):
         super().__init__(data, f"{path} › {name}")
         self.problem = problem
         self.order = "time"
+
+    def icon_for(self, row: dict[str, Any]) -> str:
+        return "manager" if row.get("hidden") else "code"
 
     def items(self) -> list[dict[str, Any]]:
         return self.data.representatives(self.problem, self.order)
@@ -544,7 +586,9 @@ class CodeScreen(ShellScreen):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one("#pane", Vertical).border_title = self.TITLE
+        self.query_one("#pane", Vertical).border_title = label(
+            "code", self.TITLE, self.app.nerd_font
+        )
         self.render_code()
 
     @property
@@ -558,10 +602,14 @@ class CodeScreen(ShellScreen):
         person = self.data.person(row["uid"])
         labels = {"normal": "正常", "suspect": "存疑", "cheater": "作弊者"}
         mark = "管理" if person["hidden"] else labels.get(person["mark"], "未标记")
-        self.query_one("#breadcrumb", Static).update(self.PATH)
+        self.query_one("#breadcrumb", Static).update(breadcrumb(self.PATH, self.app.nerd_font))
         self.query_one("#code-meta", Static).update(
-            f"{person['name']} · 题 {row['problem_index']} · {row['verdict']} "
-            f"· {row['language']} · {mark} · 提交 {self.index + 1}/{len(self.items)}"
+            label(
+                "code",
+                f"{person['name']} · 题 {row['problem_index']} · {row['verdict']} "
+                f"· {row['language']} · {mark} · 提交 {self.index + 1}/{len(self.items)}",
+                self.app.nerd_font,
+            )
         )
         self.query_one("#code-body", Static).update(_syntax(row["code"], row["language"]))
         self._update_status()

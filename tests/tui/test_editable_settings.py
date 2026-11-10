@@ -23,71 +23,75 @@ def by_key(model, key):
     return next(option for option in model.options if option.key == key)
 
 
-def test_multi_rules_add_remove_disable_and_reload(tmp_path):
+def test_filter_rules_add_edit_toggle_remove_and_reload(tmp_path):
+    db = tmp_path / "synthetic.sqlite"
+    with Store(db) as store:
+        store.put_contest("synthetic", "1", "练习禁止")
+        store.put_contest("synthetic", "2", "模拟比赛")
     config = tmp_path / "config.toml"
-    save_config(
-        {
-            "contest_filter": {
-                "whitelist": [
-                    {"pattern": "练习", "enabled": True},
-                    {"pattern": "模拟", "enabled": False},
-                ],
-                "blacklist": [{"pattern": "禁止", "enabled": True}],
-                "match_field": "name",
-            }
-        },
-        config,
-    )
-    model = SettingsModel(config, [], db_path=tmp_path / "absent.sqlite")
-    assert len(model.lists.rules["whitelist"]) == 2
-    model.add_list_item("比赛筛选", "blacklist")
-    model.change(by_key(model, "contest_filter.blacklist.1.pattern"), "测试.*")
-    model.change(by_key(model, "contest_filter.whitelist.1.enabled"), True)
+    save_config({"contest_filter": {"blacklist": [{"pattern": "旧规则"}]}}, config)
+    model = SettingsModel(config, [], db_path=db)
+    assert model.values["contest_filter.mode"] == "blacklist"
+    assert [r["pattern"] for r in model.rules] == ["旧规则"]
+    model.set_rule(0, "禁止")
+    model.set_rule(None, "^模拟")
+    assert model.rule_hits("禁止") == 1
+    model.toggle_rule(1)
+    assert model.dirty
     model.save()
-    reloaded = SettingsModel(config, [], db_path=tmp_path / "absent.sqlite")
-    assert len(reloaded.lists.rules["blacklist"]) == 2
-    assert reloaded.lists.rules["whitelist"][1]["enabled"] is True
+    assert not model.dirty
     filt = load_contest_filter(config)
     assert not evaluate_contest(Contest("synthetic", "1", "练习禁止"), filt).visible
     assert evaluate_contest(Contest("synthetic", "2", "模拟比赛"), filt).visible
-    reloaded.remove_list_item(by_key(reloaded, "contest_filter.blacklist.0.pattern"))
+    assert "whitelist" not in load_config(config)["contest_filter"]
+
+    reloaded = SettingsModel(config, [], db_path=db)
+    mode = by_key(reloaded, "contest_filter.mode")
+    reloaded.change(mode, "whitelist")
+    reloaded.toggle_rule(1)
+    reloaded.remove(by_key(reloaded, "rules.0"))
     reloaded.save()
-    assert len(load_config(config)["contest_filter"]["blacklist"]) == 1
+    filt = load_contest_filter(config)
+    assert filt.mode == "whitelist"
+    assert [r.pattern for r in filt.rules] == ["^模拟"]
+    assert not evaluate_contest(Contest("synthetic", "1", "练习禁止"), filt).visible
 
 
-def test_rule_blank_rejected_without_writing(tmp_path):
+def test_invalid_rules_are_rejected_before_writing(tmp_path):
     config = tmp_path / "config.toml"
     model = SettingsModel(config, [], db_path=tmp_path / "absent.sqlite")
-    model.add_list_item("比赛筛选", "whitelist")
     with pytest.raises(ValueError, match="不能为空"):
-        model.save()
+        model.set_rule(None, "")
+    with pytest.raises(ValueError, match="正则无效"):
+        model.set_rule(None, "[")
+    assert model.rules == []
     assert not config.exists()
 
 
-def test_manager_name_enabled_round_trip(tmp_path):
+def test_managers_round_trip_through_database(tmp_path):
     db = tmp_path / "synthetic.sqlite"
-    with Store(db) as store:
-        store.put_contest("synthetic", "101", "虚构比赛")
+    with Store(db):
+        pass
     config = tmp_path / "config.toml"
     model = SettingsModel(config, [], db_path=db)
-    model.change(by_key(model, "people.platform"), "synthetic")
-    model.save()
-    model.add_list_item("人员名单")
-    model.change(by_key(model, "people.manager_entries.0.uid"), "synthetic-uid")
-    model.change(by_key(model, "people.manager_entries.0.nickname"), "虚构管理员")
+    model.set_manager(None, "1001 虚构 管理员")
+    with pytest.raises(ValueError, match="已存在"):
+        model.set_manager(None, "1001")
     model.save()
     with Store(db) as store:
-        rows = store.list_hidden_people()
-    assert len(rows) == 1
-    assert rows[0]["nickname"] == "虚构管理员"
+        assert store.list_hidden_people() == [
+            {"platform": "nowcoder", "uid": "1001", "nickname": "虚构 管理员"}
+        ]
     reloaded = SettingsModel(config, [], db_path=db)
-    reloaded.change(by_key(reloaded, "people.manager_entries.0.enabled"), False)
+    reloaded.set_manager(0, "1002")
     reloaded.save()
     with Store(db) as store:
-        assert store.list_hidden_people() == []
+        assert [row["uid"] for row in store.list_hidden_people()] == ["1002"]
     again = SettingsModel(config, [], db_path=db)
-    assert again.lists.managers[0]["nickname"] == "虚构管理员"
-    assert again.lists.managers[0]["enabled"] is False
+    again.remove(by_key(again, "managers.0"))
+    again.save()
+    with Store(db) as store:
+        assert store.list_hidden_people() == []
 
 
 def test_collect_settings_are_consumed(tmp_path, monkeypatch):

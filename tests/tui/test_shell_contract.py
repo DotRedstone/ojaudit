@@ -14,7 +14,6 @@ from textual.widgets import Footer, Static
 from ojaudit.core.store import Store
 from ojaudit.tui.app import AuditApp
 from ojaudit.tui.data import LocalContests
-from ojaudit.tui.interaction import SearchDialog
 from ojaudit.tui.ranking_screen import RankingScreen
 from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.review_screens import ChoiceDialog, FindingsScreen, PeopleScreen, ProblemsScreen
@@ -86,7 +85,6 @@ def test_dialogs_are_compact_and_escape_cancels(tmp_path, monkeypatch):
         option = model.options_for("外观")[0]
         monkeypatch.setattr("ojaudit.tui.account_screen.current_uid", lambda: "")
         dialogs = (
-            SearchDialog(),
             UidDialog(),
             EntryDialog(),
             EditValue(option, model.values[option.key]),
@@ -98,7 +96,7 @@ def test_dialogs_are_compact_and_escape_cancels(tmp_path, monkeypatch):
             for dialog in dialogs:
                 app.push_screen(dialog)
                 await pilot.pause()
-                box = dialog.query_one(".dialog")
+                box = dialog.query_one(".popup")
                 assert 0 < box.size.height < 30
                 assert box.size.width <= 90
                 await pilot.press("escape")

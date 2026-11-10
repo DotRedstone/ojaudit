@@ -216,6 +216,28 @@ class Store:
                 ),
             )
 
+    def put_contest_listing(
+        self,
+        platform: str,
+        contest_id: str,
+        name: str,
+        start_time: int | None = None,
+        end_time: int | None = None,
+    ) -> bool:
+        """登记账号参加过的比赛（尚未采集）；已有记录只补缺失的时间。返回是否新增。"""
+        with self.transaction():
+            self.upsert_platform(platform)
+            exists = self.contest_exists(platform, contest_id)
+            self.connection.execute(
+                """INSERT INTO contests(platform, contest_id, name, start_time, end_time)
+                   VALUES (?, ?, ?, ?, ?)
+                   ON CONFLICT(platform, contest_id) DO UPDATE SET
+                   start_time=COALESCE(contests.start_time, excluded.start_time),
+                   end_time=COALESCE(contests.end_time, excluded.end_time)""",
+                (platform, contest_id, name, start_time, end_time),
+            )
+        return not exists
+
     def put_participants(self, people: Iterable[Participant], *, keep_names: bool = False) -> None:
         """keep_names=True 时只补缺失的人员，不覆盖已有姓名（用于提交里出现的 UID）。"""
         action = "NOTHING" if keep_names else "UPDATE SET name=excluded.name"

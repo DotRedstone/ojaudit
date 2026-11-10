@@ -11,7 +11,7 @@
 
 ## 快速开始
 
-1. `ojaudit login`：在交互提示中输入自己的牛客 Cookie（不传入命令行）。
+1. `ojaudit`：进入界面，在「账户与登录」扫码登录；比赛列表会自动列出你参加过的比赛，回车即可采集。
 2. `ojaudit contests --all`：查看已保存的比赛；首次使用时可能为空。
 3. `ojaudit collect <contest_id>`：只读采集授权访问的比赛。
 4. `ojaudit analyze <contest_id>`：生成本地检测线索。

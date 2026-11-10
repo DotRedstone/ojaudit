@@ -16,29 +16,29 @@ from typing import Any, ClassVar
 
 from rich.syntax import Syntax
 from rich.text import Text
-from textual import on
 from textual.app import ComposeResult
-from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Button, Input, Label, Select, Static
+from textual.widgets import Static
 
 from ojaudit.core.reviews import DEFAULT_REVIEW_STATUS, REVIEW_STATUSES
 from ojaudit.core.schema import is_accepted
 from ojaudit.tui import ui
-from ojaudit.tui.icons import label
+from ojaudit.tui.popup import ChoiceNotePopup
 from ojaudit.tui.review_data import ReviewData
-from ojaudit.tui.screens import Dialog, ShellScreen, TableScreen, dialog_buttons
+from ojaudit.tui.screens import ShellScreen, TableScreen
+from ojaudit.tui.splitter import Splitter
 
 LANGUAGES = {"cpp": "C++", "python": "Python", "java": "Java"}
 
 
-def _syntax(code: str, language: str, background: str, highlight: set[int] | None = None) -> Syntax:
+def _syntax(app: Any, code: str, language: str, highlight: set[int] | None = None) -> Syntax:
     lexer = {"cpp": "cpp", "python": "python", "java": "java"}.get(language, "text")
+    background = ui.palette(app).bg
     return Syntax(
         code or "",
         lexer,
-        theme="monokai",
-        line_numbers=True,
+        theme=getattr(app, "syntax_theme", "monokai"),
+        line_numbers=getattr(app, "line_numbers", True),
         word_wrap=False,
         background_color=background,
         highlight_lines=highlight,
@@ -105,13 +105,8 @@ def level_chip(level: object, colors: ui.Palette) -> Text:
     return ui.chip(ui.level_name(level), colors.level(level))
 
 
-class ChoiceDialog(Dialog):
-    """保存人员标记或线索结论及备注。"""
-
-    BINDINGS: ClassVar[list[Binding]] = [
-        Binding("escape", "back", "取消", priority=True),
-        Binding("h", "back", "取消"),
-    ]
+class ChoiceDialog(ChoiceNotePopup):
+    """人员标记或线索结论 + 备注；返回 (值, 备注)。"""
 
     def __init__(
         self,
@@ -121,51 +116,7 @@ class ChoiceDialog(Dialog):
         note: str = "",
         hint: str = "",
     ) -> None:
-        super().__init__()
-        self.heading = title
-        self.options = options
-        self.value = value
-        self.note = note
-        self.hint = hint
-
-    def compose(self) -> ComposeResult:
-        icons = self.app.nerd_font
-        with Vertical(id="dialog", classes="dialog"):
-            yield Label(label("mark", self.heading, icons), classes="dialog-title")
-            if self.hint:
-                yield Label(self.hint, classes="dialog-hint")
-            yield Select(
-                [(name, key) for name, key in self.options],
-                value=self.value if self.value else self.options[0][1],
-                allow_blank=False,
-                id="choice",
-            )
-            yield Input(value=self.note, placeholder="备注（可选）", id="note")
-            yield dialog_buttons(("save", "保存"), ("cancel", "取消"), icons)
-
-    @on(Input.Submitted)
-    def submit_note(self, event: Input.Submitted) -> None:
-        self.action_save()
-
-    def action_save(self) -> None:
-        value = self.query_one("#choice", Select).value
-        if isinstance(value, str):
-            self.dismiss((value, self.query_one("#note", Input).value))
-
-    @on(Button.Pressed)
-    def pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "cancel":
-            self.dismiss(None)
-        else:
-            self.action_save()
-
-    def action_back(self) -> None:
-        choice = self.query_one("#choice", Select)
-        if choice.expanded:
-            choice.expanded = False
-            choice.focus()
-        else:
-            self.dismiss(None)
+        super().__init__(title + (f" · {hint}" if hint else ""), options, value, note)
 
 
 MARK_CHOICES = (("正常", "normal"), ("存疑", "suspect"), ("作弊者", "cheater"))
@@ -348,6 +299,7 @@ class EvidenceScreen(ShellScreen):
             with Horizontal(id="code-pair"):
                 with VerticalScroll(id="pane-left", classes="source-pane"):
                     yield Static("", id="code-left")
+                yield Splitter("pane-left", "evidence", minimum=24, keep_right=24)
                 with VerticalScroll(id="pane-right", classes="source-pane"):
                     yield Static("", id="code-right")
         yield from self.chrome_bottom()
@@ -469,6 +421,7 @@ class EvidenceScreen(ShellScreen):
         right_pane = self.query_one("#pane-right")
         if self.diff_mode:
             right_pane.display = False
+            self.query_one(Splitter).display = False
             left_pane.border_subtitle = ""
             left_pane.border_title = f"差异  A {names[0]} → B {names[1]}"
             self.query_one("#code-left", Static).update(
@@ -476,6 +429,7 @@ class EvidenceScreen(ShellScreen):
             )
         else:
             right_pane.display = True
+            self.query_one(Splitter).display = True
             changed_left, changed_right = _changed_lines(left_code, right_code)
             for pane, view, side, person, row, code, changed in (
                 (left_pane, "#code-left", "A", a, left, left_code, changed_left),
@@ -484,7 +438,7 @@ class EvidenceScreen(ShellScreen):
                 verdict = f" · {row['verdict']} · {ui.clock(row['submit_time'])}" if row else ""
                 pane.border_title = f"{side}  {person['name']}{verdict}"
                 self.query_one(view, Static).update(
-                    _syntax(code, finding["language"], colors.bg, changed)
+                    _syntax(self.app, code, finding["language"], changed)
                 )
             left_pane.border_subtitle = "高亮行与另一侧不同"
         self.refresh_chrome()
@@ -949,9 +903,7 @@ class CodeScreen(ShellScreen):
             f"{LANGUAGES.get(row['language'], row['language'])}{when}"
         )
         pane.border_subtitle = str(row["submission_id"])
-        self.query_one("#code-body", Static).update(
-            _syntax(row["code"], row["language"], colors.bg)
-        )
+        self.query_one("#code-body", Static).update(_syntax(self.app, row["code"], row["language"]))
         self.refresh_chrome()
 
     def action_first_code(self) -> None:

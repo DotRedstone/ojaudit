@@ -69,12 +69,32 @@ def _wechat_url(ticket: str) -> str:
     return match.group(0)
 
 
-def qr_terminal_text(url: str) -> str:
-    """使用本地二维码编码器，不向外部二维码生成网站发送票据。"""
-    qr = qrcode.QRCode(border=2, box_size=1)
+def qr_matrix(url: str) -> list[list[bool]]:
+    """本地生成二维码矩阵（含 2 格静区），不向外部二维码服务发送票据。"""
+    qr = qrcode.QRCode(border=2, box_size=1, error_correction=qrcode.constants.ERROR_CORRECT_L)
     qr.add_data(url)
     qr.make(fit=True)
-    return "\n".join("".join("██" if pixel else "  " for pixel in row) for row in qr.get_matrix())
+    return [[bool(pixel) for pixel in row] for row in qr.get_matrix()]
+
+
+def qr_half_blocks(matrix: list[list[bool]]) -> list[str]:
+    """上下两行像素合成一行字符（▀ ▄ █），终端里接近正方形且只占一半高度。
+
+    返回的字符以「深色模块」为前景，调用方需配合白底显示以便手机识别。
+    """
+    rows = matrix + ([[False] * len(matrix[0])] if len(matrix) % 2 else [])
+    lines = []
+    for top, bottom in zip(rows[0::2], rows[1::2]):
+        lines.append(
+            "".join(
+                "█" if a and b else "▀" if a else "▄" if b else " " for a, b in zip(top, bottom)
+            )
+        )
+    return lines
+
+
+def qr_terminal_text(url: str) -> str:
+    return "\n".join(qr_half_blocks(qr_matrix(url)))
 
 
 def _cookie_value(jar: http.cookiejar.CookieJar) -> str:
@@ -98,14 +118,17 @@ def _valid_token(jar: http.cookiejar.CookieJar) -> bool:
 def login_with_qr(
     output: Callable[[str], None] | None = None,
     *,
+    on_qr: Callable[[str], None] | None = None,
+    cancelled: Callable[[], bool] = lambda: False,
     opener: Any = None,
     cookie_jar: http.cookiejar.CookieJar | None = None,
     pause: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
 ) -> None:
-    """在终端显示二维码、轮询确认并将 Cookie 保存到权限 0600 的本机文件。
+    """获取扫码地址、轮询确认并把 Cookie 保存到权限 0600 的本机文件。
 
-    opener/cookie_jar/pause/clock 只供合成测试注入，不允许界面输出票据、Cookie 或接口正文。
+    on_qr 收到待编码的微信地址（由调用方在本地渲染）；未提供时在终端打印二维码。
+    output 只接收不含票据与 Cookie 的状态文字。opener/cookie_jar/pause/clock 供测试注入。
     """
     show = output or (lambda message: print(message, file=sys.__stdout__, flush=True))
     jar = cookie_jar if cookie_jar is not None else http.cookiejar.CookieJar()
@@ -121,23 +144,35 @@ def login_with_qr(
     expire = body.get("expireSecond", 120)
     if not isinstance(expire, (float, int)) or not 1 <= expire <= 300:
         raise ValueError("扫码过期时间无效")
-    show("请使用微信扫一扫，在手机上确认牛客登录：")
-    show(qr_terminal_text(_wechat_url(ticket)))
+    url = _wechat_url(ticket)
+    if on_qr is not None:
+        on_qr(url)
+    else:
+        show("请使用微信扫一扫，在手机上确认牛客登录：")
+        show(qr_terminal_text(url))
+    show("等待手机确认…")
     deadline = clock() + expire
     while clock() < deadline:
-        pause(3)
-        url = STATUS_ENDPOINT + "?" + urllib.parse.urlencode({"ticket": ticket})
+        if cancelled():
+            raise InterruptedError("已取消扫码登录")
+        pause(1.5)
+        status_url = STATUS_ENDPOINT + "?" + urllib.parse.urlencode({"ticket": ticket})
         try:
-            result = client.open(urllib.request.Request(url, headers=HEADERS), timeout=20)
-            status = json.loads(result.read().decode("utf-8"))
+            result = client.open(urllib.request.Request(status_url, headers=HEADERS), timeout=20)
+            json.loads(result.read().decode("utf-8"))
         except (OSError, TimeoutError, ValueError):
             continue
-        if isinstance(status, dict) and status.get("code") == 0 and _valid_token(jar):
-            save_cookie(_cookie_value(jar))
-            show("扫码登录成功，凭据已保存在本机。")
-            return
         if _valid_token(jar):
             save_cookie(_cookie_value(jar))
-            show("扫码登录成功，凭据已保存在本机。")
+            show("登录成功")
             return
-    raise TimeoutError("扫码确认超时")
+    raise TimeoutError("二维码已过期，请重新扫码")
+
+
+def detect_and_save_uid() -> str:
+    """用本机 Cookie 识别自己的牛客 UID 并写入配置；失败时保留原配置。"""
+    from ojaudit.plugins.sources.nowcoder import NowcoderSource
+
+    uid = NowcoderSource({"cookie": cookie_file().read_text(encoding="utf-8").strip()}).detect_uid()
+    set_uid(uid)
+    return uid

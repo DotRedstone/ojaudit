@@ -1,8 +1,10 @@
 """
 Module: TUI / settings screen
-Description: 提供分栏设置编辑、输入、默认值及离开确认。
+Description: 左右分栏的设置页；过滤规则可逐条增删改，外观修改即时预览。
 Scope: TUI
-Notes: UI 暂存更改；仅 Ctrl+S 显式保存配置。
+Notes:
+- 修改先暂存，Ctrl+S 写入；未保存离开时确认，放弃则恢复外观预览。
+- 输入统一走 lazygit 风格弹窗，正则输入时实时校验并显示命中的本地比赛数。
 """
 
 from __future__ import annotations
@@ -12,114 +14,71 @@ from typing import Any, ClassVar
 from rich.text import Text
 from textual import on
 from textual.app import ComposeResult
-from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Button, Input, Label, ListView, Static
+from textual.widgets import Label, ListView, Static
 
 from ojaudit.tui import ui
 from ojaudit.tui.icons import label
 from ojaudit.tui.interaction import NavigateListItem as ListItem
-from ojaudit.tui.screens import Chrome, Dialog, dialog_buttons
+from ojaudit.tui.interaction import NavigateListView
+from ojaudit.tui.popup import ConfirmPopup, InputPopup, MenuPopup
+from ojaudit.tui.screens import Chrome
 from ojaudit.tui.settings_model import CATEGORIES, Option, SettingsModel
+from ojaudit.tui.splitter import Splitter
 
 
-class EditValue(Dialog):
-    def __init__(self, option: Option, value: Any) -> None:
-        super().__init__()
-        self.option = option
-        self.current = str(value)
+class EditValue(InputPopup):
+    """编辑单个文本或数值选项。"""
 
-    def compose(self) -> ComposeResult:
-        with Vertical(id="edit-dialog", classes="dialog"):
-            yield Label(
-                label("settings", self.option.title, self.app.nerd_font), classes="dialog-title"
-            )
-            yield Label(
-                f"{self.option.description or ''}  默认：{self.option.default}".strip(),
-                classes="dialog-hint",
-            )
-            yield Input(value=self.current, id="edit-value")
-            yield dialog_buttons(("accept", "确定"), ("cancel", "取消"), self.app.nerd_font)
-
-    def on_mount(self) -> None:
-        self.query_one("#edit-value", Input).focus()
-
-    def action_cancel(self) -> None:
-        self.dismiss(None)
-
-    @on(Input.Submitted)
-    def submit_value(self, event: Input.Submitted) -> None:
-        self.dismiss(event.value)
-
-    @on(Button.Pressed)
-    def pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "accept":
-            self.dismiss(self.query_one("#edit-value", Input).value)
-        else:
-            self.dismiss(None)
+    def __init__(self, option: Option, value: Any, model: SettingsModel | None = None) -> None:
+        note = option.description
+        if option.minimum is not None or option.maximum is not None:
+            low = "" if option.minimum is None else f"{option.minimum:g}"
+            high = "" if option.maximum is None else f"{option.maximum:g}"
+            note = f"{note}  范围 {low}–{high}".strip()
+        super().__init__(
+            option.title,
+            "" if value is None else str(value),
+            note=note,
+            validate=(lambda text: model.check(option, text)) if model else None,
+            input_id="edit-value",
+        )
 
 
-class ConfirmLeave(Dialog):
-    BINDINGS: ClassVar[list[Binding]] = [
-        Binding("escape", "cancel", "继续编辑", priority=True),
-        Binding("h", "cancel", "继续编辑"),
-    ]
+class ConfirmLeave(ConfirmPopup):
+    """True 表示放弃修改。"""
 
-    def compose(self) -> ComposeResult:
-        with Vertical(id="confirm", classes="dialog warning"):
-            yield Label(
-                label("warning", "放弃未保存的设置？", self.app.nerd_font), classes="dialog-title"
-            )
-            yield Label("离开后本次修改不会写入配置文件。", classes="dialog-hint")
-            with Horizontal(classes="dialog-buttons"):
-                yield Button(
-                    label("cancel", "放弃更改", self.app.nerd_font), id="discard", variant="error"
-                )
-                yield Button(
-                    label("back", "继续编辑", self.app.nerd_font), id="stay", variant="primary"
-                )
-
-    def on_mount(self) -> None:
-        self.query_one("#stay", Button).focus()
-
-    def action_cancel(self) -> None:
-        self.dismiss(False)
-
-    @on(Button.Pressed)
-    def pressed(self, event: Button.Pressed) -> None:
-        self.dismiss(event.button.id == "discard")
+    def __init__(self) -> None:
+        super().__init__("未保存", "设置有修改尚未保存，放弃并离开？", default=False)
 
 
 class SettingsScreen(Chrome, Screen):
     TITLE = "设置"
+    PATH = "首页 › 设置"
+    HINTS = (
+        ("h/l", "切换栏"),
+        ("↵", "编辑"),
+        ("space", "开关"),
+        ("a/d", "添加/删除"),
+        ("ctrl+s", "保存"),
+        ("esc", "返回"),
+    )
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        ("escape", "back", "返回"),
-        ("left,h", "previous", "返回分类/上层"),
-        ("right,l,enter", "edit", "进入/修改"),
-        ("space", "toggle", "切换选项"),
+        ("escape", "back", "返回（有修改时确认）"),
+        ("left,h", "previous", "回到分类栏"),
+        ("right,l,enter", "edit", "进入 / 编辑"),
+        ("space", "toggle", "开关 / 切换"),
         ("up,k", "up", "上移"),
         ("down,j", "down", "下移"),
         ("g", "first", "首项"),
         ("shift+g", "last", "末项"),
-        ("slash", "search", "搜索"),
-        ("ctrl+s", "save", "保存"),
+        ("a", "add", "添加规则或管理者"),
+        ("d,delete", "delete", "删除规则或管理者"),
         ("r", "reset", "恢复本类默认"),
-        ("a", "add_white", "新增白名单/管理者"),
-        ("b", "add_black", "新增黑名单"),
-        ("d", "delete_list_item", "删除当前列表项"),
-        ("tab", "focus_next", "切换窗格"),
-        ("shift+tab", "focus_next", "切换窗格"),
+        ("ctrl+s", "save", "保存"),
+        ("tab,shift+tab", "focus_next", "切换栏"),
     ]
-    PATH = "首页 › 设置"
-    HINTS = (
-        ("tab", "切换窗格"),
-        ("↵", "编辑"),
-        ("space", "开关"),
-        ("a/b/d", "增删规则"),
-        ("ctrl+s", "保存"),
-        ("esc", "返回"),
-    )
 
     def __init__(self, model: SettingsModel | None = None) -> None:
         super().__init__()
@@ -128,156 +87,221 @@ class SettingsScreen(Chrome, Screen):
         self.rows: list[Option] = []
         self.focus_values = False
 
+    # ── 布局 ────────────────────────────────────────────
+
     def compose(self) -> ComposeResult:
         yield from self.chrome_top()
         with Vertical(id="body"):
             yield Static("", id="heading")
             with Horizontal(id="settings-columns"):
-                yield ListView(
-                    *(
-                        ListItem(Label(label("settings", category, self.app.nerd_font)))
-                        for category in CATEGORIES
-                    ),
+                yield NavigateListView(
+                    *(ListItem(Label(category)) for category in CATEGORIES),
                     id="categories",
                     classes="panel",
                 )
+                yield Splitter("categories", "settings", minimum=14)
                 with Vertical(id="options-pane", classes="panel"):
-                    yield ListView(id="settings-values")
+                    yield NavigateListView(id="settings-values")
                     yield Static("", id="settings-detail")
         yield from self.chrome_bottom()
 
     def on_mount(self) -> None:
-        self.query_one("#categories", ListView).border_title = label(
-            "list", "分类", self.app.nerd_font
-        )
-        self.query_one("#options-pane", Vertical).border_title = label(
-            "settings", "选项", self.app.nerd_font
-        )
+        self.query_one("#categories").border_title = "分类"
         self.query_one("#categories", ListView).index = 0
         self.reload()
         self.query_one("#categories", ListView).focus()
-        self.status()
-
-    def status(self) -> None:
-        colors = ui.palette(self.app)
-        heading = Text("设置", style=f"bold {colors.fg}")
-        if self.model.dirty:
-            heading.append("   ● 有未保存的修改，ctrl+s 保存", style=colors.warn)
-        else:
-            heading.append("   所有修改已保存", style=colors.muted)
-        self.query_one("#heading", Static).update(heading)
-        self._update_status()
 
     def on_resize(self, _event: object) -> None:
         self.call_after_refresh(self.reload)
+
+    def on_layout_change(self) -> None:
+        self.reload()
+
+    @property
+    def category(self) -> str:
+        return CATEGORIES[self.category_index]
+
+    def active_view(self) -> ListView:
+        return self.query_one("#settings-values" if self.focus_values else "#categories", ListView)
 
     def active_option(self) -> Option | None:
         view = self.query_one("#settings-values", ListView)
         index = view.index if view.index is not None else 0
         return self.rows[index] if 0 <= index < len(self.rows) else None
 
-    def reload(self) -> None:
-        self.rows = self.model.options_for(CATEGORIES[self.category_index])
-        self.query_one("#options-pane", Vertical).border_title = label(
-            "settings", CATEGORIES[self.category_index], self.app.nerd_font
+    # ── 渲染 ────────────────────────────────────────────
+
+    def status(self) -> None:
+        colors = ui.palette(self.app)
+        heading = Text("设置", style=f"bold {colors.fg}")
+        if self.model.dirty:
+            heading.append("   * 有未保存的修改  ctrl+s 保存", style=colors.warn)
+        else:
+            heading.append("   已保存", style=colors.muted)
+        self.query_one("#heading", Static).update(heading)
+        self._update_status()
+
+    def _row(self, option: Option, width: int) -> Text:
+        colors = ui.palette(self.app)
+        value = self.model.value(option)
+        changed = (
+            Text("*", style=f"bold {colors.warn}") if self.model.changed(option) else Text(" ")
         )
+        if option.kind == "header":
+            text = Text(option.title, style=f"bold {colors.accent}")
+            return text
+        if option.kind == "action":
+            text = Text("  + " + option.title, style=colors.muted)
+            return text
+        if option.kind == "rule":
+            mark = Text(
+                "✓ " if value["enabled"] else "· ",
+                style=colors.ok if value["enabled"] else colors.muted,
+            )
+            pattern = Text(value["pattern"], style=colors.fg if value["enabled"] else colors.muted)
+            hits = self.model.rule_hits(value["pattern"])
+            return ui.table_row(
+                [changed, mark + pattern, Text(f"命中 {hits} 场", style=colors.muted)],
+                (ui.Column("", 1), ui.Column(""), ui.Column("", 12, "right")),
+                width,
+            )
+        if option.kind == "manager":
+            title = Text(value["uid"], style=colors.fg)
+            return ui.table_row(
+                [changed, title, Text(value["nickname"] or "—", style=colors.muted)],
+                (ui.Column("", 1), ui.Column("", 16), ui.Column("")),
+                width,
+            )
+        if option.kind == "bool":
+            shown = (
+                Text("● 开", style=f"bold {colors.ok}")
+                if value
+                else Text("○ 关", style=colors.muted)
+            )
+        elif option.kind == "enum":
+            shown = Text("‹ ", style=colors.muted)
+            shown.append(option.display(value), style=f"bold {colors.accent}")
+            shown.append(" ›", style=colors.muted)
+        elif value in ("", None):
+            shown = Text("未设置", style=colors.muted)
+        else:
+            shown = Text(str(value), style=colors.fg)
+        if option.readonly:
+            shown.stylize(colors.muted)
+        return ui.table_row(
+            [changed, Text(option.title, style=colors.fg), shown],
+            (ui.Column("", 1), ui.Column(""), ui.Column("", min(40, width // 2))),
+            width,
+        )
+
+    def reload(self, select: str | None = None) -> None:
+        self.rows = self.model.options_for(self.category)
+        pane = self.query_one("#options-pane", Vertical)
+        pane.border_title = label("settings", self.category, self.app.nerd_font)
         view = self.query_one("#settings-values", ListView)
         previous = view.index or 0
+        width = max(pane.size.width - 6, 30)
         view.clear()
-        colors = ui.palette(self.app)
-        width = max(self.query_one("#options-pane").size.width - 6, 40)
-        columns = (ui.Column("", 2), ui.Column(""), ui.Column("", min(36, width // 2)))
         for option in self.rows:
-            value = self.model.values[option.key]
-            if option.kind == "bool":
-                display = (
-                    Text("● 开", style=f"bold {colors.ok}")
-                    if value
-                    else Text("○ 关", style=colors.muted)
-                )
-            elif option.kind == "enum":
-                display = Text("‹ ", style=colors.muted)
-                display.append(str(value), style=f"bold {colors.accent}")
-                display.append(" ›", style=colors.muted)
-            elif value in ("", None):
-                display = Text("未设置", style=colors.muted)
-            else:
-                display = Text(str(value), style=colors.fg)
-            if option.readonly:
-                display.stylize(colors.muted)
-            changed = Text("●", style=colors.warn) if self.model.changed(option) else ""
-            title = Text(option.title, style=colors.fg)
-            view.append(ListItem(Label(ui.table_row([changed, title, display], columns, width))))
-        if not self.rows:
-            view.append(ListItem(Label(Text("本类暂无可编辑项", style=colors.muted))))
-        view.call_after_refresh(setattr, view, "index", min(previous, len(self.rows) - 1))
+            item = ListItem(Label(self._row(option, width)))
+            if option.kind == "header":
+                item.add_class("section")
+            view.append(item)
+        if select is not None:
+            keys = [option.key for option in self.rows]
+            previous = keys.index(select) if select in keys else previous
+        view.call_after_refresh(setattr, view, "index", max(0, min(previous, len(self.rows) - 1)))
         self.detail()
         self.status()
 
     def detail(self) -> None:
         option = self.active_option()
-        if option:
-            colors = ui.palette(self.app)
-            text = Text(option.title, style=f"bold {colors.fg}")
-            if option.readonly:
-                text.append("  只读", style=colors.muted)
-            if option.description:
-                text.append("\n" + option.description, style=colors.fg)
-            if isinstance(option.default, bool):
-                default = "开" if option.default else "关"
+        colors = ui.palette(self.app)
+        text = Text()
+        if option is not None:
+            if option.kind == "rule":
+                rule = self.model.value(option)
+                text.append(rule["pattern"], style=f"bold {colors.fg}")
+                text.append(
+                    f"\n命中本地 {self.model.rule_hits(rule['pattern'])} 场比赛 · "
+                    f"{'已启用' if rule['enabled'] else '已停用'}",
+                    style=colors.muted,
+                )
+                text.append("\n↵ 编辑  space 启用/停用  d 删除", style=colors.muted)
+            elif option.kind == "manager":
+                row = self.model.value(option)
+                text.append(f"{row['uid']} {row['nickname']}", style=f"bold {colors.fg}")
+                text.append("\n不参与检测；排行榜中默认剔除\n↵ 编辑  d 删除", style=colors.muted)
             else:
-                default = option.default if option.default not in ("", None) else "空"
-            text.append(f"\n默认值 {default}", style=colors.muted)
-            self.query_one("#settings-detail", Static).update(text)
+                text.append(option.title, style=f"bold {colors.fg}")
+                if option.description:
+                    text.append("\n" + option.description, style=colors.fg)
+                if (
+                    option.editable
+                    and option.kind not in {"action"}
+                    and option.default not in ("", None)
+                ):
+                    default = option.display(option.default)
+                    if option.kind == "bool":
+                        default = "开" if option.default else "关"
+                    text.append(f"\n默认 {default}", style=colors.muted)
+        self.query_one("#settings-detail", Static).update(text)
 
     @on(ListView.Highlighted, "#categories")
     def category_changed(self, event: ListView.Highlighted) -> None:
-        if event.list_view.index is not None:
+        if event.list_view.index is not None and event.list_view.index != self.category_index:
             self.category_index = event.list_view.index
+            self.query_one("#settings-values", ListView).index = 0
             self.reload()
 
     @on(ListView.Highlighted, "#settings-values")
-    def option_changed(self, event: ListView.Highlighted) -> None:
+    def option_changed(self, _event: ListView.Highlighted) -> None:
         self.detail()
+
+    @on(NavigateListView.Activated)
+    def activated(self, event: NavigateListView.Activated) -> None:
+        if self.app.focused is self.query_one("#settings-values"):
+            self.focus_values = True
+        self.action_edit()
+
+    # ── 导航 ────────────────────────────────────────────
 
     def action_focus_next(self) -> None:
         self.focus_values = not self.focus_values
-        self.query_one("#settings-values" if self.focus_values else "#categories", ListView).focus()
+        view = self.active_view()
+        view.focus()
+        if self.focus_values:
+            self._skip_header(1)
 
-    def modify(self, amount: int = 1) -> None:
-        option = self.active_option()
-        if not self.focus_values or option is None or option.readonly:
-            return
-        value = self.model.values[option.key]
-        if option.kind == "enum":
-            choices = option.choices
-            value = choices[(choices.index(value) + amount) % len(choices)]
-        elif option.kind == "bool":
-            value = not value
-        elif option.kind in ("int", "float"):
-            value = value + amount
-        else:
-            return
-        try:
-            self.model.change(option, value)
-        except (TypeError, ValueError) as exc:
-            self.notify(str(exc), severity="warning")
-            return
-        self.reload()
+    def _skip_header(self, step: int) -> None:
+        view = self.query_one("#settings-values", ListView)
+        index = view.index or 0
+        while 0 <= index < len(self.rows) and self.rows[index].kind == "header":
+            index += step
+        if 0 <= index < len(self.rows):
+            view.index = index
 
-    def active_view(self) -> ListView:
-        return self.query_one("#settings-values" if self.focus_values else "#categories", ListView)
+    def _move(self, step: int) -> None:
+        view = self.active_view()
+        count = len(view.children)
+        if not count:
+            return
+        index = max(0, min((view.index or 0) + step, count - 1))
+        if view.id == "settings-values":
+            while 0 < index < count - 1 and self.rows[index].kind == "header":
+                index += 1 if step > 0 else -1
+        view.index = index
 
     def action_up(self) -> None:
-        view = self.active_view()
-        view.index = max(0, (view.index or 0) - 1)
+        self._move(-1)
 
     def action_down(self) -> None:
-        view = self.active_view()
-        view.index = min(len(view.children) - 1, (view.index or 0) + 1)
+        self._move(1)
 
     def action_first(self) -> None:
         self.active_view().index = 0
+        if self.focus_values:
+            self._skip_header(1)
 
     def action_last(self) -> None:
         view = self.active_view()
@@ -289,85 +313,167 @@ class SettingsScreen(Chrome, Screen):
         else:
             self.action_back()
 
+    # ── 编辑 ────────────────────────────────────────────
+
+    def _after_change(self, option: Option | None = None, select: str | None = None) -> None:
+        if option is not None and option.key.startswith("appearance."):
+            self.app.apply_appearance(self.model.appearance())
+        self.reload(select)
+
+    def _set(self, option: Option, value: Any) -> None:
+        try:
+            self.model.change(option, value)
+        except (TypeError, ValueError) as exc:
+            self.notify(str(exc), severity="warning")
+            return
+        self._after_change(option)
+
     def action_toggle(self) -> None:
         option = self.active_option()
-        if self.focus_values and option is not None and option.kind in ("bool", "enum"):
-            self.modify()
+        if not self.focus_values or option is None or not option.editable:
+            return
+        if option.kind == "bool":
+            self._set(option, not self.model.value(option))
+        elif option.kind == "enum":
+            choices = option.choices
+            current = self.model.value(option)
+            index = choices.index(current) if current in choices else -1
+            self._set(option, choices[(index + 1) % len(choices)])
+        elif option.kind == "rule":
+            self.model.toggle_rule(int(option.key.split(".")[1]))
+            self._after_change(select=option.key)
 
     def action_edit(self) -> None:
         if not self.focus_values:
             self.action_focus_next()
             return
         option = self.active_option()
-        if option is None or option.readonly:
+        if option is None or not option.editable:
             return
-        if option.kind in ("bool", "enum"):
-            self.modify()
-            return
-        self.app.push_screen(
-            EditValue(option, self.model.values[option.key]),
-            lambda value: self.apply_input(option, value),
-        )
-
-    def apply_input(self, option: Option, value: str | None) -> None:
-        if value is None:
-            return
-        try:
-            if option.kind == "int":
-                converted: Any = int(value)
-            elif option.kind == "float":
-                converted = float(value)
-            else:
-                converted = value
-            self.model.change(option, converted)
-            self.reload()
-        except (ValueError, TypeError) as exc:
-            self.notify(f"设置无效：{exc}", severity="error")
-
-    def _add_list_item(self, group: str) -> None:
-        category = CATEGORIES[self.category_index]
-        if category not in {"比赛筛选", "人员名单"}:
-            return
-        try:
-            self.model.add_list_item(category, group)
-        except ValueError as exc:
-            self.notify(str(exc), severity="warning")
-            return
-        self.reload()
-        rows = self.model.options_for(category)
-        prefix = (
-            "contest_filter." + group + "." if category == "比赛筛选" else "people.manager_entries."
-        )
-        indices = [index for index, option in enumerate(rows) if option.key.startswith(prefix)]
-        if indices:
-            view = self.query_one("#settings-values", ListView)
-            view.call_after_refresh(
-                setattr, view, "index", indices[-2] if category == "比赛筛选" else indices[-3]
+        if option.kind == "bool":
+            self.action_toggle()
+        elif option.kind == "enum":
+            self.app.push_screen(
+                MenuPopup(
+                    option.title,
+                    [(option.display(choice), choice) for choice in option.choices],
+                    self.model.value(option),
+                ),
+                lambda value: value is not None and self._set(option, value),
             )
-            self.focus_values = True
-            view.focus()
+        elif option.kind == "rule":
+            self._edit_rule(int(option.key.split(".")[1]))
+        elif option.kind == "manager":
+            self._edit_manager(int(option.key.split(".")[1]))
+        elif option.key == "rules.add":
+            self._edit_rule(None)
+        elif option.key == "managers.add":
+            self._edit_manager(None)
+        else:
+            self.app.push_screen(
+                EditValue(option, self.model.value(option), self.model),
+                lambda text: self.apply_input(option, text),
+            )
 
-    def action_add_white(self) -> None:
-        self._add_list_item("whitelist")
-
-    def action_add_black(self) -> None:
-        self._add_list_item("blacklist")
-
-    def action_delete_list_item(self) -> None:
-        if not self.focus_values:
-            return
-        option = self.active_option()
-        if option is None or not self.model.lists.is_list_key(option.key):
+    def apply_input(self, option: Option, text: str | None) -> None:
+        if text is None:
             return
         try:
-            self.model.remove_list_item(option)
-        except (ValueError, IndexError) as exc:
-            self.notify(str(exc), severity="warning")
+            self.model.change(option, self.model.parse(option, text))
+        except (TypeError, ValueError) as exc:
+            self.notify(f"设置无效：{exc}", severity="error")
             return
-        self.reload()
+        self._after_change(option)
+
+    def _rule_note(self, pattern: str) -> str | None:
+        error = self.model.validate_pattern(pattern)
+        if error:
+            return error if pattern else None
+        return None
+
+    def _edit_rule(self, index: int | None) -> None:
+        current = self.model.rules[index]["pattern"] if index is not None else ""
+        mode = self.model.values["contest_filter.mode"]
+        popup = InputPopup(
+            "编辑规则"
+            if index is not None
+            else f"添加{'黑' if mode == 'blacklist' else '白'}名单规则",
+            current,
+            placeholder="正则，例如 ^新生|练习赛",
+            note="Python 正则，匹配比赛名称",
+            validate=self._rule_note,
+            input_id="rule-value",
+        )
+
+        def done(pattern: str | None) -> None:
+            if not pattern:
+                return
+            try:
+                position = self.model.set_rule(index, pattern)
+            except ValueError as exc:
+                self.notify(str(exc), severity="error")
+                return
+            self._after_change(select=f"rules.{position}")
+
+        def live(pattern: str) -> str | None:
+            # 输入时在下边框实时显示命中的本地比赛数。
+            error = self._rule_note(pattern)
+            footer = "enter 确定  esc 取消"
+            if pattern and not error:
+                footer = f"命中 {self.model.rule_hits(pattern)} 场  {footer}"
+            popup.query_one(".popup").border_subtitle = f" {footer} "
+            return error
+
+        popup.validate = live
+        self.app.push_screen(popup, done)
+
+    def _edit_manager(self, index: int | None) -> None:
+        current = ""
+        if index is not None:
+            row = self.model.managers[index]
+            current = f"{row['uid']} {row['nickname']}".strip()
+        self.app.push_screen(
+            InputPopup(
+                "编辑管理者" if index is not None else "添加管理者",
+                current,
+                placeholder="UID 备注，例如 1234567 张老师",
+                note="管理者不参与检测，排行榜中默认剔除",
+                validate=lambda text: None if text.strip() else "请输入 UID",
+                input_id="manager-value",
+            ),
+            lambda text: text is not None and self._save_manager(index, text),
+        )
+
+    def _save_manager(self, index: int | None, text: str) -> None:
+        try:
+            position = self.model.set_manager(index, text)
+        except ValueError as exc:
+            self.notify(str(exc), severity="error")
+            return
+        self._after_change(select=f"managers.{position}")
+
+    def action_add(self) -> None:
+        if self.category != "过滤规则":
+            return
+        self.focus_values = True
+        self.query_one("#settings-values", ListView).focus()
+        option = self.active_option()
+        in_managers = option is not None and option.key.startswith("managers.")
+        if in_managers:
+            self._edit_manager(None)
+        else:
+            self._edit_rule(None)
+
+    def action_delete(self) -> None:
+        option = self.active_option()
+        if not self.focus_values or option is None or option.kind not in {"rule", "manager"}:
+            return
+        self.model.remove(option)
+        self._after_change()
 
     def action_reset(self) -> None:
-        self.model.restore(CATEGORIES[self.category_index])
+        self.model.restore(self.category)
+        self.app.apply_appearance(self.model.appearance())
         self.reload()
 
     def action_save(self) -> None:
@@ -376,25 +482,19 @@ class SettingsScreen(Chrome, Screen):
         except (ValueError, TypeError, OSError) as exc:
             self.notify(f"保存失败：{exc}", severity="error")
             return
+        self.app.apply_appearance(self.model.appearance())
         self.reload()
-        self.app.nerd_font = bool(self.model.values["appearance.nerd_font"])
-        self.query_one("#categories", ListView).border_title = label(
-            "list", "分类", self.app.nerd_font
-        )
-        self.query_one("#options-pane", Vertical).border_title = label(
-            "settings", CATEGORIES[self.category_index], self.app.nerd_font
-        )
-        categories = self.query_one("#categories", ListView)
-        for category, item in zip(CATEGORIES, categories.children):
-            item.query_one(Label).update(label("settings", category, self.app.nerd_font))
-        self.status()
         self.notify(label("success", "设置已保存", self.app.nerd_font))
 
     def action_back(self) -> None:
-        if self.model.dirty:
-            self.app.push_screen(
-                ConfirmLeave(),
-                lambda discard: self.app.pop_screen() if discard else None,
-            )
-        else:
+        if not self.model.dirty:
             self.app.pop_screen()
+            return
+
+        def answer(discard: bool | None) -> None:
+            if discard:
+                self.model.discard()
+                self.app.apply_appearance(self.model.appearance())
+                self.app.pop_screen()
+
+        self.app.push_screen(ConfirmLeave(), answer)

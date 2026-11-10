@@ -231,7 +231,9 @@ class HomeScreen(ShellScreen):
         elif index == 1:
             self.app.push_screen(EntryDialog(), self.open_contest_id)
         elif index == 2:
-            self.app.push_screen(EntryDialog(login=True), self.save_login)
+            from ojaudit.tui.account_screen import AccountScreen
+
+            self.app.push_screen(AccountScreen())
         elif index == 3:
             from ojaudit.tui.settings_model import SettingsModel
             from ojaudit.tui.settings_screen import SettingsScreen

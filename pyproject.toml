@@ -9,7 +9,7 @@ description = "可扩展的训练赛代码审查框架"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-dependencies = ["tomli-w>=1.0", "textual>=0.80"]
+dependencies = ["tomli-w>=1.0", "textual>=0.80", "qrcode>=7.4"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.8"]

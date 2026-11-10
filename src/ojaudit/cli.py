@@ -194,8 +194,13 @@ def _run(args: argparse.Namespace) -> None:
                 if args.input:
                     raise ValueError("旧 SQLite 模式不接受 JSON 输入文件")
                 source = args.legacy_db or Path("~/.dsh/nowcoder/nowcoder.db")
-                count = migrate_nowcoder(store, source, args.reviews)
-                print(f"migrated={count}")
+                report = migrate_nowcoder(store, source, args.reviews)
+                print(f"migrated={report.submissions} reviews={report.reviews}")
+                for run_id, uid_a, uid_b, problem, reason in report.skipped_reviews:
+                    print(
+                        f"跳过复核 {run_id} {uid_a}/{uid_b} 题 {problem}：{reason}",
+                        file=sys.stderr,
+                    )
             else:
                 if args.input is None or args.reviews or args.legacy_db:
                     raise ValueError("JSON 模式需要输入文件；--reviews/--db 仅供旧库模式使用")

@@ -46,6 +46,7 @@
           nativeBuildInputs = [
             (pkgs.python312.withPackages (ps: [ ps.pytest ps.tomli-w ps.textual ps.qrcode ]))
             pkgs.ruff
+            pkgs.git
           ];
         } ''
           export HOME="$TMPDIR/home"

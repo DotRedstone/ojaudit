@@ -147,13 +147,39 @@ def test_engine_is_order_independent_and_groups_by_problem_and_language():
 
 
 def test_crowd_template_is_excluded():
-    rows = analyze([sub("a", when=1000), sub("b", when=2000), sub("c", when=3000)])
-    assert rows and all(row["verdict"] == "排除" for row in rows)
-    rows = analyze(
-        [sub("a", when=1000), sub("b", when=2000), sub("c", when=3000)],
-        EngineConfig(enable_template=False),
-    )
-    assert all(row["verdict"] == "实锤" for row in rows)
+    crowd = [sub("a", when=1000), sub("b", when=2000), sub("c", when=3000)]
+    assert analyze(crowd) == []
+    rows = analyze(crowd, EngineConfig(enable_template=False))
+    assert rows and all(row["verdict"] == "实锤" for row in rows)
+
+
+def test_common_code_needs_a_rare_fragment_to_be_solid():
+    """简单题常见写法：L2 很高但没有任何稀有片段，不能定为实锤。"""
+    t = DEFAULT_THRESHOLDS
+    timeline = {"direction_valid": True, "delta_seconds": 60}
+    near = {"L2": 0.99, "L3": 0.99, "md5_ws_equal": False}
+    assert classify(near, {"score": 0.0}, timeline, t, 1) == "排除"
+    assert classify(near, {"score": 0.1}, timeline, t, 1) == "实锤"
+    identical = {"L2": 1.0, "L3": 1.0, "md5_ws_equal": True}
+    assert classify(identical, {"score": 0.0}, timeline, t, 2) == "实锤"
+
+
+def test_skip_check_never_hides_a_finding():
+    """could_flag 为 False 时，无论 L1/L2/L3 取何值，分级都必然是「排除」。"""
+    from ojaudit.plugins.detectors.classify import could_flag
+
+    rng = random.Random(3)
+    t = DEFAULT_THRESHOLDS
+    for _ in range(5000):
+        identical = rng.random() < 0.2
+        rare = {"score": rng.choice([0.0, 0.0, 0.05, 0.29, 0.3, 0.5, 1.0])}
+        timeline = rng.choice(
+            [{}, {"direction_valid": True, "delta_seconds": rng.choice([10, 5000])}]
+        )
+        if could_flag(identical, rare, timeline, t):
+            continue
+        scores = {"L2": rng.random(), "L3": rng.random(), "md5_ws_equal": identical}
+        assert classify(scores, rare, timeline, t, 1) == "排除"
 
 
 def _random_code(rng, lines=30):
@@ -161,16 +187,30 @@ def _random_code(rng, lines=30):
     return "\n".join(" ".join(rng.choice(words) for _ in range(10)) for _ in range(lines))
 
 
-def test_prefilter_matches_full_comparison_filtered_by_threshold():
-    """初筛只省去计算，不改变结果：等价于阈值 0 的全量结果再按指纹阈值过滤。"""
+def _mixed_sample(rng, people=40):
+    """公共模板、互相独立的代码，以及几对带改名的抄袭。"""
+    template = _random_code(rng)
+    sample = []
+    for i in range(people):
+        if i % 8 == 0:
+            code = template
+        elif i % 5 == 1:
+            source = sample[-1].code
+            code = source.replace("a", "b")
+        else:
+            code = _random_code(rng)
+        sample.append(sub(f"u{i:02d}", code, when=1000 * (i + 1)))
+    return sample
+
+
+def test_shortcuts_match_exhaustive_comparison():
+    """指纹初筛与「必然排除」跳过都只省计算：结果等于全部比对后按指纹阈值过滤。"""
     rng = random.Random(7)
-    base = _random_code(rng)
-    sample = [sub(f"u{i}", base if i % 3 == 0 else _random_code(rng)) for i in range(18)]
-    sample += [sub("copy", base.replace("i", "j"))]
-    full = analyze(sample, EngineConfig(threshold=0.0))
-    filtered = [row for row in full if row["similarity"] >= 0.5]
-    assert analyze(sample, EngineConfig(threshold=0.5)) == filtered
-    assert filtered
+    sample = _mixed_sample(rng)
+    full = analyze(sample, EngineConfig(threshold=0.0), exhaustive=True)
+    expected = [row for row in full if row["similarity"] >= 0.5]
+    assert analyze(sample, EngineConfig(threshold=0.5)) == expected
+    assert expected
 
 
 def test_large_contest_finishes_quickly():

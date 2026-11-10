@@ -100,7 +100,7 @@ def run_analysis(
     config, active = engine_config(settings if settings is not None else load_config(), threshold)
     hidden = tuple(HiddenPerson(**person) for person in store.list_hidden_people())
     submissions = exclude_hidden_submissions(store.submissions(platform, contest_id), hidden)
-    findings = tuple(row for row in analyze(submissions, config) if row["verdict"] != "排除")
+    findings = tuple(analyze(submissions, config))
     run_id = uuid.uuid4().hex
     plugin_set = "+".join(active)
     store.save_analysis(

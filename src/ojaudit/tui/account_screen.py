@@ -37,13 +37,14 @@ class UidDialog(ModalScreen[str | None]):
         Binding("h", "cancel", "取消"),
     ]
 
-
     def compose(self) -> ComposeResult:
         with Vertical(id="uid-dialog", classes="dialog-box"):
             yield Label("设置牛客 UID（仅接受数字）")
             yield Input(value=current_uid(), placeholder="牛客 UID", id="uid-value")
             with Horizontal():
-                yield Button(label("save", "保存", self.app.nerd_font), id="uid-save", variant="primary")
+                yield Button(
+                    label("save", "保存", self.app.nerd_font), id="uid-save", variant="primary"
+                )
                 yield Button(label("cancel", "取消", self.app.nerd_font), id="uid-cancel")
 
     def on_mount(self) -> None:

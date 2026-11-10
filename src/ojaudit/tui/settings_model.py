@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from ojaudit.core.config import data_dir, load_config, save_config
+from ojaudit.tui.editable_lists import EditableLists
 from ojaudit.core.plugins import PluginManifest, discover_manifests, validate_parameters
 from ojaudit.core.store import Store
 
@@ -68,6 +69,9 @@ STATIC_OPTIONS = (
     Option("人员名单", "people.platform", "管理者所属平台", "text", "nowcoder"),
     Option("人员名单", "people.manager_uids", "管理者 UID（逗号分隔）", "text", ""),
     Option("采集", "collect.phase", "采集阶段", "enum", "contest", ("contest", "after", "all")),
+    Option("采集", "collect.threads", "并发采集线程", "int", 4, minimum=1, maximum=16),
+    Option("采集", "collect.include_after", "采集补题提交", "bool", False),
+    Option("采集", "collect.auto_analyze", "采集后自动检测", "bool", False),
     Option("采集", "collect.retry_count", "失败重试次数", "int", 2, minimum=0, maximum=10),
     Option("采集", "collect.readonly", "只读采集", "bool", True),
     Option("检测", "detector.enabled", "启用检测", "bool", True),
@@ -212,6 +216,9 @@ class SettingsModel:
         self._original_managers = self._read_managers(platform)
         _set(self.saved, ("people", "manager_uids"), ",".join(sorted(self._original_managers)))
         self.values = {opt.key: _get(self.saved, opt.path, opt.default) for opt in self.options}
+        self.base_options = self.options
+        self.lists = EditableLists(self.saved, self.db_path, platform)
+        self.refresh_lists()
 
     def _read_managers(self, platform: str) -> set[str]:
         if not self.db_path.is_file():
@@ -227,15 +234,34 @@ class SettingsModel:
         finally:
             connection.close()
 
+    def refresh_lists(self) -> None:
+        # 仅增加数据行选项；不覆盖已有键位与焦点处理。
+        dynamic = self.lists.options(Option)
+        self.options = (*self.base_options, *dynamic)
+        for option in dynamic:
+            self.values[option.key] = self.lists.value(option.key)
+
+    def add_list_item(self, category: str, group: str = "whitelist") -> None:
+        self.lists.add(category, group)
+        self.refresh_lists()
+
+    def remove_list_item(self, option: Option) -> None:
+        self.lists.remove(option.key)
+        self.refresh_lists()
+
     def options_for(self, category: str) -> list[Option]:
         return [opt for opt in self.options if opt.category == category]
 
     def changed(self, option: Option) -> bool:
+        if self.lists.is_list_key(option.key):
+            return self.lists.dirty
         return self.values[option.key] != _get(self.saved, option.path, option.default)
 
     @property
     def dirty(self) -> bool:
-        return any(self.changed(option) for option in self.options if not option.readonly)
+        return self.lists.dirty or any(
+            self.changed(option) for option in self.base_options if not option.readonly
+        )
 
     def change(self, option: Option, value: Any) -> None:
         if option.readonly:
@@ -256,9 +282,19 @@ class SettingsModel:
         if option.kind in {"text", "str"} and not isinstance(value, str):
             raise TypeError("文本类型无效")
         self.values[option.key] = value
+        if self.lists.is_list_key(option.key):
+            self.lists.change(option.key, value)
 
     def restore(self, category: str) -> None:
-        for option in self.options_for(category):
+        if category == "比赛筛选":
+            self.lists.rules = {"whitelist": [], "blacklist": []}
+            self.refresh_lists()
+        elif category == "人员名单":
+            self.lists.managers = []
+            self.refresh_lists()
+        for option in self.base_options:
+            if option.category != category:
+                continue
             if not option.readonly:
                 self.values[option.key] = option.default
 
@@ -268,7 +304,10 @@ class SettingsModel:
             sorted(self._original_managers)
         )
         platform = self.values["people.platform"]
-        if manager_changed and platform != self._original_platform:
+        list_managers_changed = (
+            self.lists.signature()[1] != self.lists.baseline[1]
+        )
+        if (manager_changed or list_managers_changed) and platform != self._original_platform:
             raise ValueError("切换人员平台后请先保存平台，再单独编辑管理者名单")
         incoming = {
             uid.strip() for uid in self.values["people.manager_uids"].split(",") if uid.strip()
@@ -276,13 +315,27 @@ class SettingsModel:
         if manager_changed and not self.db_path.is_file():
             raise ValueError("本地数据库不存在，不能创建管理者名单")
 
-        for option in self.options:
+        for option in self.base_options:
             if option.readonly:
                 continue
             # 未更改的值不回写，避免破坏其他模块的原始配置结构。
             if not self.changed(option):
                 continue
             _set(config, option.path, self.values[option.key])
+        if self.lists.dirty:
+            self.lists.validate()
+            # 兼容旧版第一条正则输入框，同时保留其余列表规则。
+            for group in ("whitelist", "blacklist"):
+                key = f"contest_filter.{group}_pattern"
+                option = next(opt for opt in self.base_options if opt.key == key)
+                if self.changed(option):
+                    pattern = self.values[key]
+                    if self.lists.rules[group]:
+                        self.lists.rules[group][0]["pattern"] = pattern
+                    elif pattern:
+                        self.lists.rules[group].append({"pattern": pattern, "enabled": True})
+            self.lists.validate()
+            self.lists.write_config(config)
         for manifest in self.manifests:
             specs = {
                 key: self.values[f"plugins.{manifest.name}.params.{key}"]
@@ -297,9 +350,13 @@ class SettingsModel:
                     store.remove_hidden_person(platform, uid)
                 for uid in sorted(incoming - self._original_managers):
                     store.put_hidden_person(platform, uid)
+        if list_managers_changed:
+            self.lists.write_people(self.db_path, platform)
         save_config(config, self.path)
         self.saved = load_config(self.path)
         self._original_platform = platform
         self._original_managers = incoming if manager_changed else self._read_managers(platform)
         _set(self.saved, ("people", "manager_uids"), ",".join(sorted(self._original_managers)))
         self.values["people.manager_uids"] = ",".join(sorted(self._original_managers))
+        self.lists = EditableLists(self.saved, self.db_path, platform)
+        self.refresh_lists()

@@ -22,7 +22,6 @@ from textual.widgets import Button, Input, Label, ListView, Select, Static
 
 from ojaudit.core.reviews import REVIEW_STATUSES
 from ojaudit.tui.icons import breadcrumb, label
-from ojaudit.tui.interaction import Breadcrumb
 from ojaudit.tui.interaction import NavigateListView as NavigationListView
 from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.screens import ShellScreen
@@ -145,7 +144,7 @@ class ReviewListScreen(ShellScreen):
             )
             view.append(widget)
         if not self.rows:
-            view.append(ListItem(Label(label("list", "暂无数据", self.app.nerd_font))))
+            view.append(StatusRow(label("list", "暂无数据", self.app.nerd_font)))
         view.call_after_refresh(setattr, view, "index", min(previous, len(self.rows) - 1))
 
     def selected_row(self, index: int) -> dict[str, Any] | None:

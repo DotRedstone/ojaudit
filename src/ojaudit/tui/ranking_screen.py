@@ -16,10 +16,10 @@ from textual.widgets import ListView, Static
 from ojaudit.core.ranking import RankingOptions
 from ojaudit.tui.icons import label as label_icon
 from ojaudit.tui.interaction import NavigateListView
-from ojaudit.tui.screens import ShellScreen
-from ojaudit.tui.ui_components import StatusRow
 from ojaudit.tui.ranking_data import export_ranking, final_ranking, pending_warnings
 from ojaudit.tui.review_data import ReviewData
+from ojaudit.tui.screens import ShellScreen
+from ojaudit.tui.ui_components import StatusRow
 
 POLICIES = (
     ("作弊者", ("剔除", "标记"), ("drop", "mark")),

@@ -12,8 +12,8 @@ from ojaudit.tui.interaction import NavigateListView as NavigationListView
 from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.review_screens import EvidenceScreen, PersonScreen
 from ojaudit.tui.screens import ShellScreen
-from ojaudit.tui.workflow import PendingEntry, pending_entries
 from ojaudit.tui.ui_components import StatusRow
+from ojaudit.tui.workflow import PendingEntry, pending_entries
 
 
 class PendingScreen(ShellScreen):

@@ -27,8 +27,11 @@ def test_format_hides_boilerplate_and_normalizes_spacing():
     lines = format_lines(A, "cpp")
     assert lines == [
         "int main() {",
-        "    int n; cin >> n;",
-        "    for (int i = 0; i < n; i++) { cout << -i << endl; }",
+        "    int n;",
+        "    cin >> n;",
+        "    for (int i = 0; i < n; i++) {",
+        "        cout << -i << endl;",
+        "    }",
         "}",
     ]
     assert format_lines("import sys\nx=1\nif x>0:\n  print(x)", "python") == [
@@ -55,4 +58,52 @@ def test_align_pads_missing_lines():
         (1, None, "delete"),
         (2, 1, "equal"),
         (None, 2, "insert"),
+    ]
+
+
+def test_line_breaks_and_braces_do_not_matter():
+    """同一段逻辑的不同换行、大括号与花括号省略写法排版后完全相同。"""
+    one = 'int main(){int c=0;for(int i=0;i<n;i++){if(x==a[i]) c++;}printf("%d",c);return 0;}'
+    two = """int main()
+{
+    int c = 0;
+    for (int i = 0; i < n; i++)
+    {
+        if (x == a[i])
+            c++;
+    }
+    printf("%d", c);
+}"""
+    assert format_lines(one, "cpp") == format_lines(two, "cpp")
+    assert format_lines(one, "cpp")[3] == "        if (x == a[i])"
+
+
+def test_dangling_else_switch_and_inline_braces():
+    code = (
+        "int main(){if(a) if(b) x=1; else x=2; else x=3;"
+        "switch(n){case 1: y=1;break; case 2: {y=2;} break;}"
+        "int v[2]={1,2}; sort(v,v+2,[](int p,int q){return p>q;}); vector<vector<int>> g;}"
+    )
+    assert format_lines(code, "cpp") == [
+        "int main() {",
+        "    if (a)",
+        "        if (b)",
+        "            x = 1;",
+        "        else",
+        "            x = 2;",
+        "    else",
+        "        x = 3;",
+        "    switch (n) {",
+        "        case 1:",
+        "            y = 1;",
+        "            break;",
+        "        case 2: {",
+        "            y = 2;",
+        "            }",
+        "            break;",
+        "    }",
+        "    int v[2] = { 1, 2 };",
+        "    sort(v, v + 2, [](int p, int q) { return p > q; });",
+        "    vector<vector<int>> g;",
+        "}",
     ]

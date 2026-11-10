@@ -96,7 +96,13 @@ def _join(tokens: list[str], language: str) -> str:
         elif token == ">" and template:
             template -= 1
             space = False
-        elif token == ":" and language == "python":
+        elif token == ">>" and template >= 2:
+            template -= 2
+            space = False
+        elif token == ":" and (
+            language == "python"
+            or (parts and parts[0].strip() in {"case", "default"} and "?" not in tokens)
+        ):
             space = False
         parts.append((" " if space else "") + token)
         unary = token in {"-", "+", "*", "&", "!", "~", "++", "--"} and not _is_operand(prev)
@@ -124,8 +130,156 @@ def _split_comment(line: str, language: str) -> tuple[str, str]:
     return line, ""
 
 
+_C_TOKEN = re.compile(r"//[^\n]*|/\*[\s\S]*?\*/|" + _TOKEN.pattern)
+_CONTROL = {"if", "for", "while", "switch"}
+_INLINE_BRACE_AFTER = {"=", "(", ",", "return", "{", "[", "?", ":"}
+
+
+def _reflow_c(lines: list[str], language: str) -> list[str]:
+    """C / C++ / Java：把整段代码当作记号流重新排版，换行位置与原写法无关。
+
+    - 语句结束的 ; 后换行（for (...) 括号内的 ; 不换）；
+    - 代码块的 { 留在行尾并缩进，} 独占一行（} else、} while、}; 保持在同一行）；
+    - 不带大括号的 if / for / while / else / do 语句体放到下一行并多缩进一级；
+    - case / default 的冒号后换行；初始化列表与括号内的 lambda 保持在同一行；
+    - 预处理指令与注释保持原样各占一行。
+    """
+    items: list[str] = []
+    for line in lines:
+        if line.strip().startswith("#"):
+            items.append("\0" + line.strip())
+        else:
+            items.extend(_C_TOKEN.findall(line))
+    out: list[str] = []
+    current: list[str] = []
+    depth = 0
+    # 无大括号语句体：(开始时的块深度, 是否是 if 的语句体——可以接 else)
+    singles: list[tuple[int, bool]] = []
+    cases: set[int] = set()  # 正在 case 标签下的 switch 块深度
+    paren = 0
+    inline = 0  # 行内大括号（初始化列表、lambda）的嵌套层数
+    control_paren: list[int] = []  # 控制语句的 ( 所在括号层
+    control_kind: list[str] = []
+
+    def level() -> int:
+        return depth + len(singles) + (1 if depth in cases else 0)
+
+    def flush() -> None:
+        nonlocal current
+        if current:
+            indent = level()
+            if current[0] in {"case", "default"} and depth in cases:
+                indent -= 1  # case 标签比其下的语句少缩进一级
+            out.append("    " * indent + _join(current, language))
+            current = []
+
+    def end_singles(nxt: str) -> None:
+        """一条语句结束：结束对应的无大括号语句体；后面紧跟 else 时停在它所属的 if。"""
+        while singles and singles[-1][0] == depth:
+            _depth, is_if = singles.pop()
+            if is_if and nxt == "else":
+                break
+
+    for index, token in enumerate(items):
+        nxt = items[index + 1] if index + 1 < len(items) else ""
+        prev = current[-1] if current else (items[index - 1] if index else "")
+        if token.startswith("\0"):
+            flush()
+            out.append(token[1:])
+            continue
+        if token.startswith("//"):
+            current.append(token)
+            flush()
+            continue
+        if token.startswith("/*"):
+            alone = not current
+            current.append(token)
+            if alone:
+                flush()
+            continue
+        if token == "(":
+            paren += 1
+            if prev in _CONTROL and not inline:
+                control_paren.append(paren)
+                control_kind.append(prev)
+            current.append(token)
+            continue
+        if token == ")":
+            current.append(token)
+            closed_control = bool(control_paren) and control_paren[-1] == paren
+            paren = max(paren - 1, 0)
+            if closed_control:
+                control_paren.pop()
+                kind = control_kind.pop()
+                if nxt not in {"{", ";"}:
+                    flush()
+                    singles.append((depth, kind == "if"))
+            continue
+        if paren or inline:
+            if token == "{":
+                inline += 1
+            elif token == "}" and inline:
+                inline -= 1
+            current.append(token)
+            continue
+        if token == "{":
+            # 只有出现在表达式中间（= {…}、return {…}）时才是行内初始化列表。
+            if current and prev in _INLINE_BRACE_AFTER:
+                inline += 1
+                current.append(token)
+                continue
+            if not current and out and out[-1].rstrip().endswith(":"):
+                out[-1] += " {"  # case 标签后的代码块：case 2: {
+            else:
+                current.append(token)
+                flush()
+            depth += 1
+            continue
+        if token == "}":
+            flush()
+            cases.discard(depth)
+            depth = max(depth - 1, 0)
+            current.append(token)
+            if nxt not in {"else", "while", ";", ","}:
+                flush()
+                end_singles(nxt)
+            continue
+        if token in {"else", "do"}:
+            current.append(token)
+            if nxt not in {"{", "if"}:
+                flush()
+                singles.append((depth, False))
+            continue
+        if token == ";":
+            current.append(token)
+            flush()
+            end_singles(nxt)
+            continue
+        if token == ":" and current and current[0] in {"case", "default"} and "?" not in current:
+            current.append(token)
+            cases.add(depth)
+            flush()
+            continue
+        current.append(token)
+    flush()
+    return out
+
+
+def _drop_main_return(lines: list[str]) -> list[str]:
+    """忽略 main 函数末尾的 return 0;（有没有这一行不影响程序，属于写法习惯）。"""
+    result = list(lines)
+    for start, line in enumerate(result):
+        if re.match(r"^(int|signed)\s+main\s*\(.*\)\s*\{$", line):
+            for end in range(start + 1, len(result)):
+                if result[end] == "}":
+                    if end - 1 > start and result[end - 1].strip() == "return 0;":
+                        del result[end - 1]
+                    break
+    return result
+
+
 def prepare_lines(code: str, language: str, options: ViewOptions | None = None) -> list[str]:
-    """按开关处理代码：去注释、去样板、规范化格式；关闭规范化时保留原始空格与缩进。"""
+    """按开关处理代码：去注释、去样板、规范化格式；关闭规范化时保留原始空格、缩进与换行。"""
     options = options or ViewOptions()
     text = (code or "").expandtabs(4)
     if options.comments:
@@ -140,39 +294,27 @@ def prepare_lines(code: str, language: str, options: ViewOptions | None = None) 
         raw_lines = [line for line in raw_lines if line.strip()]
     if not options.normalize:
         return raw_lines
+    if language != "python":
+        result = _reflow_c(raw_lines, language)
+        if options.boilerplate and language == "cpp":
+            result = _drop_main_return(result)
+        return result
     result: list[str] = []
-    depth = 0
     indents: list[int] = [0]
-    in_block = False
     for raw in raw_lines:
         if not raw.strip():
             continue
-        stripped = raw.strip()
-        # 保留注释时，块注释原样放在当前缩进下，行尾注释接在格式化后的代码后。
-        if in_block or (language != "python" and stripped.startswith("/*")):
-            in_block = "*/" not in stripped or stripped.endswith("/*")
-            result.append("    " * depth + stripped)
-            continue
         code_part, comment = _split_comment(raw, language)
+        width = len(raw) - len(raw.lstrip())
         if not code_part.strip():
-            result.append("    " * depth + comment)
+            result.append(" " * width + comment)
             continue
+        while indents and width < indents[-1]:
+            indents.pop()
+        if width > indents[-1]:
+            indents.append(width)
         body = _join(_TOKEN.findall(code_part.strip()), language)
-        if language == "python":
-            width = len(raw) - len(raw.lstrip())
-            while indents and width < indents[-1]:
-                indents.pop()
-            if width > indents[-1]:
-                indents.append(width)
-            level = len(indents) - 1
-        else:
-            leading = len(body) - len(body.lstrip("}"))
-            level = max(depth - leading, 0)
-            depth = max(depth + body.count("{") - body.count("}"), 0)
-        if body == "{" and result and language != "python" and not comment:
-            result[-1] += " {"  # 统一大括号风格：单独一行的 { 并入上一行
-            continue
-        result.append("    " * level + body + (f"  {comment}" if comment else ""))
+        result.append("    " * (len(indents) - 1) + body + (f"  {comment}" if comment else ""))
     return result
 
 

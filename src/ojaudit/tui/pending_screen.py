@@ -24,9 +24,10 @@ from ojaudit.tui.workflow import PendingEntry, is_pending, review_entries
 class PendingScreen(TableScreen):
     """跨比赛的复核面板：待处理 / 已处理 / 全部；默认按人物对总嫌疑度排序。"""
 
+    PAGE_ICON = "pending"
     TITLE = "复核"
     PATH = "首页 › 待复核"
-    HINTS = (("↵", "打开"), ("f", "面板"), ("s", "排序"), ("/", "搜索"), ("esc", "返回"))
+    HINTS = (("↵", "打开"), ("f", "面板"), ("s", "排序"), ("/", "搜索"), ("←", "返回"))
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         *TableScreen.BINDINGS,
         ("f", "cycle_filter", "切换 待处理 / 已处理 / 全部"),

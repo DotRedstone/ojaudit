@@ -494,6 +494,14 @@ class Store:
                 (platform, contest_id, uid, mark, note, updated_at),
             )
 
+    def clear_person_mark(self, platform: str, contest_id: str, uid: str) -> None:
+        """撤销人员标记：此人回到「未标记」。"""
+        with self.transaction():
+            self.connection.execute(
+                "DELETE FROM person_marks WHERE platform=? AND contest_id=? AND uid=?",
+                (platform, contest_id, uid),
+            )
+
     def list_person_marks(self, platform: str, contest_id: str) -> list[dict[str, typing.Any]]:
         rows = self.connection.execute(
             """SELECT platform, contest_id, uid, mark, note, updated_at FROM person_marks
@@ -501,6 +509,24 @@ class Store:
             (platform, contest_id),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def clear_finding_review(
+        self,
+        platform: str,
+        contest_id: str,
+        uid_a: str,
+        uid_b: str,
+        problem_index: int,
+        language: str,
+    ) -> None:
+        """撤销线索复核：删除这场比赛中该线索键在所有分析轮次的复核，线索回到待复核。"""
+        left, right = sorted((uid_a, uid_b))
+        with self.transaction():
+            self.connection.execute(
+                """DELETE FROM finding_reviews WHERE platform=? AND contest_id=?
+                   AND uid_a=? AND uid_b=? AND problem_index=? AND language=?""",
+                (platform, contest_id, left, right, problem_index, language),
+            )
 
     def put_finding_review(
         self,

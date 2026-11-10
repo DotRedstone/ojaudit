@@ -139,9 +139,10 @@ class QrLoginScreen(Popup):
 
 
 class AccountScreen(ShellScreen):
+    PAGE_ICON = "login"
     TITLE = "账户与登录"
     PATH = "首页 › 账户"
-    HINTS = (("↵", "执行"), ("esc", "返回"))
+    HINTS = (("↵", "执行"), ("←", "返回"))
     OPTIONS = ("扫码登录", "设置牛客 UID", "粘贴 Cookie", "退出登录")
     ICON_KEYS = ("login", "settings", "save", "cancel")
 

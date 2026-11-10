@@ -16,12 +16,12 @@ from ojaudit.tui.app import AuditApp
 from ojaudit.tui.data import LocalContests
 from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.review_screens import (
-    ChoiceDialog,
     CodeScreen,
     EvidenceScreen,
     FindingsScreen,
     PeopleScreen,
     PersonScreen,
+    ReviewPopup,
 )
 from ojaudit.tui.screens import ContestListScreen, ContestOverviewScreen
 
@@ -117,24 +117,26 @@ def test_evidence_diff_review_auto_advance(tmp_path):
             assert first["uid_b"] == "fake-b"
             await pilot.press("tab")
             assert app.screen.diff_mode
-            await pilot.press("r")
+            await pilot.press("enter")
             await pilot.pause()
-            assert isinstance(app.screen, ChoiceDialog)
-            app.screen.select("已核查")
+            assert isinstance(app.screen, ReviewPopup)
+            assert app.screen._result()[0] == "cheater", "未复核时光标停在第一项"
+            app.screen.select("normal")
             app.screen.query_one("#note", Input).value = "已比对"
             app.screen.save()
             await pilot.pause()
             assert isinstance(app.screen, EvidenceScreen)
             assert app.screen.finding["uid_b"] == "fake-c"
             reviews = data.findings()
-            assert reviews[0]["status"] == "已核查"
+            assert reviews[0]["status"] == "无需跟进"
             assert reviews[0]["note"] == "已比对"
             assert reviews[1]["status"] == "待复核"
+            assert data.person("fake-a")["mark"] == "normal"
 
     asyncio.run(scenario())
 
 
-def test_mark_synchronizes_across_screens(tmp_path):
+def test_review_synchronizes_across_screens(tmp_path):
     local, data = fixture(tmp_path)
 
     async def scenario():
@@ -144,14 +146,15 @@ def test_mark_synchronizes_across_screens(tmp_path):
             await pilot.press("enter", "enter")
             await pilot.pause()
             assert isinstance(app.screen, EvidenceScreen)
-            await pilot.press("m")
+            await pilot.press("enter")
             await pilot.pause()
-            assert isinstance(app.screen, ChoiceDialog)
+            assert isinstance(app.screen, ReviewPopup)
             app.screen.select("suspect")
             app.screen.query_one("#note", Input).value = "人工复核"
             app.screen.save()
             await pilot.pause()
             assert data.person("fake-a")["mark"] == "suspect"
+            assert data.person("fake-b")["mark"] == "suspect", "存疑同时作用于双方"
             await pilot.press("escape", "escape")
             await pilot.pause()
             assert isinstance(app.screen, ContestOverviewScreen)
@@ -161,16 +164,18 @@ def test_mark_synchronizes_across_screens(tmp_path):
             assert isinstance(app.screen, PeopleScreen)
             row = app.screen.rows.index(next(r for r in app.screen.rows if r["uid"] == "fake-a"))
             assert "存疑" in "".join(str(cell) for cell in app.screen.cells(app.screen.rows[row]))
+            await pilot.press("right")
+            await pilot.pause()
+            assert isinstance(app.screen, PersonScreen)
             await pilot.press("enter")
             await pilot.pause()
-            assert isinstance(app.screen, PersonScreen)
-            await pilot.press("m")
-            await pilot.pause()
-            assert isinstance(app.screen, ChoiceDialog)
+            assert isinstance(app.screen, ReviewPopup)
             assert app.screen._result()[0] == "suspect"
-            await pilot.press("escape")
+            app.screen.select("clear")
+            app.screen.save()
             await pilot.pause()
             assert isinstance(app.screen, PersonScreen)
+            assert data.person("fake-a")["mark"] == "", "撤销复核后回到未标记"
 
     asyncio.run(scenario())
 
@@ -186,7 +191,7 @@ def test_history_and_people_problem_navigation(tmp_path):
             await pilot.press("l")
             await pilot.pause()
             assert isinstance(app.screen, PeopleScreen)
-            await pilot.press("enter", "enter", "enter")
+            await pilot.press("right", "right", "right")
             await pilot.pause()
             assert isinstance(app.screen, CodeScreen)
             assert app.screen.current["submission_id"] == "s1"

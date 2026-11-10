@@ -211,12 +211,16 @@ class MenuPopup(Popup):
         view = self.query_one("#popup-menu", ListView)
         for item, (name, value) in zip(view.children, self.options):
             text = Text("● " if value == self.current else "  ", style=colors.accent)
-            text.append(name, style=colors.fg)
+            text.append_text(self.option_text(name, value, colors))
             item.query_one(Label).update(text)
         values = [value for _, value in self.options]
         view.index = values.index(self.current) if self.current in values else 0
         view.styles.height = len(self.options)
         view.focus()
+
+    def option_text(self, name: str, value: str, colors: ui.Palette) -> Text:
+        """选项文字；子类可按取值着色。"""
+        return Text(name, style=colors.fg)
 
     def action_cursor_down(self) -> None:
         self.query_one("#popup-menu", ListView).action_cursor_down()

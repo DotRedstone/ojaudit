@@ -1,54 +1,41 @@
 """
 Module: TUI / ranking data
-Description: 从本地提交推导预览榜单并复用核心排名策略和导出插件。
+Description: 把 TUI 的只读比赛数据交给 core.ranking 推导、排名与导出，并汇总待处理提醒。
 Scope: TUI
-Notes:
-- 当前 schema 不含官方榜单；推导结果显式标注非官方。
-- 导出路径使用 XDG 数据目录并限制路径段，不访问网络。
+Notes: 推导规则只在 core.ranking 中实现，CLI 与 TUI 结果一致。
 """
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
-from ojaudit.core.config import data_dir
 from ojaudit.core.people import HiddenPerson
-from ojaudit.core.ranking import FinalRanking, RankingOptions, build_final_ranking
-from ojaudit.plugins.exporters.csv import export_csv
-from ojaudit.plugins.exporters.html import export_html
-from ojaudit.plugins.exporters.markdown import export_markdown
+from ojaudit.core.ranking import (
+    FinalRanking,
+    RankingOptions,
+    build_final_ranking,
+    default_export_path,
+    derive_rows,
+)
+from ojaudit.core.ranking import export_ranking as export_rows
 from ojaudit.tui.review_data import ReviewData
 
 
 def derived_rows(data: ReviewData) -> list[dict]:
-    people = data.people()
-    entries = data.submissions()
-    best: dict[tuple[str, int], tuple[float, int]] = {}
-    for item in entries:
-        key = (str(item["uid"]), int(item["problem_index"]))
-        score = float(item["score"])
-        time = int(item["submit_time"])
-        old = best.get(key)
-        if old is None or score > old[0] or (score == old[0] and time < old[1]):
-            best[key] = (score, time)
-    rows = []
-    for person in people:
-        uid = str(person["uid"])
-        records = [record for (person_uid, _), record in best.items() if person_uid == uid]
-        score = sum(record[0] for record in records)
-        last_time = max((record[1] for record in records), default=0)
-        rows.append(
-            {
-                "platform": data.contest.platform,
-                "uid": uid,
-                "name": person["name"],
-                "score": score,
-                "submit_time": last_time,
-            }
-        )
-    rows.sort(key=lambda row: (-row["score"], row["submit_time"], row["uid"]))
-    return [{**row, "rank": i} for i, row in enumerate(rows, 1)]
+    return derive_rows(
+        data.contest.platform,
+        ((str(p["uid"]), str(p["name"])) for p in data.people()),
+        (
+            (
+                str(s["uid"]),
+                int(s["problem_index"]),
+                float(s["score"]),
+                int(s["submit_time"]),
+                str(s["phase"]),
+            )
+            for s in data.submissions()
+        ),
+    )
 
 
 def final_ranking(data: ReviewData, policy: RankingOptions) -> FinalRanking:
@@ -75,23 +62,13 @@ def pending_warnings(data: ReviewData) -> tuple[str, ...]:
     return tuple(messages)
 
 
-def _safe_part(part: str) -> str:
-    if not re.fullmatch(r"[a-zA-Z0-9_-]+", part):
-        raise ValueError("导出路径的平台与比赛 ID 仅允许字母、数字、下划线和连字符")
-    return part
-
-
 def export_ranking(
     data: ReviewData, policy: RankingOptions, format_name: str, base_dir: str | Path | None = None
 ) -> Path:
-    exporters = {"md": export_markdown, "csv": export_csv, "html": export_html}
-    if format_name not in exporters:
-        raise ValueError("仅支持 md/csv/html")
-    rows = final_ranking(data, policy).rows
-    target = (
-        (Path(base_dir) if base_dir is not None else data_dir() / "exports")
-        / _safe_part(data.contest.platform)
-        / _safe_part(data.contest.contest_id)
+    destination = default_export_path(
+        data.contest.platform,
+        data.contest.contest_id,
+        format_name,
+        Path(base_dir) if base_dir is not None else None,
     )
-    destination = target / f"ranking.{format_name}"
-    return exporters[format_name](rows, destination)
+    return export_rows(final_ranking(data, policy), format_name, destination)

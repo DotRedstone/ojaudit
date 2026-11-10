@@ -81,3 +81,24 @@ def test_cheater_and_manager_mark_modes():
     assert result.rows[0]["person_mark"] == "cheater"
     assert result.rows[1]["person_mark"] == "manager"
     assert [r["rank"] for r in result.rows] == [1, 2]
+
+
+def test_derived_ranking_counts_only_contest_phase():
+    from ojaudit.core.ranking import derive_rows
+
+    rows = derive_rows(
+        "demo",
+        [("u1", "甲"), ("u2", "乙"), ("u3", "丙")],
+        [
+            ("u1", 0, 100, 10, "contest"),
+            ("u1", 0, 60, 5, "contest"),
+            ("u2", 0, 100, 20, "contest"),
+            ("u2", 1, 100, 99, "after"),
+            ("u3", 1, 100, 1, "before"),
+        ],
+    )
+    assert [(row["uid"], row["score"], row["rank"]) for row in rows] == [
+        ("u1", 100, 1),
+        ("u2", 100, 2),
+        ("u3", 0, 3),
+    ]

@@ -91,6 +91,10 @@ class AuditApp(App[None]):
             self.border_style = "round"
         self.syntax_choice = str(values.get("syntax_theme", "auto"))
         self.line_numbers = bool(values.get("line_numbers", True))
+        try:
+            self.max_pages = max(int(values.get("max_pages", 4)), 0)
+        except (TypeError, ValueError):
+            self.max_pages = 4
 
     def apply_appearance(self, values: dict[str, Any]) -> None:
         """设置页修改外观或配置文件变化时立即生效。"""

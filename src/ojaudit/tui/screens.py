@@ -109,25 +109,36 @@ class StackFrame(Static):
     """叠放的书页：每一层页面是一张带边框的纸，上层页面依次向右下错开压在下面，只露出
     标题边与左边线；当前页在最前，标题边上写页名与副标题。
 
+    层数超过「最多叠放层数」（设置 › 外观）时，最外面的几层合成一页，标题写成路径
+    「首页 › 比赛 › 选手」，点路径中任一段直接跳回那一层。
     整个外框由四个停靠的部件拼成（top / left / right / bottom），内容区不再另画边框。
-    点击露出的标题边或左边线直接翻回那一页。
     """
 
     def __init__(self, part: str, **kwargs: Any) -> None:
         super().__init__("", classes="frame", **kwargs)
         self.part = part
-        self.hover: int | None = None
+        self.hover: Any = None  # 鼠标悬停指向的页面
+        self.spans: list[tuple[int, int, Any]] = []  # 折叠页标题里各段路径的位置
 
     def pages(self) -> list[Any]:
         stack = [screen for screen in self.app.screen_stack if isinstance(screen, Chrome)]
         return stack[: stack.index(self.screen) + 1] if self.screen in stack else [self.screen]
 
-    def _color(self, index: int, colors: ui.Palette) -> str:
-        return colors.accent if index == self.hover else colors.line
+    def groups(self) -> list[list[Any]]:
+        """每一组画成一层；超出上限时最外面的几页合成第一组。"""
+        pages = self.pages()
+        limit = int(getattr(self.app, "max_pages", 0) or 0)
+        if limit < 2 or len(pages) <= limit:
+            return [[page] for page in pages]
+        folded = len(pages) - limit + 1
+        return [pages[:folded], *([page] for page in pages[folded:])]
+
+    def _color(self, group: list[Any], colors: ui.Palette) -> str:
+        return colors.accent if self.hover is not None and self.hover in group else colors.line
 
     def redraw(self) -> None:
-        pages = self.pages()
-        depth = len(pages)
+        groups = self.groups()
+        depth = len(groups)
         colors = ui.palette(self.app)
         # 停靠部件互相重叠，靠外边距让出位置：左右两条边线夹在标题边与底边之间。
         if self.part == "top":
@@ -139,21 +150,28 @@ class StackFrame(Static):
         width = max(self.screen.size.width, 10)
         text = Text(no_wrap=True)
         if self.part == "top":
-            for row, page in enumerate(pages):
+            self.spans = []
+            for row, group in enumerate(groups):
                 if row:
                     text.append("\n")
                 for column in range(row):
-                    text.append("│", style=self._color(column, colors))
-                color = self._color(row, colors)
+                    text.append("│", style=self._color(groups[column], colors))
+                color = self._color(group, colors)
                 text.append("╭─ ", style=color)
-                current = row == depth - 1
-                if current:
+                if row == depth - 1:
                     title = self.screen.heading()
                 else:
-                    title = Text(
-                        page.page_title(),
-                        style=colors.accent if row == self.hover else colors.muted,
-                    )
+                    title = Text()
+                    for index, page in enumerate(group):
+                        if index:
+                            title.append(" › ", style=colors.muted)
+                        start = row + 3 + title.cell_len
+                        title.append(
+                            page.page_title(),
+                            style=colors.accent if page is self.hover else colors.muted,
+                        )
+                        if len(group) > 1:
+                            self.spans.append((start, row + 3 + title.cell_len, page))
                 room = width - row - 5
                 title.truncate(max(room, 1), overflow="ellipsis")
                 text.append_text(title)
@@ -162,47 +180,51 @@ class StackFrame(Static):
         elif self.part == "left":
             rows = max(self.size.height, 1)
             line = Text(no_wrap=True)
-            for column in range(depth):
-                line.append("│", style=self._color(column, colors))
+            for group in groups:
+                line.append("│", style=self._color(group, colors))
             text = Text("\n").join([line] * rows)
         elif self.part == "right":
             text = Text("\n".join(["│"] * max(self.size.height, 1)), style=colors.line)
         else:
-            text.append("╰", style=self._color(0, colors))
-            for column in range(1, depth):
-                text.append("┴", style=self._color(column, colors))
+            for column, group in enumerate(groups):
+                text.append("╰" if column == 0 else "┴", style=self._color(group, colors))
             text.append("─" * max(width - depth - 1, 0) + "╯", style=colors.line)
         self.update(text)
 
-    def _index(self, event: events.MouseEvent) -> int | None:
-        depth = len(self.pages())
+    def _target(self, event: events.MouseEvent) -> Any:
+        """鼠标位置对应的页面；当前页（最后一层）不必翻，返回 None。"""
+        groups = self.groups()
         if self.part == "top":
-            index = min(event.y, event.x) if event.x < event.y else event.y
+            if event.y == 0 and len(groups[0]) > 1:
+                for start, end, page in self.spans:
+                    if start <= event.x < end:
+                        return page
+            index = min(event.y, event.x)
         elif self.part in ("left", "bottom"):
             index = event.x
         else:
             return None
-        # 当前页（最后一层）不必翻。
-        return index if 0 <= index < depth - 1 else None
+        if not 0 <= index < len(groups) - 1:
+            return None
+        return groups[index][-1]
 
-    def _set_hover(self, index: int | None) -> None:
-        if index != self.hover:
+    def _set_hover(self, page: Any) -> None:
+        if page is not self.hover:
             for part in self.screen.query(StackFrame):
-                part.hover = index
+                part.hover = page
                 part.redraw()
 
     def on_mouse_move(self, event: events.MouseMove) -> None:
-        self._set_hover(self._index(event))
+        self._set_hover(self._target(event))
 
     def on_leave(self, _event: events.Leave) -> None:
         self._set_hover(None)
 
     def on_click(self, event: events.Click) -> None:
-        index = self._index(event)
-        if index is None:
+        target = self._target(event)
+        if target is None:
             return
         event.stop()
-        target = self.pages()[index]
         while self.app.screen is not target and len(self.app.screen_stack) > 2:
             self.app.pop_screen()
 

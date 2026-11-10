@@ -237,6 +237,16 @@ STATIC_OPTIONS = (
         _syntax_themes(),
         description="auto：ANSI 主题与透明背景下用终端配色，其余用 monokai",
     ),
+    Option(
+        "外观",
+        "appearance.max_pages",
+        "最多叠放层数",
+        "int",
+        4,
+        minimum=0,
+        maximum=20,
+        description="页面层数超过这个数时，最外面的几层合成一页，标题写成路径；0 表示不折叠",
+    ),
     Option("外观", "appearance.line_numbers", "代码行号", "bool", True),
     Option("外观", "appearance.key_hints", "底部按键提示", "bool", True),
     Option(

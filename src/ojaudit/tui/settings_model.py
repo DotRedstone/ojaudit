@@ -142,12 +142,13 @@ def plugin_manifests(directory: str | Path | None = None) -> list[PluginManifest
     return discover_manifests(directory)
 
 
+# 按流水线顺序排列，设置页也按此顺序展示。
 STAGE_NAMES = {
     "builtin_pair": "指纹初筛",
     "nowcoder_similarity": "相似度",
-    "nowcoder_classify": "分级",
     "nowcoder_template": "公共模板识别",
     "nowcoder_timeline": "时间线",
+    "nowcoder_classify": "分级",
 }
 REQUIRED_STAGES = frozenset({"builtin_pair", "nowcoder_similarity", "nowcoder_classify"})
 
@@ -155,7 +156,11 @@ REQUIRED_STAGES = frozenset({"builtin_pair", "nowcoder_similarity", "nowcoder_cl
 def generated_options(manifests: list[PluginManifest]) -> tuple[Option, ...]:
     """检测阶段的开关与参数放在「检测」；「插件管理」只展示内置组件信息。"""
     options = list(STATIC_OPTIONS)
-    for manifest in manifests:
+    order = list(STAGE_NAMES)
+    ordered = sorted(
+        manifests, key=lambda m: (order.index(m.name) if m.name in order else len(order), m.name)
+    )
+    for manifest in ordered:
         plugin = manifest.name
         name = STAGE_NAMES.get(plugin, plugin)
         options.append(

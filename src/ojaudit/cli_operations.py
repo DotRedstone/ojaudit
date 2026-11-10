@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from ojaudit.core.config import config_dir, load_config
 from ojaudit.core.plugins import discover_manifests, parse_manifest
@@ -47,14 +48,30 @@ def nowcoder_source():
             "phase": "all"
             if collect.get("include_after", False) and collect.get("phase", "contest") == "contest"
             else collect.get("phase", "contest"),
-            "threads": collect.get("threads", 1),
+            "threads": collect.get("threads", 8),
             "retry_count": collect.get("retry_count", 2),
+            "timeout": collect.get("timeout", 20),
+            "rate_limit": collect.get("rate_limit", 0),
             "readonly": collect.get("readonly", True),
         }
     )
     if cookie_file().is_file():
         settings["cookie"] = cookie_file().read_text(encoding="utf-8").strip()
     return NowcoderSource(settings)
+
+
+def known_codes(
+    store: Any, platform: str, contest_id: str
+) -> dict[str, tuple[str, str, str, float]]:
+    """增量采集：本地已有源码的提交 {提交 ID: (代码, 语言, 结果, 得分)}；关闭增量时返回空。"""
+    collect = load_config().get("collect", {})
+    if isinstance(collect, dict) and not collect.get("incremental", True):
+        return {}
+    return {
+        s.submission_id: (s.code, s.language, s.verdict, s.score)
+        for s in store.submissions(platform, contest_id)
+        if s.code.strip()
+    }
 
 
 def plugin_registry() -> Path:

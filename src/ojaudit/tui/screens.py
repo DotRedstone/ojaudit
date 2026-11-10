@@ -272,7 +272,8 @@ class ShellScreen(Chrome, Screen):
         ("g", "first", "首项"),
         ("shift+g", "last", "末项"),
         ("l,right", "open", "进入下一层"),
-        ("enter,space", "activate", "打开 / 复核"),
+        ("enter", "activate", "打开 / 复核"),
+        ("space", "space", "打开 / 复核（多选页面为选中）"),
         ("slash", "search", "搜索"),
     ]
 
@@ -372,6 +373,10 @@ class ShellScreen(Chrome, Screen):
     def action_activate(self) -> None:
         """回车：默认与 → 相同（进入下一层）；可复核的页面改为复核。"""
         self.action_open()
+
+    def action_space(self) -> None:
+        """空格：默认同回车；支持多选的页面改为选中 / 取消选中。"""
+        self.action_activate()
 
     @on(NavigationListView.Activated)
     def activated(self, event: NavigationListView.Activated) -> None:

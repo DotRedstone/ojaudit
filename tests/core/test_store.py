@@ -7,6 +7,7 @@ Scope: Test
 import pytest
 
 from ojaudit.core.schema import (
+    SCHEMA_VERSION,
     Contest,
     Participant,
     Problem,
@@ -26,7 +27,7 @@ def test_store_migrates_and_persists_contest(tmp_path):
             ("demo", "c1"),
         ).fetchone()
         assert row["name"] == "合成训练赛"
-        assert store.execute("SELECT version FROM schema_version").fetchone()[0] == 2
+        assert store.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
 
 
 def _submission(sid, uid="u1", contest="c1", index=0):
@@ -96,6 +97,11 @@ def test_problem_index_and_language_normalization():
     assert language_bucket("PyPy3") == "python"
     assert language_bucket("JavaScript") == "other"
     assert language_bucket("Java 21") == "java"
+    for name in ("C", "C(gcc 10)", "C++（clang++18）", "C++(g++ 13)"):
+        assert language_bucket(name) == "cpp", name
+    for name in ("C#", "PHP", "Clojure"):
+        assert language_bucket(name) == "other", name
+    assert language_bucket("Python2") == language_bucket("pypy3") == "python"
 
 
 def test_accepted_verdicts():

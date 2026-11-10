@@ -8,7 +8,7 @@ Notes: 标准对象只描述数据，不包含平台会话或 I/O 行为。
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 Language = Literal["cpp", "python", "java", "other"]
 Phase = Literal["before", "contest", "after"]
 
@@ -69,9 +69,11 @@ def validate_submission(item: Submission) -> None:
 
 
 def language_bucket(value: str) -> Language:
-    """把平台语言名归入 cpp / python / java / other。"""
-    text = (value or "").lower()
-    if any(token in text for token in ("c++", "cpp", "g++", "clang")):
+    """把平台语言名归入 cpp / python / java / other；C 与 C++ 同桶比较。"""
+    text = (value or "").lower().strip()
+    if any(token in text for token in ("c++", "cpp", "g++", "clang", "gcc")):
+        return "cpp"
+    if text == "c" or text.startswith(("c(", "c（", "c ", "c99", "c11", "c17")):
         return "cpp"
     if "python" in text or "pypy" in text:
         return "python"

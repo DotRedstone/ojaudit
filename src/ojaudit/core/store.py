@@ -91,6 +91,17 @@ _MIGRATIONS = {
         PRIMARY KEY (platform, uid)
     );
     """,
+    # 复核记录直接归属比赛：旧库导入的复核没有对应的 analysis_runs，原先无法按比赛读取。
+    3: """
+    ALTER TABLE finding_reviews ADD COLUMN platform TEXT;
+    ALTER TABLE finding_reviews ADD COLUMN contest_id TEXT;
+    UPDATE finding_reviews SET
+        platform = (SELECT a.platform FROM analysis_runs a WHERE a.run_id = finding_reviews.run_id),
+        contest_id = (
+            SELECT a.contest_id FROM analysis_runs a WHERE a.run_id = finding_reviews.run_id
+        );
+    CREATE INDEX finding_reviews_contest ON finding_reviews(platform, contest_id);
+    """,
 }
 
 REVIEW_STATUSES = frozenset({"已核查", "无需跟进", "需进一步核实"})
@@ -453,12 +464,24 @@ class Store:
         updated_at: str = "",
         *,
         overwrite: bool = True,
+        platform: str | None = None,
+        contest_id: str | None = None,
     ) -> None:
-        """overwrite=False 时已有复核保持不变（用于导入历史记录）。"""
+        """未给出 platform/contest_id 时由 run_id 所属的分析轮次确定。
+
+        overwrite=False 时已有复核保持不变（用于导入历史记录）。
+        """
         if status not in REVIEW_STATUSES:
             raise ValueError("线索复核状态无效")
         if not all((run_id, uid_a, uid_b, language, updated_at)):
             raise ValueError("线索复核的归属键和更新时间不能为空")
+        if platform is None or contest_id is None:
+            row = self.connection.execute(
+                "SELECT platform, contest_id FROM analysis_runs WHERE run_id=?", (run_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"分析轮次不存在：{run_id}")
+            platform, contest_id = row["platform"], row["contest_id"]
         left, right = sorted((uid_a, uid_b))
         action = (
             "UPDATE SET status=excluded.status, note=excluded.note, updated_at=excluded.updated_at"
@@ -468,11 +491,33 @@ class Store:
         with self.transaction():
             self.connection.execute(
                 f"""INSERT INTO finding_reviews(
-                       run_id, uid_a, uid_b, problem_index, language, status, note, updated_at
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                       run_id, uid_a, uid_b, problem_index, language, status, note, updated_at,
+                       platform, contest_id
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(run_id, uid_a, uid_b, problem_index, language) DO {action}""",
-                (run_id, left, right, problem_index, language, status, note, updated_at),
+                (
+                    run_id,
+                    left,
+                    right,
+                    problem_index,
+                    language,
+                    status,
+                    note,
+                    updated_at,
+                    platform,
+                    contest_id,
+                ),
             )
+
+    def list_contest_reviews(self, platform: str, contest_id: str) -> list[dict[str, typing.Any]]:
+        """比赛内全部复核，最近更新的在前。"""
+        rows = self.connection.execute(
+            """SELECT run_id, uid_a, uid_b, problem_index, language, status, note, updated_at
+               FROM finding_reviews WHERE platform=? AND contest_id=?
+               ORDER BY updated_at DESC, run_id DESC""",
+            (platform, contest_id),
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def list_finding_reviews(self, run_id: str) -> list[dict[str, typing.Any]]:
         rows = self.connection.execute(

@@ -61,47 +61,83 @@ def plugin_registry() -> Path:
     return config_dir() / "plugins.json"
 
 
+# 只允许常见的仓库地址形式；拒绝 ext:: 等可执行命令的 git 传输协议。
+_ALLOWED_URL = re.compile(r"^(?:https://|ssh://|file://|git@[\w.-]+:|/|\./|\.\./)")
+# 禁止交互凭据提示、禁用危险协议、不跟随 hooks 与子模块。
+_GIT_ENV = {"GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "true", "GCM_INTERACTIVE": "never"}
+_GIT_SAFE = ["-c", "protocol.ext.allow=never", "-c", "core.hooksPath=/dev/null"]
+
+
+def _redact(url: str) -> str:
+    """登记中的来源地址去掉 https://user:token@ 形式的凭据。"""
+    return re.sub(r"^(https?://)[^/@]+@", r"\1", url)
+
+
+def _git(*argv: str, timeout: int) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            ["git", *_GIT_SAFE, *argv],
+            check=True,
+            timeout=timeout,
+            capture_output=True,
+            text=True,
+            env={**os.environ, **_GIT_ENV},
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("未找到 git，请先安装 git") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"git {argv[0]} 超时（{timeout} 秒）") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or "").strip().splitlines()
+        raise RuntimeError(f"git {argv[0]} 失败：{detail[-1] if detail else exc}") from exc
+
+
+def install_plugin(spec: str, registered: dict[str, dict[str, object]]) -> list[str]:
+    """检出固定 commit 并校验清单后登记为禁用；不执行仓库中的任何代码。"""
+    if not spec or "@" not in spec:
+        raise ValueError("install 需要 <git-url>@<commit-sha>")
+    url, rev = spec.rsplit("@", 1)
+    if not re.fullmatch(r"[0-9a-f]{7,40}", rev):
+        raise ValueError("必须固定 Git commit SHA（7–40 位小写十六进制）")
+    if not _ALLOWED_URL.match(url):
+        raise ValueError("仓库地址仅支持 https://、ssh://、git@host:、file:// 或本地路径")
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as directory:
+        _git("clone", "--quiet", "--no-checkout", "--", url, directory, timeout=120)
+        _git("-C", directory, "checkout", "--quiet", "--detach", rev, timeout=30)
+        head = _git("-C", directory, "rev-parse", "HEAD", timeout=10).stdout.strip()
+        if not head.startswith(rev):
+            raise ValueError(f"{rev} 不是 commit SHA（检出结果为 {head[:12]}）")
+        manifests = discover_manifests(directory)
+        root = Path(directory) / "plugin.toml"
+        if root.is_file():
+            manifests.append(parse_manifest(root.read_text(encoding="utf-8"), str(root)))
+        if not manifests:
+            raise ValueError("仓库未找到 plugin.toml")
+    names = []
+    for manifest in manifests:
+        registered[manifest.name] = {
+            "version": manifest.version,
+            "origin": f"{_redact(url)}@{head}",
+            "kind": manifest.kind,
+            "enabled": False,
+        }
+        names.append(manifest.name)
+    return names
+
+
 def plugins_command(action: str, spec: str | None = None) -> None:
     path = plugin_registry()
     registered = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     if action == "list":
         for name, item in sorted(registered.items()):
-            print(f"{name}\t{item['version']}\t{'enabled' if item['enabled'] else 'disabled'}")
+            state = "enabled" if item["enabled"] else "disabled"
+            print(f"{name}\t{item['version']}\t{state}\t{item.get('origin', '')}")
         return
     if action == "install":
-        if not spec or "@" not in spec:
-            raise ValueError("install 需要 <git-url>@<rev>")
-        url, rev = spec.rsplit("@", 1)
-        if not re.fullmatch(r"[0-9a-f]{7,40}", rev):
-            raise ValueError("必须固定 Git commit SHA")
-        # 安全地使用临时目录检查 manifest，不执行插件代码或安装依赖。
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as directory:
-            subprocess.run(
-                ["git", "clone", "--quiet", "--no-checkout", "--", url, directory],
-                check=True,
-                timeout=60,
-            )
-            subprocess.run(
-                ["git", "-C", directory, "checkout", "--detach", rev],
-                check=True,
-                timeout=30,
-                capture_output=True,
-            )
-            manifests = discover_manifests(directory)
-            root = Path(directory) / "plugin.toml"
-            if root.is_file():
-                manifests.append(parse_manifest(root.read_text(encoding="utf-8"), str(root)))
-            if not manifests:
-                raise ValueError("仓库未找到 plugin.toml")
-            for manifest in manifests:
-                registered[manifest.name] = {
-                    "version": manifest.version,
-                    "origin": f"{url}@{rev}",
-                    "kind": manifest.kind,
-                    "enabled": False,
-                }
+        # 任何失败都在写登记文件之前抛出，已有登记保持不变。
+        install_plugin(spec or "", registered)
     else:
         if not spec or spec not in registered:
             raise ValueError("插件尚未登记")

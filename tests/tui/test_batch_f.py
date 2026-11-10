@@ -14,7 +14,7 @@ import os
 from types import SimpleNamespace
 
 import pytest
-from textual.widgets import Static
+from textual.widgets import Label, ListView, Static
 
 from ojaudit.cli_operations import cookie_file
 from ojaudit.core.store import Store
@@ -155,7 +155,8 @@ def test_contest_list_description_and_ui(tmp_path, monkeypatch):
         async with app.run_test() as pilot:
             app.push_screen(ContestListScreen(local))
             await pilot.pause()
-            assert "H/M/L 1/0/0" in str(app.screen.query_one("#contests").render())
+            view = app.screen.query_one("#contests", ListView)
+            assert "H/M/L 1/0/0" in str(view.children[0].query_one(Label).render())
             app.push_screen(AccountScreen())
             await pilot.pause()
             assert "本机未保存 Cookie" in str(

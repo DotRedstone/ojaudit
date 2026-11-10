@@ -9,50 +9,38 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
+from rich.text import Text
 from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen, Screen
-from textual.widgets import Button, Footer, Input, Label, ListView, Static
+from textual.screen import Screen
+from textual.widgets import Button, Input, Label, ListView, Static
 
-from ojaudit.tui.icons import breadcrumb, label
-from ojaudit.tui.interaction import Breadcrumb
+from ojaudit.tui import ui
+from ojaudit.tui.icons import label
 from ojaudit.tui.interaction import NavigateListItem as ListItem
+from ojaudit.tui.screens import Chrome, Dialog, dialog_buttons
 from ojaudit.tui.settings_model import CATEGORIES, Option, SettingsModel
 
 
-class EditValue(ModalScreen[str | None]):
-    BINDINGS: ClassVar[list[Binding]] = [
-        Binding("escape", "cancel", "取消", priority=True),
-    ]
-
-    CSS = """
-    EditValue { align: center middle; }
-    #edit-dialog { width: 66; height: auto; padding: 1 2; border: round $accent;
-                   background: $panel; }
-    """
-
+class EditValue(Dialog):
     def __init__(self, option: Option, value: Any) -> None:
         super().__init__()
         self.option = option
         self.current = str(value)
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="edit-dialog"):
+        with Vertical(id="edit-dialog", classes="dialog"):
             yield Label(
-                label(
-                    "settings",
-                    f"{self.option.title} · 默认：{self.option.default}",
-                    self.app.nerd_font,
-                )
+                label("settings", self.option.title, self.app.nerd_font), classes="dialog-title"
+            )
+            yield Label(
+                f"{self.option.description or ''}  默认：{self.option.default}".strip(),
+                classes="dialog-hint",
             )
             yield Input(value=self.current, id="edit-value")
-            with Horizontal():
-                yield Button(
-                    label("save", "确定", self.app.nerd_font), id="accept", variant="primary"
-                )
-                yield Button(label("cancel", "取消", self.app.nerd_font), id="cancel")
+            yield dialog_buttons(("accept", "确定"), ("cancel", "取消"), self.app.nerd_font)
 
     def on_mount(self) -> None:
         self.query_one("#edit-value", Input).focus()
@@ -72,24 +60,21 @@ class EditValue(ModalScreen[str | None]):
             self.dismiss(None)
 
 
-class ConfirmLeave(ModalScreen[bool]):
+class ConfirmLeave(Dialog):
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("escape", "cancel", "继续编辑", priority=True),
         Binding("h", "cancel", "继续编辑"),
     ]
 
-    CSS = """
-    ConfirmLeave { align: center middle; }
-    #confirm { width: 58; height: auto; border: round $warning;
-               background: $panel; padding: 1 2; }
-    """
-
     def compose(self) -> ComposeResult:
-        with Vertical(id="confirm"):
-            yield Label(label("warning", "设置尚未保存，是否放弃更改？", self.app.nerd_font))
-            with Horizontal():
+        with Vertical(id="confirm", classes="dialog warning"):
+            yield Label(
+                label("warning", "放弃未保存的设置？", self.app.nerd_font), classes="dialog-title"
+            )
+            yield Label("离开后本次修改不会写入配置文件。", classes="dialog-hint")
+            with Horizontal(classes="dialog-buttons"):
                 yield Button(
-                    label("cancel", "放弃更改", self.app.nerd_font), id="discard", variant="warning"
+                    label("cancel", "放弃更改", self.app.nerd_font), id="discard", variant="error"
                 )
                 yield Button(
                     label("back", "继续编辑", self.app.nerd_font), id="stay", variant="primary"
@@ -106,7 +91,7 @@ class ConfirmLeave(ModalScreen[bool]):
         self.dismiss(event.button.id == "discard")
 
 
-class SettingsScreen(Screen):
+class SettingsScreen(Chrome, Screen):
     TITLE = "设置"
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("escape", "back", "返回"),
@@ -126,15 +111,15 @@ class SettingsScreen(Screen):
         ("tab", "focus_next", "切换窗格"),
         ("shift+tab", "focus_next", "切换窗格"),
     ]
-    CSS = """
-    #settings-columns { height: 1fr; margin: 1 2; }
-    #categories { width: 23; height: 1fr; border: round $panel; }
-    #options-pane { width: 1fr; height: 1fr; border: round $panel; }
-    #options-pane:focus-within, #categories:focus-within { border: round $accent; }
-    #settings-values { height: 1fr; }
-    #settings-detail { height: 5; padding: 0 1; }
-    #settings-help { height: 2; padding: 0 2; }
-    """
+    PATH = "首页 › 设置"
+    HINTS = (
+        ("tab", "切换窗格"),
+        ("↵", "编辑"),
+        ("space", "开关"),
+        ("a/b/d", "增删规则"),
+        ("ctrl+s", "保存"),
+        ("esc", "返回"),
+    )
 
     def __init__(self, model: SettingsModel | None = None) -> None:
         super().__init__()
@@ -144,28 +129,22 @@ class SettingsScreen(Screen):
         self.focus_values = False
 
     def compose(self) -> ComposeResult:
-        yield Breadcrumb(breadcrumb("首页 › 设置", self.app.nerd_font), id="breadcrumb")
-        with Horizontal(id="settings-columns"):
-            yield ListView(
-                *(
-                    ListItem(Label(label("settings", category, self.app.nerd_font)))
-                    for category in CATEGORIES
-                ),
-                id="categories",
-            )
-            with Vertical(id="options-pane"):
-                yield ListView(id="settings-values")
-                yield Static("", id="settings-detail")
-        yield Static(
-            label(
-                "help",
-                "↑↓/jk 移动 · Enter 编辑 · Space 开关 · a 新增 · b 黑名单 · d 删除 · Ctrl+S 保存",
-                self.app.nerd_font,
-            ),
-            id="settings-help",
-        )
-        yield Static("", id="status")
-        yield Footer()
+        yield from self.chrome_top()
+        with Vertical(id="body"):
+            yield Static("", id="heading")
+            with Horizontal(id="settings-columns"):
+                yield ListView(
+                    *(
+                        ListItem(Label(label("settings", category, self.app.nerd_font)))
+                        for category in CATEGORIES
+                    ),
+                    id="categories",
+                    classes="panel",
+                )
+                with Vertical(id="options-pane", classes="panel"):
+                    yield ListView(id="settings-values")
+                    yield Static("", id="settings-detail")
+        yield from self.chrome_bottom()
 
     def on_mount(self) -> None:
         self.query_one("#categories", ListView).border_title = label(
@@ -180,9 +159,17 @@ class SettingsScreen(Screen):
         self.status()
 
     def status(self) -> None:
-        self.query_one("#status", Static).update(
-            self.app.status_line("设置 · " + ("● 未保存" if self.model.dirty else "已保存"))
-        )
+        colors = ui.palette(self.app)
+        heading = Text("设置", style=f"bold {colors.fg}")
+        if self.model.dirty:
+            heading.append("   ● 有未保存的修改，ctrl+s 保存", style=colors.warn)
+        else:
+            heading.append("   所有修改已保存", style=colors.muted)
+        self.query_one("#heading", Static).update(heading)
+        self._update_status()
+
+    def on_resize(self, _event: object) -> None:
+        self.call_after_refresh(self.reload)
 
     def active_option(self) -> Option | None:
         view = self.query_one("#settings-values", ListView)
@@ -191,27 +178,38 @@ class SettingsScreen(Screen):
 
     def reload(self) -> None:
         self.rows = self.model.options_for(CATEGORIES[self.category_index])
+        self.query_one("#options-pane", Vertical).border_title = label(
+            "settings", CATEGORIES[self.category_index], self.app.nerd_font
+        )
         view = self.query_one("#settings-values", ListView)
         previous = view.index or 0
         view.clear()
+        colors = ui.palette(self.app)
+        width = max(self.query_one("#options-pane").size.width - 6, 40)
+        columns = (ui.Column("", 2), ui.Column(""), ui.Column("", min(36, width // 2)))
         for option in self.rows:
             value = self.model.values[option.key]
             if option.kind == "bool":
-                display = "[✓]" if value else "[ ]"
-            elif option.kind == "enum":
-                display = f"‹ {value} ›"
-            else:
-                display = str(value)
-            marker = "● " if self.model.changed(option) else "  "
-            view.append(
-                ListItem(
-                    Label(
-                        label("settings", f"{marker}{option.title}   {display}", self.app.nerd_font)
-                    )
+                display = (
+                    Text("● 开", style=f"bold {colors.ok}")
+                    if value
+                    else Text("○ 关", style=colors.muted)
                 )
-            )
+            elif option.kind == "enum":
+                display = Text("‹ ", style=colors.muted)
+                display.append(str(value), style=f"bold {colors.accent}")
+                display.append(" ›", style=colors.muted)
+            elif value in ("", None):
+                display = Text("未设置", style=colors.muted)
+            else:
+                display = Text(str(value), style=colors.fg)
+            if option.readonly:
+                display.stylize(colors.muted)
+            changed = Text("●", style=colors.warn) if self.model.changed(option) else ""
+            title = Text(option.title, style=colors.fg)
+            view.append(ListItem(Label(ui.table_row([changed, title, display], columns, width))))
         if not self.rows:
-            view.append(ListItem(Label("本类暂无可编辑项")))
+            view.append(ListItem(Label(Text("本类暂无可编辑项", style=colors.muted))))
         view.call_after_refresh(setattr, view, "index", min(previous, len(self.rows) - 1))
         self.detail()
         self.status()
@@ -219,10 +217,15 @@ class SettingsScreen(Screen):
     def detail(self) -> None:
         option = self.active_option()
         if option:
-            self.query_one("#settings-detail", Static).update(
-                f"默认：{option.default}\n类型：{option.kind} "
-                f"{'（只读）' if option.readonly else ''}\n{option.description}"
-            )
+            colors = ui.palette(self.app)
+            text = Text(option.title, style=f"bold {colors.fg}")
+            if option.readonly:
+                text.append("  只读", style=colors.muted)
+            if option.description:
+                text.append("\n" + option.description, style=colors.fg)
+            default = option.default if option.default not in ("", None) else "空"
+            text.append(f"\n默认值 {default}", style=colors.muted)
+            self.query_one("#settings-detail", Static).update(text)
 
     @on(ListView.Highlighted, "#categories")
     def category_changed(self, event: ListView.Highlighted) -> None:
@@ -372,23 +375,16 @@ class SettingsScreen(Screen):
             return
         self.reload()
         self.app.nerd_font = bool(self.model.values["appearance.nerd_font"])
-        self.query_one("#breadcrumb", Static).update(breadcrumb("首页 › 设置", self.app.nerd_font))
         self.query_one("#categories", ListView).border_title = label(
             "list", "分类", self.app.nerd_font
         )
         self.query_one("#options-pane", Vertical).border_title = label(
-            "settings", "选项", self.app.nerd_font
+            "settings", CATEGORIES[self.category_index], self.app.nerd_font
         )
         categories = self.query_one("#categories", ListView)
         for category, item in zip(CATEGORIES, categories.children):
             item.query_one(Label).update(label("settings", category, self.app.nerd_font))
-        self.query_one("#settings-help", Static).update(
-            label(
-                "help",
-                "↑↓/jk 移动 · ←/h 返回 · →/l/Enter 进入 · Space 切换 · Ctrl+S 保存",
-                self.app.nerd_font,
-            )
-        )
+        self.status()
         self.notify(label("success", "设置已保存", self.app.nerd_font))
 
     def action_back(self) -> None:

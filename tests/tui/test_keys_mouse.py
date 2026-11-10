@@ -70,7 +70,7 @@ def test_mouse_single_then_double_click(tmp_path):
             await pilot.press("enter")
             await pilot.pause()
             assert isinstance(app.screen, ContestOverviewScreen)
-            await pilot.click("#breadcrumb", offset=(2, 1))
+            await pilot.click("#breadcrumb", offset=(2, 0))
             await pilot.pause()
             assert isinstance(app.screen, ContestListScreen)
 

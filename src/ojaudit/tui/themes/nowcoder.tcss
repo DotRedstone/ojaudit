@@ -1,94 +1,182 @@
-/* Wallpaper-first, single-screen review styling based on nowcoder-collect.
-   Keep all navigation and key bindings in Python unchanged. */
+/* ojaudit 界面样式：唯一样式来源。
+   结构：顶栏(#breadcrumb) / 内容(#body) / 按键提示栏(#status)。
+   颜色全部使用主题变量，跟随壁纸或内置主题切换。 */
+
 Screen {
     layout: vertical;
     background: $background;
     color: $foreground;
 }
+
+/* ── 外壳 ───────────────────────────────────────── */
+
 #breadcrumb {
-    /* Single text line with a two-cell click target for mouse accessibility. */
-    height: 2;
-    padding: 0 2;
-    background: $background;
-    color: $text-muted;
-}
-#pane {
-    height: 1fr;
-    margin: 0 1;
+    height: 1;
     padding: 0 1;
-    border: round $panel;
-    background: $background;
-    border-title-color: $accent;
-    border-subtitle-color: $text-muted;
+    background: $surface;
 }
-#pane:focus-within { border: round $accent; }
-#breadcrumb:hover { background: $accent 20%; text-style: underline; }
-Footer { background: $panel; }
-#empty-guide { height: 4; padding: 1 2; color: $warning; }
-.pane-title { height: 2; padding: 0 1; text-style: bold; color: $accent; }
-#summary { height: 6; padding: 1 1; color: $foreground; }
-#home-overview {
-    height: 5;
-    padding: 1 1;
-    color: $foreground;
-    background: $background;
-    border-left: thick $accent;
-}
-ListView {
+#breadcrumb:hover { background: $surface-lighten-1; }
+
+#body {
     height: 1fr;
-    border: none;
-    background: $background;
-    scrollbar-size: 1 1;
+    padding: 1 2 0 2;
 }
-ListItem { padding: 0 2; color: $foreground; }
-ListItem.-highlight { background: $accent 20%; color: $foreground; text-style: none; }
-ListItem.-hovered { background: $accent 13%; }
-DataTable > .datatable--cursor { background: $accent 20%; text-style: none; }
-Input { height: 3; background: $surface; }
+
+#heading {
+    height: 2;
+    padding: 0 1;
+}
+
 #status {
     height: 1;
-    dock: bottom;
+    padding: 0 1;
     background: $surface;
-    color: $foreground;
 }
-#evidence-meta { height: 6; padding: 0 1; border-left: thick $accent; }
+
+.panel {
+    border: round $panel;
+    border-title-color: $text-muted;
+    border-title-style: bold;
+    border-subtitle-color: $text-muted;
+    background: $background;
+    padding: 0 1;
+}
+.panel:focus-within {
+    border: round $primary;
+    border-title-color: $primary;
+}
+
+/* ── 列表与表格 ─────────────────────────────────── */
+
+.thead {
+    height: 1;
+    padding: 0 2;
+    margin-bottom: 0;
+}
+
+ListView {
+    height: 1fr;
+    background: $background;
+    scrollbar-size-vertical: 1;
+    scrollbar-background: $background;
+    scrollbar-color: $panel;
+}
+ListView:focus { background-tint: $background 0%; }
+ListItem {
+    padding: 0 1;
+    background: $background;
+    color: $foreground;
+    border-left: blank;
+}
+ListItem.-hovered { background: $primary 8%; }
+ListView > ListItem.-highlight {
+    background: $panel 40%;
+    border-left: outer $panel;
+    text-style: none;
+}
+ListView:focus > ListItem.-highlight {
+    background: $primary 15%;
+    border-left: outer $primary;
+}
+
+#filters { height: 2; padding: 0 1; }
+
+/* ── 首页 ───────────────────────────────────────── */
+
+#hero { height: 3; padding: 0 1; }
+#home-columns { height: auto; max-height: 12; }
+#home-menu { width: 46; height: 10; }
+#home-menu ListView { height: auto; }
+#home-overview { width: 1fr; max-width: 64; height: 10; margin-left: 2; padding: 1 2; }
+#empty-guide { height: auto; margin-top: 1; padding: 0 1; color: $warning; }
+#home-recent { height: auto; max-height: 12; margin-top: 1; padding: 0 1; }
+
+/* ── 比赛总览 ───────────────────────────────────── */
+
+#cards { height: 4; margin-bottom: 1; }
+.card {
+    width: 1fr;
+    height: 4;
+    margin-right: 1;
+    padding: 0 2;
+    border: round $panel;
+    background: $background;
+}
+#card-3 { width: 2fr; }
+#card-4 { width: 2fr; margin-right: 0; }
+#summary { display: none; }
+#overview-options { height: auto; max-height: 8; }
+
+/* ── 证据与代码 ─────────────────────────────────── */
+
+#evidence-head { height: 3; padding: 0 1; }
+#evidence-meta {
+    height: auto;
+    max-height: 6;
+    margin-bottom: 1;
+    padding: 0 1;
+}
 #code-pair { height: 1fr; }
 .source-pane {
     width: 1fr;
     height: 1fr;
-    margin: 0 1;
-    padding: 0 1;
     border: round $panel;
+    border-title-color: $foreground;
+    border-title-style: bold;
+    border-subtitle-color: $text-muted;
     background: $background;
     scrollbar-size: 1 1;
-    overflow: auto;
+    scrollbar-background: $background;
+    scrollbar-color: $panel;
 }
-.source-pane:focus { border: round $accent; }
-#code-meta { height: 3; padding: 0 1; }
-#code-body { height: 1fr; overflow: auto; padding: 0 1; background: $background; }
-#settings-columns { min-height: 12; }
-#ranking-note { height: 2; padding: 0 1; color: $warning; }
-#categories, #options-pane, #ranking-options, #ranking-preview {
-    background: $background;
-    border: round $panel;
+#pane-left { margin-right: 1; }
+.source-pane:focus { border: round $primary; }
+#code-left, #code-right, #code-body { width: auto; }
+#code-meta { height: 2; padding: 0 1; }
+
+/* ── 设置 ───────────────────────────────────────── */
+
+#settings-columns { height: 1fr; }
+#categories { width: 22; height: 1fr; margin-right: 1; }
+#options-pane { width: 1fr; height: 1fr; }
+#settings-values { height: 1fr; }
+#settings-detail {
+    height: 5;
+    padding: 0 1;
+    border-top: solid $panel;
 }
-#categories:focus-within, #options-pane:focus-within,
-#ranking-options:focus-within, #ranking-preview:focus-within {
-    border: round $accent;
-}
-#entry-dialog, #dialog, #edit-dialog, #confirm {
-    background: $surface;
-    border: round $accent;
-}
-#style-help {
-    width: 86;
-    max-width: 95%;
+
+/* ── 排行榜 ─────────────────────────────────────── */
+
+#ranking-columns { height: 1fr; }
+#ranking-side { width: 44; margin-right: 1; }
+#ranking-options { height: 8; }
+#ranking-warning { height: auto; margin-top: 1; padding: 0 1; }
+#ranking-main { width: 1fr; height: 1fr; }
+#ranking-main .thead { padding: 0 2; }
+
+/* ── 账户 ───────────────────────────────────────── */
+
+#account-state { height: 7; max-width: 80; padding: 1 2; margin-bottom: 1; }
+
+/* ── 弹窗 ───────────────────────────────────────── */
+
+.dialog {
+    width: 64;
+    max-width: 90%;
     height: auto;
     padding: 1 2;
-    border: round $accent;
+    border: round $primary;
     background: $surface;
 }
-StyleHelpScreen {
-    align: center middle;
-    background: $background 70%;
-}
+.dialog.warning { border: round $warning; }
+.dialog-title { text-style: bold; color: $foreground; width: 100%; }
+.dialog-hint { color: $text-muted; width: 100%; margin-bottom: 1; }
+.dialog Input, .dialog Select { margin-bottom: 1; }
+.dialog-buttons { height: auto; align-horizontal: right; }
+.dialog-buttons Button { margin-left: 1; min-width: 10; }
+
+#style-help { width: 72; }
+
+Input { background: $background; border: tall $panel; }
+Input:focus { border: tall $primary; }

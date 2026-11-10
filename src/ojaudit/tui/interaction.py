@@ -51,7 +51,7 @@ class NavigateListItem(ListItem):
 
 
 class Breadcrumb(Static):
-    """单击当前面包屑回到上一级 Screen。"""
+    """顶栏：单击回到上一级 Screen。"""
 
     def on_click(self, event: events.Click) -> None:
         event.stop()
@@ -66,19 +66,18 @@ class SearchDialog(ModalScreen[str | None]):
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("escape", "cancel", "取消搜索", priority=True),
     ]
-    CSS = """
-    SearchDialog { align: center middle; }
-    #search-dialog { width: 64; height: auto; padding: 1 2;
-                     border: round $accent; background: $panel; }
+    DEFAULT_CSS = """
+    SearchDialog { align: center middle; background: $background 60%; }
     """
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="search-dialog"):
-            yield Label("搜索当前列表（输入部分文字）")
-            yield Input(placeholder="搜索…", id="search-text")
-            with Horizontal():
-                yield Button("查找", id="search-confirm", variant="primary")
+        with Vertical(id="search-dialog", classes="dialog"):
+            yield Label("搜索", classes="dialog-title")
+            yield Label("跳到第一条包含该文字的行", classes="dialog-hint")
+            yield Input(placeholder="输入关键字后回车", id="search-text")
+            with Horizontal(classes="dialog-buttons"):
                 yield Button("取消", id="search-cancel")
+                yield Button("查找", id="search-confirm", variant="primary")
 
     def on_mount(self) -> None:
         self.query_one("#search-text", Input).focus()

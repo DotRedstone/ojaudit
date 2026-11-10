@@ -9,12 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
-from datetime import datetime
 from pathlib import Path
 from threading import Event
 from typing import ClassVar
 
-from rich.text import Text
 from textual.app import App
 
 from ojaudit.core.config import data_dir, load_config
@@ -28,6 +26,7 @@ from ojaudit.tui.workflow import analyze_local, persist_bundle
 class AuditApp(App[None]):
     TITLE = "ojaudit · 审核工作台"
     CSS_PATH = "themes/nowcoder.tcss"
+    ENABLE_COMMAND_PALETTE = False
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("q", "context_quit", "返回/退出"),
         ("question_mark", "help", "帮助"),
@@ -183,19 +182,13 @@ class AuditApp(App[None]):
             self.theme = self._fallback_theme()
         self.theme = "wallpaper"
 
-    def status_line(self, current: str, contest_id: str = "—") -> Text:
-        colors = self.current_theme
-        mode_color = str(colors.success or "#a3be8c")
-        background = str(colors.background or "#1e1e2e")
-        bar = Text()
-        bar.append(" NORMAL ", style=f"bold {background} on {mode_color}")
-        bar.append(" " if self.nerd_font else "▌ ", style=mode_color)
-        bar.append(f"#{contest_id} › {current}", style="bold")
-        right = f"{self.theme_name} · {datetime.now():%H:%M}"
-        gap = max(1, self.size.width - bar.cell_len - Text(right).cell_len - 2)
-        bar.append(" " * gap)
-        bar.append(right, style="dim")
-        return bar
+    def watch_theme(self, _theme: str) -> None:
+        # 文本颜色在渲染时取自主题，主题变化后需要重绘当前页。
+        if not self.screen_stack:
+            return
+        redraw = getattr(self.screen, "on_layout_change", None)
+        if callable(redraw):
+            self.call_after_refresh(redraw)
 
     def action_cycle_theme(self) -> None:
         index = self.THEMES.index(self.theme_name) if self.theme_name in self.THEMES else 0

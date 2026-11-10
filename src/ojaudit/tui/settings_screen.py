@@ -154,7 +154,11 @@ class SettingsScreen(Screen):
                 yield ListView(id="settings-values")
                 yield Static("", id="settings-detail")
         yield Static(
-            label("help", "↑↓/jk 移动 · ←/h 返回 · →/l/Enter 进入 · Space 切换 · Ctrl+S 保存", self.app.nerd_font),
+            label(
+                "help",
+                "↑↓/jk 移动 · ←/h 返回 · →/l/Enter 进入 · Space 切换 · Ctrl+S 保存",
+                self.app.nerd_font,
+            ),
             id="settings-help",
         )
         yield Static("", id="status")

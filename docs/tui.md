@@ -83,7 +83,7 @@
 - 配置读写复用 `core.config`，保留无关 TOML 键；不在配置中保存 Cookie，账户类只记录环境变量名。
 - 比赛筛选规则按顺序保存，黑名单优先，白名单为空时放行。管理者按平台写入 `hidden_people`；停用的条目保存在 `[people].manager_entries` 以便重新启用。
 - 采集配置 `collect.phase/threads/include_after/auto_analyze/retry_count/readonly` 由 CLI `collect` 读取；线程数 1–16，重试 0–10，只允许只读 GET 采集。
-- 检测插件参数按清单的 bool/enum/int/float/str 与 min/max 生成控件并校验。插件启用状态目前仅写入设置，不代表后端已按插件加载执行。
+- 「检测」按各阶段清单的 bool/enum/int/float/str 与 min/max 生成控件并校验，保存后下一次分析生效；指纹、相似度、分级为必需阶段，只读。「插件管理」只展示内置组件信息，第三方插件通过 `ojaudit plugins install` 登记，不执行代码。
 
 ## 排行榜
 

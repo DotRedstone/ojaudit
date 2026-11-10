@@ -1,36 +1,51 @@
-# 检测算法与迁移边界
+# 检测
 
-阶段 3 将 nowcoder-collect 的确定性规则迁入内置 detector。当前已迁移核心 pair 分析最小实现，入口为 `ojaudit.plugins.detectors.nowcoder.analyze`。
+检测只产生**人工复核线索**，不构成违规认定。所有阶段确定性、不联网：同一数据库多次分析结果逐字节一致。
 
-## 已迁移
+## 流程
 
-- L1 原文、L2 去空白、L3 标识符 alpha-renaming 相似度。
-- 基于不同 UID 计数的稀有 n-gram。
-- 同题同语言分组、每人代表提交选择。
-- AC 时间线、失败类型、方向有效性。
-- 人群相同代码计数与确定性分级。
+入口为 `ojaudit.core.analysis.run_analysis()`（CLI `ojaudit analyze` 与 TUI 共用），检测本身在 `ojaudit.plugins.detectors.engine.analyze()`：
 
-## 兼容与差异
+1. 读取比赛提交，排除全局管理者名单中的人员。
+2. 按「题目 + 语言」分组；每人取一份代表提交：最高分 → 最长代码 → 最早提交。
+3. **指纹初筛**（`fingerprint.py`）：去注释、去空白、字符串归一后做 Winnowing 指纹，计算每对选手的 Jaccard 相似度。低于阈值的选手对不会成为线索，直接跳过后续计算。
+4. 对候选对做精细比对：
+   - `similarity.py`：L1 原文、L2 去空白、L3 词法归一（`tokens.py`：标识符按首次出现重命名，数字/字符串归一）三种 `difflib` 相似度；去空白后是否完全一致；稀有 n-gram（最多被 `rare_threshold` 人使用的片段）共享度。
+   - `template.py`：去空白后与多少人完全相同（同码人数）。
+   - `timeline.py`：谁先通过、通过时间差、后者首次提交是否在前者通过之后（方向有效）、后者通过前的失败次数与类型。
+5. `classify.py` 按规则表分级；「排除」不写入数据库。
 
-- 输入使用核心 `Submission` 标准对象；不读取旧 SQLite 表，也不访问 Nowcoder 网络或凭据。
-- 结果为排序稳定的 Python 字典列表；暂不提供旧版 JSON meta 包装和 CLI 命令。
-- 迁移测试仅使用合成提交。真实比赛数据回归需在授权且本地隔离的数据环境运行，不纳入 CI。
-- L3 当前保留内置关键字集合；后续可在独立 PR 扩充语言词表与边界测试。
+第 3 步只省去计算、不改变结果：等价于对所有选手对做完整比对后再按指纹阈值过滤（`tests/plugins/test_detectors.py` 有等价性测试）。单题 150 人的比赛从约 25 秒降到 0.2 秒。
 
-## 第三阶段内置检测器
+## 分级规则
 
-新增可独立组合的 pair、single、classifier：pair 使用 Winnowing 指纹与 Jaccard，single 输出代码规模与注释比例，classifier 将相似度映射为可配置的解释等级。三者均按稳定键排序，阈值显式配置，不联网。所有结果均为人工复核线索，不是违规认定。
+| 条件（按顺序） | 等级 |
+| --- | --- |
+| 去空白后完全一致，且同码人数 ≥ `crowd_threshold` | 排除（公共模板） |
+| 完全一致或 L2 ≥ `solid_l2`，且方向有效、通过时间差 < `solid_delta_seconds` | 实锤 |
+| 完全一致（时间线不满足上一条） | 中偏强 |
+| 稀有片段共享度 ≥ `mid_strong_rare` 且 L3 ≥ `mid_strong_l3` | 中偏强 |
+| L3 ≥ `suspicious_l3` 且稀有片段共享度 ≥ `suspicious_rare` | 存疑 |
+| 其他 | 排除 |
 
-## 原始五个算法模块的迁移映射
+规则与旧 nowcoder-collect 检测器一致，旧版合成向量保留在测试中。
 
-原仓库 DotRedstone/nowcoder-collect 的 detector/ 中，preprocess.py 是数据读取与分组预处理，不计入五个算法插件；五个算法模块逐项映射如下：
+## 参数
 
-| 原始模块 | 新实现文件 | 插件清单 | 迁移职责 |
+参数在「设置 → 检测」中编辑，保存在配置 `[plugins.<名称>]`；由各阶段的 `plugin.toml` 声明类型与范围，并在分析时校验。配置里已废弃的参数键会被忽略。优先级：`ojaudit analyze --threshold` > 配置 > 默认值。
+
+| 阶段 | 配置名 | 参数 | 默认值 |
 | --- | --- | --- | --- |
-| detectors/normalize.py | plugins/detectors/normalize.py | plugins/detectors/normalize/plugin.toml | L1/L2/L3 归一化 |
-| detectors/similarity.py | plugins/detectors/similarity.py | plugins/detectors/similarity/plugin.toml | difflib 三口径、稀有 n-gram |
-| detectors/template.py | plugins/detectors/template.py | plugins/detectors/template/plugin.toml | 高频片段占比、人群模板 |
-| detectors/timeline.py | plugins/detectors/timeline.py | plugins/detectors/timeline/plugin.toml | AC 顺序、失败序列、方向有效性 |
-| detectors/classify.py | plugins/detectors/classify.py | plugins/detectors/classify/plugin.toml | 实锤/中偏强/存疑/排除规则 |
+| 指纹初筛 | `builtin_pair` | `threshold`, `k`, `window` | 0.5, 5, 4 |
+| 相似度 | `nowcoder_similarity` | `ngram_size`, `rare_threshold` | 5, 3 |
+| 分级 | `nowcoder_classify` | `solid_l2`, `solid_delta_seconds` | 0.98, 1800 |
+| | | `mid_strong_rare`, `mid_strong_l3` | 0.5, 0.85 |
+| | | `suspicious_l3`, `suspicious_rare`, `crowd_threshold` | 0.8, 0.3, 3 |
+| 模板 | `nowcoder_template` | 无（只能开关） | — |
+| 时间线 | `nowcoder_timeline` | 无（只能开关） | — |
 
-综合入口 plugins/detectors/nowcoder.py 保留原检测结果的编排与兼容输出；五个独立模块暴露可单独测试的算法入口。清单中的 module 字段用于标识实现模块，插件发现仍与执行分离。
+前三个阶段必需，设置页中不可关闭，配置里的 `enabled = false` 对它们无效；模板与时间线可关闭：关闭模板后同码人数不参与排除，关闭时间线后不会出现「实锤」。
+
+## 写入的数据
+
+每次分析新建一条 `analysis_runs`，线索写入 `findings`：`verdict_level` 为分级，`scores` 含 `similarity`、`L1`、`L2`、`L3`、`md5_ws_equal`、`rare_score`、`template_crowd`、`timeline`，`reasons` 为可读理由列表。人工复核按线索键（双方 UID、题号、语言）跨轮次沿用，见 [数据模型](data-model.md)。

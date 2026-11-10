@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ojaudit.cli import _analyze
+from ojaudit.core.analysis import run_analysis
 from ojaudit.core.ingest import import_bundle
 from ojaudit.core.schema import Contest
 from ojaudit.core.store import Store
@@ -45,6 +45,6 @@ def persist_bundle(db_path: str | Path, bundle: Any) -> Contest:
 
 
 def analyze_local(db_path: str | Path, contest: Contest) -> str:
-    """复用 CLI 同一检测配置与持久化路径。"""
+    """与 CLI 共用 core.analysis 的配置与持久化。"""
     with Store(db_path) as store:
-        return _analyze(store, contest.platform, contest.contest_id, 0.5)
+        return run_analysis(store, contest.platform, contest.contest_id, created_from="tui").run_id

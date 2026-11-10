@@ -2,7 +2,7 @@ name = "nowcoder_timeline"
 kind = "detector.pair"
 version = "1.0.0"
 api_version = 1
-description = "牛客旧检测器提交时间线与方向有效性"
+description = "提交时间线：通过先后、时间差、失败次数与方向有效性"
 languages = ["cpp", "python", "java"]
 module = "ojaudit.plugins.detectors.timeline"
 

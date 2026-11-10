@@ -6,11 +6,10 @@ Notes: 不使用真实用户或比赛数据。
 """
 
 import sqlite3
-from types import SimpleNamespace
 
-from ojaudit.core.pipeline import run_analysis
+from ojaudit.core.analysis import run_analysis
 from ojaudit.core.reviews import annotate_review_staleness
-from ojaudit.core.schema import SCHEMA_VERSION
+from ojaudit.core.schema import SCHEMA_VERSION, Contest, Submission
 from ojaudit.core.store import _MIGRATIONS, Store
 
 
@@ -46,44 +45,29 @@ def test_v1_database_upgrades_to_v2_without_losing_existing_data(tmp_path):
 
 
 def test_reanalysis_keeps_manual_records_and_marks_disappeared_findings_stale(tmp_path):
-    class Source:
-        def fetch_contest(self, session, contest_id):
-            return SimpleNamespace(contest=contest_id, findings=session)
+    code = "int main(){int value=1;return value+1;}"
 
-    class Detector:
-        name = "synthetic-detector"
+    def submission(sid, uid, text, when):
+        return Submission("synthetic", "c1", sid, uid, 0, "cpp", "AC", 100, when, "contest", text)
 
-        def analyze(self, bundle, parameters):
-            return tuple(bundle.findings)
-
-    old_finding = {"uid_a": "u1", "uid_b": "u2", "problem_index": 0, "language": "cpp"}
-    new_finding = {"uid_a": "u3", "uid_b": "u4", "problem_index": 0, "language": "cpp"}
     path = tmp_path / "reanalyze.sqlite"
     with Store(path) as store:
-        store.put_contest("synthetic", "c1", "合成训练赛")
-        first = run_analysis(Source(), [(Detector(), {})], [old_finding], "c1")
-        assert first.outputs[0] == (old_finding,)
-        store.execute(
-            """INSERT INTO analysis_runs(run_id, platform, contest_id, plugin_set,
-               created_from, created_at) VALUES (?, ?, ?, ?, ?, ?)""",
-            ("run-1", "synthetic", "c1", "synthetic-detector", "fixture", "2026-01-01"),
+        store.import_contest(
+            Contest("synthetic", "c1", "合成训练赛"),
+            submissions=[submission("s1", "u1", code, 1000), submission("s2", "u2", code, 2000)],
         )
+        first = run_analysis(store, "synthetic", "c1", settings={})
+        assert [row["pair"] for row in first.findings] == [["u1", "u2"]]
         store.put_finding_review(
-            "run-1", "u1", "u2", 0, "cpp", "需进一步核实", "保留的线索备注", "2026-01-01"
+            first.run_id, "u1", "u2", 0, "cpp", "需进一步核实", "保留的线索备注", "2026-01-01"
         )
         store.put_person_mark("synthetic", "c1", "u1", "suspect", "人工标记", "2026-01-01")
-        second = run_analysis(Source(), [(Detector(), {})], [new_finding], "c1")
-        assert second.outputs[0] == (new_finding,)
-        store.execute(
-            """INSERT INTO analysis_runs(run_id, platform, contest_id, plugin_set,
-               created_from, created_at) VALUES (?, ?, ?, ?, ?, ?)""",
-            ("run-2", "synthetic", "c1", "synthetic-detector", "fixture", "2026-01-02"),
-        )
-        store.connection.commit()
+        store.put_submissions([submission("s2", "u2", "print('完全不同的代码')", 2000)])
+        second = run_analysis(store, "synthetic", "c1", settings={})
+        assert second.findings == ()
     with Store(path) as store:
         assert store.execute("SELECT count(*) FROM analysis_runs").fetchone()[0] == 2
         assert store.list_person_marks("synthetic", "c1")[0]["note"] == "人工标记"
-        old_reviews = store.list_finding_reviews("run-1")
-        assert len(old_reviews) == 1
+        old_reviews = store.list_finding_reviews(first.run_id)
         assert old_reviews[0]["note"] == "保留的线索备注"
-        assert annotate_review_staleness(old_reviews, second.outputs[0])[0]["is_stale"]
+        assert annotate_review_staleness(old_reviews, [])[0]["is_stale"]

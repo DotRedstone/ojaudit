@@ -94,19 +94,4 @@ def export_ranking(
         / _safe_part(data.contest.contest_id)
     )
     destination = target / f"ranking.{format_name}"
-    # 原有导出器面向证据列。此处保留核心排序结果并映射至现有列，避免修改插件。
-    adapted = [
-        {
-            "uid": row["uid"],
-            "problem": f"排名 {row['rank']}",
-            "language": "",
-            "pair": "",
-            "similarity": row.get("score", ""),
-            "level": row.get("person_mark", "正常"),
-            "reason": f"推导榜单（非官方）· {row.get('name', '')}",
-            "scores": row.get("score", ""),
-            "mark": row.get("person_mark", "正常"),
-        }
-        for row in rows
-    ]
-    return exporters[format_name](adapted, destination)
+    return exporters[format_name](rows, destination)

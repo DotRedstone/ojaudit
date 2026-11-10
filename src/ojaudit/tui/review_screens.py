@@ -194,8 +194,15 @@ class EvidenceScreen(ShellScreen):
         finding = self.finding
         reason = finding["reasons"]
         scores = finding["scores"]
+
+        def score_label(key: str, value: object) -> str:
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 1:
+                filled = round(float(value) * 10)
+                return f"{key}: {'█' * filled}{'░' * (10 - filled)} {value}"
+            return f"{key}: {value}"
+
         score_text = (
-            " · ".join(f"{k}: {v}" for k, v in scores.items())
+            " · ".join(score_label(k, v) for k, v in scores.items())
             if isinstance(scores, dict)
             else str(scores)
         )

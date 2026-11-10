@@ -1,6 +1,6 @@
-# TUI（第 6—8 阶段实现）
+# TUI（第 6—9 阶段实现）
 
-入口为 `python -m ojaudit.tui.app`，不修改现有 CLI；待第 5 阶段入口合并后再对接默认命令。使用 Textual 的一层一屏 Screen 栈，采集与检测数据只读自本地 SQLite，不访问 OJ。人工线索复核和人员标记仅通过核心 Store 写入专用表，不会覆盖分析结果。
+入口为 `ojaudit`（无子命令）或 `python -m ojaudit.tui.app`。使用 Textual 的一层一屏 Screen 栈，采集与检测数据只读自本地 SQLite，不访问 OJ。人工线索复核和人员标记仅通过核心 Store 写入专用表，不会覆盖分析结果。
 
 ## 导航
 
@@ -14,7 +14,7 @@
         └── 排行榜（本地派生预览、人员策略、md/csv/html 导出）
 ```
 
-首页的打开比赛 ID、账户/登录入口暂为提示；首页「设置」和总览「排行榜」现已接入。列表筛选直接复用 [核心筛选规则](data-model.md)，黑名单优先；切换全部模式会标注“规则外”，不修改配置。
+首页「打开比赛 ID」通过本地库查找并直达总览，找不到时提示先执行 `ojaudit collect <ID>`；不会自动联网采集。「账户 / 登录」使用隐藏输入框接收 Cookie，通过 CLI 共享的 `save_cookie` 写入权限 0600 的本地文件；不会在 UI 显示 Cookie。首页「设置」和总览「排行榜」均已接入。列表筛选直接复用 [核心筛选规则](data-model.md)，黑名单优先；切换全部模式会标注“规则外”，不修改配置。
 
 ## 按键与视觉
 
@@ -25,12 +25,12 @@
 - 选手详情和代码页的 `m` 同样修改人员级标记，返回选手列表时读取最新标记；管理者显示“管理”且禁止打标。
 - 题目详情 `s`：按 AC 时间、姓名、线索数量循环排序；代码页 `n/p`：在当前代码集合内前后移动，`[` / `]`：同一选手同一题目的历史提交前后移动。
 - 已失效复核线索显示“已失效”，只能查看，不能写入新的复核状态。
-- 顶部显示面包屑；主窗格为圆角边框与边框标题，聚焦时边框高亮；底部状态栏显示模式、当前对象、任务状态（本阶段固定空闲）和主题标签。
-- 语义颜色定义在 `src/ojaudit/tui/palette.py`。任务进度订阅与更多主题仍留给后续阶段；证据等级使用 palette 语义色。
+- 顶部显示面包屑；主窗格为圆角边框与边框标题，聚焦时边框高亮；底部状态栏显示模式、当前对象、任务状态（默认空闲）和主题标签。
+- 语义颜色定义在 `src/ojaudit/tui/palette.py`。后台采集任务进度订阅仍未实现；证据等级使用 palette 语义色。
 
 ## 本地数据与验证
 
-默认只读 `~/.local/share/ojaudit/ojaudit.db`（可通过 `XDG_DATA_HOME` 更改根目录）；数据库不存在时显示空列表，不创建库。可通过 `AuditApp(LocalContests(db_path, contest_filter))` 注入数据源用于测试。用户筛选规则从 `~/.config/ojaudit/config.toml` 加载；无规则时显示全部。
+默认只读 `~/.local/share/ojaudit/ojaudit.sqlite`（可通过 `XDG_DATA_HOME` 更改根目录）；数据库不存在时显示空列表，不创建库。可通过 `AuditApp(LocalContests(db_path, contest_filter))` 注入数据源用于测试。用户筛选规则从 `~/.config/ojaudit/config.toml` 加载；无规则时显示全部。
 
 运行 `ruff check .`、`ruff format --check .`、`pytest -q`；`tests/tui/test_shell.py` 和 `tests/tui/test_review.py` 用合成 SQLite 数据与 `App.run_test()`/Pilot 测试导航、复核、标记同步和代码跳转。
 
@@ -50,12 +50,12 @@
 
 配置读写复用 `core.config.load_config` / `save_config`，保留无关 TOML 键；不在配置中保存 Cookie 或 Token，账户类只填写环境变量的名称。插件发现复用 `discover_manifests`；检测插件参数按照清单的 bool/enum/int/float/str 与 min/max/schema 创建控件，并使用 `validate_parameters` 检查。插件安装入口只显示说明，不联网，也不执行插件入口点。比赛正则设置映射回核心所需的 whitelist/blacklist 规则数组，保留同组其他规则；人员名单按平台读取本地 hidden_people，通过核心 Store 方法增删，保存前不写库。
 
-注意：内置检测插件的当前 `plugin.toml` 未声明 params，因此不存在可自动生成的内置参数；插件启用状态目前仅写入设置，**不代表后端已经执行插件**。采集参数、默认检测总开关、界面紧凑模式等现阶段仅存储配置，尚无完整后端消费接口；部分设置需后续核心契约验收。
+注意：内置检测插件的当前内置检测插件已声明参数，可在设置页自动生成；插件启用状态目前仅写入设置，**不代表后端已经执行插件**。采集参数、默认检测总开关、界面紧凑模式等现阶段仅存储配置，尚无完整后端消费接口；部分设置需后续核心契约验收。
 
 ## 第 8 阶段：排行榜
 
 排行榜支持作弊者「剔除/标记」、存疑者「照常/标记/剔除」、管理者「剔除/标记」，以及 md/csv/html 选择；`h/l` 切换当前策略，`e` 导出。预览由核心 `build_final_ranking()` 计算；待复核线索与未标记人员会产生提醒但不阻止导出。
 
-**当前缺少官方排行榜快照**：数据库没有官方名次及罚时字段，因此临时按照本地每人每题最高提交分数排序，并明确标识「非官方推导」；此结果不能作为正式官方成绩。现有导出插件的列是审查证据列，TUI 仅做适配映射，尚缺专用排行榜导出接口。生成文件保存在 `$XDG_DATA_HOME/ojaudit/exports/<platform>/<contest_id>/ranking.{md,csv,html}`，无 XDG 环境变量时使用 `~/.local/share`；平台和比赛 ID 经过路径段验证。
+**当前缺少官方排行榜快照**：数据库没有官方名次及罚时字段，因此临时按照本地每人每题最高提交分数排序，并明确标识「非官方推导」；此结果不能作为正式官方成绩。CLI/TUI 现均将排行榜行交给导出插件，并有 CSV 字节一致性回归测试。生成文件保存在 `$XDG_DATA_HOME/ojaudit/exports/<platform>/<contest_id>/ranking.{md,csv,html}`，无 XDG 环境变量时使用 `~/.local/share`；平台和比赛 ID 经过路径段验证。
 
 本阶段新增合成数据测试 `tests/tui/test_settings_ranking.py`；阶段/PR 的唯一进度来源仍为 [roadmap](roadmap.md)。

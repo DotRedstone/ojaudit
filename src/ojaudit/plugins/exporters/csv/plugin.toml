@@ -1,0 +1,10 @@
+name = "builtin_csv"
+kind = "exporter"
+version = "1.0.0"
+api_version = 1
+description = "CSV 导出（UTF-8 BOM、公式转义）"
+languages = []
+module = "ojaudit.plugins.exporters.csv"
+
+# 导出器只接受 rows 和 destination，没有额外运行参数。
+[params]

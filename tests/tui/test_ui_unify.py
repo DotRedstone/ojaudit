@@ -137,6 +137,7 @@ def test_compact_modal_sizing_and_escape(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
 
     async def scenario():
+        from ojaudit.tui.account_screen import UidDialog
         from ojaudit.tui.review_screens import ChoiceDialog
         from ojaudit.tui.settings_model import SettingsModel
         from ojaudit.tui.style_help import StyleHelpScreen
@@ -144,8 +145,10 @@ def test_compact_modal_sizing_and_escape(tmp_path, monkeypatch):
         app = AuditApp(LocalContests(tmp_path / "missing.sqlite"))
         model = SettingsModel(tmp_path / "settings.toml", [])
         option = model.options_for("外观")[0]
+        monkeypatch.setattr("ojaudit.tui.account_screen.current_uid", lambda: "")
         dialogs = (
             SearchDialog(),
+            UidDialog(),
             EntryDialog(),
             EditValue(option, model.values[option.key]),
             ConfirmLeave(),

@@ -159,10 +159,10 @@ def test_settings_pilot_controls_and_unsaved_confirm(tmp_path, monkeypatch):
             assert not model.dirty
             assert app.theme == before
             option = model.options_for("采集")[1]
-            screen.apply_input(option, "8")
+            screen.apply_input(option, "12")
             screen.action_save()
             assert not model.dirty
-            assert load_config(tmp_path / "config.toml")["collect"]["threads"] == 8
+            assert load_config(tmp_path / "config.toml")["collect"]["threads"] == 12
             await pilot.press("space")
             await pilot.press("escape", "y")
             await pilot.pause()

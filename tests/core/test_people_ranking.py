@@ -4,6 +4,8 @@ Description: 验证全局管理者隔离和三类人员的最终排名策略。
 Scope: Test
 """
 
+import pytest
+
 from ojaudit.core.people import (
     HiddenPerson,
     exclude_hidden_participants,
@@ -102,3 +104,20 @@ def test_derived_ranking_counts_only_contest_phase():
         ("u2", 100, 2),
         ("u3", 0, 3),
     ]
+
+
+def test_inactive_participants_can_be_dropped():
+    from ojaudit.core.ranking import derive_rows
+
+    rows = derive_rows(
+        "demo",
+        [("u1", "甲"), ("u2", "乙"), ("u3", "只报名")],
+        [("u1", 0, 100, 10, "contest"), ("u2", 0, 0, 20, "contest")],
+    )
+    assert {row["uid"]: row["submissions"] for row in rows} == {"u1": 1, "u2": 1, "u3": 0}
+    keep = build_final_ranking(rows, options=RankingOptions())
+    drop = build_final_ranking(rows, options=RankingOptions(inactive="drop"))
+    assert [row["uid"] for row in keep.rows] == ["u1", "u2", "u3"]
+    assert [row["uid"] for row in drop.rows] == ["u1", "u2"], "0 分但提交过的人保留"
+    with pytest.raises(ValueError):
+        RankingOptions(inactive="maybe")

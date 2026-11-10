@@ -351,6 +351,7 @@ class SettingsScreen(ShellScreen):
             return
         self.reload()
         self.app.nerd_font = bool(self.model.values["appearance.nerd_font"])
+        self.app.key_hints = bool(self.model.values["appearance.key_hints"])
         self.refresh_breadcrumb()
         self.query_one("#categories", ListView).border_title = label(
             "list", "分类", self.app.nerd_font

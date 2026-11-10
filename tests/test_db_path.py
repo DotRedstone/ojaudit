@@ -1,4 +1,9 @@
-"""数据库路径选择与 TUI/CLI 同库回归。"""
+"""
+Module: Test / database path
+Description: 数据库路径优先级，以及 CLI 与 TUI 打开同一数据库。
+Scope: Test
+Notes: 只使用合成数据，不访问网络。
+"""
 
 from ojaudit.cli import _parser
 from ojaudit.tui.app import AuditApp

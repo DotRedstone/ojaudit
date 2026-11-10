@@ -1,4 +1,9 @@
-"""合成数据回归：迁移时保存题目，历史空题目库仍可按题浏览。"""
+"""
+Module: Test / core ingest
+Description: JSON 导入保存题目标题，题目表缺失时仍可按提交浏览题目。
+Scope: Test
+Notes: 只使用合成数据，不访问网络。
+"""
 
 import json
 

@@ -1,5 +1,7 @@
-"""Module: TUI / wallpaper theme
-Description: Read wallpaper-derived colors without executing pywal/matugen commands.
+"""
+Module: TUI / wallpaper theme
+Description: 读取 pywal / matugen 生成的配色 JSON 并转为 Textual 主题，不执行任何外部命令。
+Scope: TUI
 
 Optional sources:
   OJAUDIT_THEME_FILE=/path/to/colors.json

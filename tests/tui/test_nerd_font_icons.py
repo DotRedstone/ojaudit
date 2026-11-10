@@ -1,4 +1,9 @@
-"""Nerd Font 图标的两态 Pilot 回归；全部使用合成数据。"""
+"""
+Module: Test / Nerd Font icons
+Description: 图标开关两态下所有主要页面均可渲染，关闭时不输出私有区字符。
+Scope: Test
+Notes: 只使用合成数据。
+"""
 
 import asyncio
 

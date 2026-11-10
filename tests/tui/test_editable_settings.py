@@ -1,5 +1,5 @@
 """
-Module: Test / editable settings batch E
+Module: Test / editable settings
 Description: Synthetic list editing, persistence, collection settings and unknown ranking.
 Scope: Test
 Notes: No live source requests, credentials or real participant IDs.

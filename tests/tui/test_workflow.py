@@ -1,4 +1,9 @@
-"""批次 D：合成 Source 走通后台采集、检测、总览和待复核。"""
+"""
+Module: Test / TUI workflow
+Description: 合成 Source 走通后台采集、检测、总览与待复核，以及取消任务。
+Scope: Test
+Notes: 只使用合成数据，不访问网络。
+"""
 
 import asyncio
 import threading

@@ -59,3 +59,13 @@
 **当前缺少官方排行榜快照**：数据库没有官方名次及罚时字段，因此临时按照本地每人每题最高提交分数排序，并明确标识「非官方推导」；此结果不能作为正式官方成绩。CLI/TUI 现均将排行榜行交给导出插件，并有 CSV 字节一致性回归测试。生成文件保存在 `$XDG_DATA_HOME/ojaudit/exports/<platform>/<contest_id>/ranking.{md,csv,html}`，无 XDG 环境变量时使用 `~/.local/share`；平台和比赛 ID 经过路径段验证。
 
 本阶段新增合成数据测试 `tests/tui/test_settings_ranking.py`；阶段/PR 的唯一进度来源仍为 [roadmap](roadmap.md)。
+
+## 壁纸主题与视觉风格（r18）
+
+默认主题为 `auto`，优先读取 `OJAUDIT_THEME_FILE` 指定的本地 JSON；未指定时依次查找 `~/.cache/wal/colors.json`、`~/.cache/matugen/colors.json`、`~/.config/matugen/colors.json`。支持 pywal 的 special/colors 和常见 matugen dark/default/color JSON。只读取经过十六进制校验的颜色，不执行 pywal/matugen 命令，不注入 JSON 内的 CSS；无效、过大（超过 256 KiB）和不可读文件自动忽略。
+
+外观主题可选 `auto`、`wallpaper`、`ansi-dark`、`catppuccin-mocha`、`nord`、`gruvbox`、`textual-dark`。无有效壁纸文件时回退深色内置主题；当选择 auto/wallpaper 时每四秒检查本地壁纸配色文件变化。旧配置中的 ansi/catppuccin 仍可读取。外观设置保留 Nerd Font 开关，并增加按键提示开关，默认紧凑列表。
+
+风格集中在 `src/ojaudit/tui/themes/nowcoder.tcss`：深色背景、单行面包屑、圆角框（聚焦变强调色）、半透明选中、淡色状态栏；状态栏左侧是 NORMAL 胶囊，中间是比赛与当前层，右侧是主题与本地时间。关闭 Nerd Font 时使用普通 `▌` 分隔符。一层一屏导航与现有按键行为未变，本分支不修复键位或数据功能。
+
+对照来源：`DotRedstone/nowcoder-collect` 的 `feat/hierarchical-review-workflow`，`rice_theme.py` 与 `review_tui.py` 的 Page/ReviewApp CSS。视觉截图冒烟与 JSON 校验见 `tests/tui/test_style.py`；SVG 均生成在测试临时目录，不提交用户数据。

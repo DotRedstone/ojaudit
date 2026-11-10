@@ -255,7 +255,8 @@ SCORE_LABELS = {
 class EvidenceScreen(ShellScreen):
     TITLE = "线索证据"
     HINTS = (
-        ("j/k", "上/下一条"),
+        ("k", "上一条"),
+        ("j", "下一条"),
         ("tab", "对照/差异"),
         ("r", "复核"),
         ("m", "标记选手"),
@@ -846,7 +847,14 @@ class ProblemScreen(ReviewListScreen):
 
 class CodeScreen(ShellScreen):
     TITLE = "代码"
-    HINTS = (("j/k", "上/下一份"), ("[ ]", "同题前后提交"), ("m", "标记"), ("esc", "返回"))
+    HINTS = (
+        ("k", "上一份"),
+        ("j", "下一份"),
+        ("[", "前一次提交"),
+        ("]", "后一次提交"),
+        ("m", "标记"),
+        ("esc", "返回"),
+    )
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("escape,h,left", "back", "返回"),
         ("n,j,down,right,l,enter,space", "next", "下一份"),

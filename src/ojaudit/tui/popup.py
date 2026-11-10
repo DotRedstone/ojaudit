@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any, ClassVar
 
+from rich.cells import cell_len
 from rich.text import Text
 from textual import events, on
 from textual.app import ComposeResult
@@ -29,8 +30,44 @@ def hint(*pairs: tuple[str, str]) -> str:
     return "  ".join(f"{key} {action}" for key, action in pairs)
 
 
+class ActionRow(Static):
+    """弹窗底部的文字操作（不是按钮）：点击等同于对应按键，便于纯鼠标操作。"""
+
+    DEFAULT_CSS = """
+    ActionRow { height: 1; width: 100%; text-align: right; margin-top: 1; }
+    """
+
+    def __init__(self, actions: Sequence[tuple[str, str]]) -> None:
+        super().__init__("", classes="popup-actions")
+        self.actions = list(actions)
+        self.spans: list[tuple[int, int, str]] = []
+
+    def on_mount(self) -> None:
+        colors = ui.palette(self.app)
+        text = Text(no_wrap=True)
+        for index, (name, _action) in enumerate(self.actions):
+            if index:
+                text.append("   ")
+            text.append(name, style=f"bold {colors.accent}" if index == 0 else colors.muted)
+        self.update(text)
+
+    def on_click(self, event: events.Click) -> None:
+        # 文字右对齐：按单元格宽度（中文占两格）定位被点击的操作。
+        widths = [cell_len(name) for name, _ in self.actions]
+        x = event.x - (self.size.width - (sum(widths) + 3 * (len(widths) - 1)))
+        position = 0
+        for (_name, action), width in zip(self.actions, widths):
+            if position <= x < position + width:
+                event.stop()
+                self.screen.call_later(self.screen.run_action, action)
+                return
+            position += width + 3
+
+
 class Popup(ModalScreen[Any]):
-    """弹窗基类：居中、透明背景、单层圆角边框。"""
+    """弹窗基类：居中、透明背景、单层圆角边框；点击弹窗外部等同于取消。"""
+
+    ACTIONS: ClassVar[Sequence[tuple[str, str]]] = ()
 
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("escape", "cancel", "取消", priority=True),
@@ -47,6 +84,8 @@ class Popup(ModalScreen[Any]):
         self.popup_footer = footer
 
     def frame(self, *children: Any, id: str | None = None) -> Vertical:
+        if self.ACTIONS:
+            children = (*children, ActionRow(self.ACTIONS))
         box = Vertical(*children, id=id, classes="popup dialog")
         box.styles.width = self.WIDTH
         return box
@@ -59,9 +98,17 @@ class Popup(ModalScreen[Any]):
     def action_cancel(self) -> None:
         self.dismiss(None)
 
+    def on_click(self, event: events.Click) -> None:
+        box = self.query_one(".popup")
+        if not box.region.contains(event.screen_x, event.screen_y):
+            event.stop()
+            self.action_cancel()
+
 
 class InputPopup(Popup):
     """单行输入。validate 返回错误文字或 None；note 显示在输入框下方的说明。"""
+
+    ACTIONS: ClassVar[Sequence[tuple[str, str]]] = (("确定", "submit"), ("取消", "cancel"))
 
     def __init__(
         self,
@@ -117,8 +164,12 @@ class InputPopup(Popup):
     @on(Input.Submitted)
     def submitted(self, event: Input.Submitted) -> None:
         event.stop()
-        if self._check(event.value) is None:
-            self.dismiss(event.value)
+        self.action_submit()
+
+    def action_submit(self) -> None:
+        value = self.query_one(Input).value
+        if self._check(value) is None:
+            self.dismiss(value)
 
 
 class MenuPopup(Popup):
@@ -178,6 +229,7 @@ class ChoiceNotePopup(MenuPopup):
     """选项 + 备注：j/k 选择，tab 切到备注，enter 保存。返回 (值, 备注)。"""
 
     ICON = "mark"
+    ACTIONS: ClassVar[Sequence[tuple[str, str]]] = (("保存", "save"), ("取消", "cancel"))
 
     BINDINGS: ClassVar[list[Binding]] = [
         *MenuPopup.BINDINGS,
@@ -229,11 +281,15 @@ class ChoiceNotePopup(MenuPopup):
     def save(self) -> None:
         self.dismiss(self._result())
 
+    def action_save(self) -> None:
+        self.save()
+
 
 class ConfirmPopup(Popup):
     """是 / 否确认。默认（enter）为 safe 一侧；y 选是，n / esc 选否。"""
 
     ICON = "warning"
+    ACTIONS: ClassVar[Sequence[tuple[str, str]]] = (("是", "answer(True)"), ("否", "answer(False)"))
 
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("escape,n", "answer(False)", "否", priority=True),

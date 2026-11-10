@@ -33,6 +33,54 @@ from ojaudit.tui.splitter import Splitter
 NAV_HINTS: tuple[tuple[str, str], ...] = (("↵", "打开"), ("esc", "返回"), ("/", "搜索"))
 
 
+# 提示栏上显示的按键 → 点击时模拟的按键。
+KEY_PRESS = {
+    "↵": "enter",
+    "esc": "escape",
+    "/": "slash",
+    "?": "question_mark",
+    "space": "space",
+    "tab": "tab",
+    "←→": "right",
+    "[": "left_square_bracket",
+    "]": "right_square_bracket",
+    "h/l": "l",
+}
+
+
+class KeyBar(Static):
+    """底部提示栏：每个提示都可以用鼠标点击，等同于按下对应按键。"""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__("", **kwargs)
+        self.spans: list[tuple[int, int, str]] = []
+
+    def show(self, hints: Sequence[tuple[str, str]], right: str) -> None:
+        colors = ui.palette(self.app)
+        text = Text(no_wrap=True)
+        self.spans = []
+        for index, (key, action) in enumerate(hints):
+            if index:
+                text.append("   ")
+            start = text.cell_len
+            text.append(key, style=f"bold {colors.accent}")
+            text.append(f" {action}", style=colors.muted)
+            press = KEY_PRESS.get(key, key.split("/")[0])
+            self.spans.append((start, text.cell_len, press))
+        gap = self.size.width - text.cell_len - len(right) - 2
+        if gap > 0:
+            text.append(" " * gap)
+            text.append(right, style=colors.muted)
+        self.update(text)
+
+    def on_click(self, event: events.Click) -> None:
+        for start, end, key in self.spans:
+            if start <= event.x - 1 < end:
+                event.stop()
+                self.app.simulate_key(key)
+                return
+
+
 class Chrome:
     """顶栏与提示栏渲染；所有全屏页面共用，保证位置和配色一致。"""
 
@@ -43,7 +91,7 @@ class Chrome:
         yield Breadcrumb("", id="breadcrumb")
 
     def chrome_bottom(self) -> ComposeResult:
-        yield Static("", id="status")
+        yield KeyBar(id="status")
 
     def _update_status(self) -> None:
         app: Any = self.app  # type: ignore[attr-defined]
@@ -62,20 +110,29 @@ class Chrome:
                 top.append(" › ", style=colors.muted)
             last = index == len(parts) - 1
             top.append(part, style=f"bold {colors.fg}" if last else colors.muted)
-        job = str(app.job_status)
         busy = app.job_running
-        right = Text("● " + job, style=colors.warn if busy else colors.muted)
+        right = Text(style=colors.warn if busy else colors.muted)
+        right.append("● " + str(app.job_status))
+        if busy and app.job_progress is not None:
+            _stage, done, total, _ = app.job_progress
+            right.append("  ")
+            if total:
+                right.append_text(ui.bar(done / total, 16, colors.warn, colors.surface))
+                right.append(" ")
+            right.append(app.progress_text(), style=colors.fg)
+            right.append("  x 取消", style=colors.muted)
         gap = width - top.cell_len - right.cell_len - 2
+        crumb = self.query_one("#breadcrumb", Breadcrumb)  # type: ignore[attr-defined]
+        crumb.job_x = width
         if gap > 0:
             top.append(" " * gap)
+            crumb.job_x = top.cell_len
             top.append_text(right)
-        self.query_one("#breadcrumb", Static).update(top)  # type: ignore[attr-defined]
+        crumb.update(top)
         hints = list(self.HINTS) + [("?", "帮助")]
         if not app.key_hints:
             hints = [("?", "帮助")]
-        self.query_one("#status", Static).update(  # type: ignore[attr-defined]
-            ui.keybar(hints, colors, str(app.theme_name), width)
-        )
+        self.query_one("#status", KeyBar).show(hints, str(app.theme_name))  # type: ignore[attr-defined]
 
 
 class ShellScreen(Chrome, Screen):
@@ -130,7 +187,8 @@ class ShellScreen(Chrome, Screen):
         self.refresh_chrome()
 
     def action_back(self) -> None:
-        if len(self.app.screen_stack) > 1:
+        # 栈底是 Textual 默认屏和首页，首页不能被弹出（否则界面变空，再按 q 会崩溃）。
+        if len(self.app.screen_stack) > 2 and not isinstance(self, HomeScreen):
             self.app.pop_screen()
 
     def _list(self) -> ListView | None:

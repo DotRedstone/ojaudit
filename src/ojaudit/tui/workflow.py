@@ -27,19 +27,28 @@ class PendingEntry:
     uid: str = ""
 
 
-def pending_entries(local: LocalContests) -> list[PendingEntry]:
-    """只列当前分析轮次仍待复核的线索和存疑人员。"""
+def review_entries(local: LocalContests) -> list[PendingEntry]:
+    """所有比赛当前分析轮次的线索（含已处理），以及被标为存疑的人员。"""
     result: list[PendingEntry] = []
     for entry in local.list_contests(show_all=True):
         contest = entry.contest
         data = ReviewData(local, contest)
         for finding in data.findings():
-            if not finding["is_stale"] and finding["status"] == "待复核":
+            if not finding["is_stale"]:
                 result.append(PendingEntry(contest, "finding", finding))
         for person in data.people():
             if not person["hidden"] and person["mark"] == "suspect":
                 result.append(PendingEntry(contest, "person", uid=person["uid"]))
     return result
+
+
+def is_pending(entry: PendingEntry) -> bool:
+    return entry.kind == "person" or (entry.finding or {}).get("status") == "待复核"
+
+
+def pending_entries(local: LocalContests) -> list[PendingEntry]:
+    """只列当前分析轮次仍待复核的线索和存疑人员。"""
+    return [entry for entry in review_entries(local) if is_pending(entry)]
 
 
 def persist_bundle(db_path: str | Path, bundle: Any) -> Contest:

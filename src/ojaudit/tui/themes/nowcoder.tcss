@@ -111,13 +111,10 @@ ListView:focus > ListItem.-highlight {
 
 /* ── 证据与代码 ─────────────────────────────────── */
 
-#evidence-head { height: 3; padding: 0 1; }
-#evidence-meta {
-    height: auto;
-    max-height: 6;
-    margin-bottom: 1;
-    padding: 0 1;
-}
+#evidence-panel { height: auto; padding: 0 1; margin-bottom: 0; }
+#evidence-head { height: 1; }
+#view-bar { height: 1; margin: 1 0 0 0; padding: 0 1; }
+#evidence-meta { height: auto; max-height: 6; }
 #code-pair { height: 1fr; }
 .source-pane {
     width: 1fr;

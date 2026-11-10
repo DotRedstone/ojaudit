@@ -1,6 +1,7 @@
 """
 Module: TUI / splitter
-Description: 两栏之间不可见的拖拽区：按住拖动调整左栏宽度，双击恢复默认，宽度按名称记入配置。
+Description: 两栏之间的拖拽：按住左栏右边框、右栏左边框或两者之间的空隙拖动即可调整宽度，
+    双击恢复默认，宽度按名称记入配置。不额外绘制分隔线。
 Scope: TUI
 Notes: 只调整左侧目标栏的宽度，右侧栏用 1fr 自动填满。
 """
@@ -73,9 +74,22 @@ class Splitter(Widget):
             save_width(self.name or "", None)
 
     def on_mouse_down(self, _event: events.MouseDown) -> None:
+        self.begin()
+
+    def begin(self) -> None:
         self.dragging = True
         self.capture_mouse()
-        self.refresh()
+
+    def hits(self, x: int, y: int) -> bool:
+        """(x, y) 是否落在左栏右边框、空隙或右栏左边框上——这些位置都可以拖动。"""
+        target = self._target()
+        siblings = list(self.parent.children) if self.parent is not None else []
+        index = siblings.index(self) if self in siblings else -1
+        right = siblings[index + 1] if 0 <= index < len(siblings) - 1 else None
+        columns = {target.region.right - 1, self.region.x}
+        if right is not None and right.display:
+            columns.add(right.region.x)
+        return x in columns and target.region.y <= y < target.region.bottom
 
     def on_mouse_move(self, event: events.MouseMove) -> None:
         if self.dragging:
@@ -90,3 +104,13 @@ class Splitter(Widget):
         width = self._target().styles.width
         if width is not None:
             save_width(self.name or "", int(width.value))
+
+
+def start_drag(screen: Widget, event: events.MouseDown) -> bool:
+    """屏幕级处理：按下位置在某个分栏边框上时开始拖动。"""
+    for splitter in screen.query(Splitter):
+        if splitter.display and splitter.hits(event.screen_x, event.screen_y):
+            event.stop()
+            splitter.begin()
+            return True
+    return False

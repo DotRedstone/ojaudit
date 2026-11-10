@@ -11,20 +11,32 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from collections.abc import Sequence
+from dataclasses import replace
 from difflib import SequenceMatcher, unified_diff
 from typing import Any, ClassVar
 
 from rich.syntax import Syntax
 from rich.text import Text
+from textual import events
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Horizontal, ScrollableContainer, Vertical, VerticalScroll
 from textual.widgets import Static
 
 from ojaudit.core.reviews import DEFAULT_REVIEW_STATUS, REVIEW_STATUSES
 from ojaudit.core.schema import is_accepted
 from ojaudit.tui import ui
-from ojaudit.tui.popup import ChoiceNotePopup
-from ojaudit.tui.review_data import ReviewData
+from ojaudit.tui.code_view import (
+    DiffColors,
+    ViewOptions,
+    align,
+    diff_stats,
+    prepare_lines,
+    rename,
+    render_side,
+    variable_mapping,
+)
+from ojaudit.tui.popup import ChoiceNotePopup, MenuPopup
+from ojaudit.tui.review_data import ReviewData, pair_key, pair_scores
 from ojaudit.tui.screens import ShellScreen, TableScreen
 from ojaudit.tui.splitter import Splitter
 
@@ -124,7 +136,7 @@ REVIEW_CHOICES = tuple((status, status) for status in REVIEW_STATUSES)
 
 
 class ReviewListScreen(TableScreen):
-    """比赛内的表格页：共享 ReviewData 和名字查找。"""
+    """比赛内的表格页：共享 ReviewData 与人员（姓名、标记）查找。"""
 
     TITLE = "列表"
 
@@ -133,9 +145,26 @@ class ReviewListScreen(TableScreen):
         self.data = data
         self.PATH = path
         self.contest = getattr(data, "contest", None)
+        self._people: dict[str, dict[str, Any]] = {}
 
     def names(self) -> dict[str, str]:
-        return {str(p["uid"]): str(p["name"]) for p in self.data.people()}
+        return {uid: str(p["name"]) for uid, p in self._load_people().items()}
+
+    def _load_people(self) -> dict[str, dict[str, Any]]:
+        self._people = {str(p["uid"]): p for p in self.data.people()}
+        return self._people
+
+    def person_cell(self, uid: str, show_uid: bool = True) -> Text:
+        """人名按人工标记着色：作弊者偏红、正常偏绿、存疑偏黄、管理者灰。"""
+        person = self._people.get(uid, {"name": uid, "mark": "", "hidden": False})
+        return ui.person_text(
+            str(person["name"]),
+            uid,
+            str(person.get("mark", "")),
+            bool(person.get("hidden")),
+            ui.palette(self.app),
+            show_uid,
+        )
 
     def titles(self) -> dict[int, str]:
         return {int(p["problem_index"]): str(p["title"]) for p in self.data.problems()}
@@ -146,34 +175,38 @@ class ReviewListScreen(TableScreen):
 
 class FindingsScreen(ReviewListScreen):
     TITLE = "线索"
-    HINTS = (("↵", "查看证据"), ("f", "筛选"), ("/", "搜索"), ("esc", "返回"))
+    HINTS = (("↵", "查看证据"), ("f", "筛选"), ("s", "排序"), ("/", "搜索"), ("esc", "返回"))
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        *ShellScreen.BINDINGS,
+        *TableScreen.BINDINGS,
         ("f", "cycle_filter", "切换筛选"),
     ]
     FILTERS = ("全部", "高优先级", "未处理", "已处理")
     COLUMNS = (
         ui.Column("等级", 8),
+        ui.Column("题", 3),
         ui.Column("题目"),
         ui.Column("选手 A"),
         ui.Column("选手 B"),
+        ui.Column("嫌疑度", 9, "right"),
         ui.Column("相似度", 6, "right"),
         ui.Column("复核", 14),
     )
+    # 默认按人物对的总嫌疑度降序：同一对选手的多道题排在一起。
+    DEFAULT_SORT = (5, True)
     EMPTY = "当前筛选下没有线索"
 
     def __init__(self, data: ReviewData, path: str) -> None:
         super().__init__(data, path)
         self.filter_index = 0
-        self._people_names: dict[str, str] = {}
         self._problem_titles: dict[int, str] = {}
         self._all_findings: list[dict[str, Any]] = []
+        self._pairs: dict[tuple[str, str], tuple[int, int]] = {}
 
     def table(self) -> list[object]:
         return [Static("", id="filters"), *super().table()]
 
     def subtitle(self) -> str:
-        return "按优先级排序 · 检测线索不等于违规认定"
+        return "嫌疑度 = 同一对选手所有线索的分级加总 · 检测线索不等于违规认定"
 
     def _filtered(self, mode: str) -> list[dict[str, Any]]:
         rows = self._all_findings
@@ -189,20 +222,37 @@ class FindingsScreen(ReviewListScreen):
 
     def items(self) -> list[dict[str, Any]]:
         self._all_findings = self.data.findings()
+        self._pairs = pair_scores(self._all_findings)
         return self._filtered(self.FILTERS[self.filter_index])
 
+    def sort_key(self, row: dict[str, Any], column: int) -> Any:
+        pair = pair_key(row)
+        return {
+            0: (-ui.level_rank(row["verdict_level"]), pair),
+            1: int(row["problem_index"]),
+            2: self._problem_titles.get(int(row["problem_index"]), ""),
+            3: str(self._people.get(str(row["uid_a"]), {}).get("name", row["uid_a"])),
+            4: str(self._people.get(str(row["uid_b"]), {}).get("name", row["uid_b"])),
+            5: (self._pairs.get(pair, (0, 0))[0], ui.Reversed(pair)),
+            6: _similarity(row) or 0.0,
+            7: str(row["status"]),
+        }.get(column)
+
     def reload(self) -> None:
-        self._people_names = self.names()
+        self._load_people()
         self._problem_titles = self.titles()
         super().reload()
         colors = ui.palette(self.app)
         tabs = Text()
+        self.tab_spans = []
         for index, mode in enumerate(self.FILTERS):
             count = len(self._filtered(mode))
+            start = tabs.cell_len
             if index == self.filter_index:
                 tabs.append(f" {mode} {count} ", style=f"bold {colors.bg} on {colors.accent}")
             else:
                 tabs.append(f" {mode} {count} ", style=colors.muted)
+            self.tab_spans.append((start, tabs.cell_len))
             tabs.append(" ")
         self.query_one("#filters", Static).update(tabs)
 
@@ -210,28 +260,31 @@ class FindingsScreen(ReviewListScreen):
         self.filter_index = (self.filter_index + 1) % len(self.FILTERS)
         self.reload()
 
-    def _person(self, uid: str) -> Text:
-        colors = ui.palette(self.app)
-        name = self._people_names.get(uid, uid)
-        text = Text(name, style=colors.fg)
-        if name != uid:
-            text.append(f" {uid}", style=colors.muted)
-        return text
+    def on_click(self, event: events.Click) -> None:
+        # 点击筛选标签切换面板。
+        if event.widget is not None and event.widget.id == "filters":
+            for index, (start, end) in enumerate(getattr(self, "tab_spans", [])):
+                if start <= event.x - 1 < end:
+                    self.filter_index = index
+                    self.reload()
+                    return
 
     def cells(self, row: dict[str, Any]) -> Sequence[str | Text]:
         colors = ui.palette(self.app)
         index = int(row["problem_index"])
-        title = self._problem_titles.get(index, "")
-        problem = Text(f"{index} ", style=colors.muted)
-        problem.append(title or f"题 {index}", style=colors.fg)
-        similarity = row["scores"].get("similarity") if isinstance(row["scores"], dict) else None
+        similarity = _similarity(row)
+        score, count = self._pairs.get(pair_key(row), (0, 0))
+        suspicion = Text(str(score), style=f"bold {colors.level(0)}" if score >= 5 else colors.fg)
+        suspicion.append(f" ·{count}题", style=colors.muted)
         return [
             Text("历史", style=colors.muted)
             if row["is_stale"]
             else level_chip(row["verdict_level"], colors),
-            problem,
-            self._person(str(row["uid_a"])),
-            self._person(str(row["uid_b"])),
+            Text(ui.problem_label(index), style=f"bold {colors.fg}"),
+            Text(self._problem_titles.get(index, ""), style=colors.fg),
+            self.person_cell(str(row["uid_a"])),
+            self.person_cell(str(row["uid_b"])),
+            suspicion if score else Text("—", style=colors.muted),
             ui.percent(similarity) if similarity is not None else Text("—", style=colors.muted),
             status_text(row["status"], colors, row["is_stale"]),
         ]
@@ -239,7 +292,13 @@ class FindingsScreen(ReviewListScreen):
     def open_index(self, index: int) -> None:
         item = self.selected_row(index)
         if item is not None:
-            self.app.push_screen(EvidenceScreen(self.data, self.PATH, item))
+            self.app.push_screen(EvidenceScreen(self.data, self.PATH, item, sequence=self.rows))
+
+
+def _similarity(row: dict[str, Any]) -> float | None:
+    scores = row.get("scores")
+    value = scores.get("similarity") if isinstance(scores, dict) else None
+    return float(value) if isinstance(value, (int, float)) else None
 
 
 # 分数键的展示名；未登记的数值键按原名显示，保证外部插件的分数也能看到。
@@ -252,6 +311,71 @@ SCORE_LABELS = {
 }
 
 
+class SyncScroll(ScrollableContainer):
+    """两侧代码同步滚动：任一侧滚动时，另一侧滚到相同位置。"""
+
+    partner: SyncScroll | None = None
+    _syncing = False
+
+    def watch_scroll_y(self, old: float, new: float) -> None:
+        super().watch_scroll_y(old, new)
+        self._sync()
+
+    def watch_scroll_x(self, old: float, new: float) -> None:
+        super().watch_scroll_x(old, new)
+        self._sync()
+
+    def _sync(self) -> None:
+        partner = self.partner
+        if partner is None or self._syncing or not partner.display:
+            return
+        partner._syncing = True
+        partner.scroll_to(self.scroll_x, self.scroll_y, animate=False)
+        partner._syncing = False
+
+
+# 视图开关：(按键, 名称, ViewOptions 字段)。
+VIEW_TOGGLES = (
+    ("f", "统一格式", "normalize"),
+    ("c", "去注释", "comments"),
+    ("i", "忽略头文件", "boilerplate"),
+    ("v", "变量对齐", "rename"),
+)
+
+
+def _view_options() -> ViewOptions:
+    from ojaudit.core.config import load_config
+
+    saved = load_config().get("evidence", {})
+    saved = saved if isinstance(saved, dict) else {}
+    return ViewOptions(**{name: bool(saved.get(name, True)) for _, _, name in VIEW_TOGGLES})
+
+
+def _save_view_options(options: ViewOptions) -> None:
+    from ojaudit.core.config import load_config, save_config
+
+    config = load_config()
+    config["evidence"] = {name: getattr(options, name) for _, _, name in VIEW_TOGGLES}
+    save_config(config)
+
+
+def nowcoder_links(
+    contest: Any, finding: dict[str, Any], left: Any, right: Any
+) -> list[tuple[str, str]]:
+    """牛客官网链接：A、B 两份提交、题目与比赛页。其他平台暂无链接。"""
+    if getattr(contest, "platform", "") != "nowcoder":
+        return []
+    base = "https://ac.nowcoder.com/acm/contest"
+    links = []
+    for side, row in (("A 提交", left), ("B 提交", right)):
+        if row:
+            links.append((side, f"{base}/view-submission?submissionId={row['submission_id']}"))
+    letter = ui.problem_label(finding["problem_index"])
+    links.append(("题目", f"{base}/{contest.contest_id}/{letter}"))
+    links.append(("比赛", f"{base}/{contest.contest_id}"))
+    return links
+
+
 class EvidenceScreen(ShellScreen):
     TITLE = "线索证据"
     HINTS = (
@@ -259,27 +383,36 @@ class EvidenceScreen(ShellScreen):
         ("j", "下一条"),
         ("tab", "对照/差异"),
         ("r", "复核"),
-        ("m", "标记选手"),
+        ("m", "标记"),
         ("u", "切换 A/B"),
+        ("o", "打开牛客"),
         ("esc", "返回"),
     )
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("escape,h,left", "back", "返回"),
-        ("tab", "diff", "对照 / 差异视图"),
-        ("shift+tab", "diff", "对照 / 差异视图"),
-        ("j,down", "next", "下一条"),
-        ("k,up", "previous", "上一条"),
-        ("right,l,enter,space", "diff", "对照 / 差异视图"),
+        ("tab,shift+tab", "diff", "对照 / 差异视图"),
+        ("j,down,n", "next", "下一条"),
+        ("k,up,p", "previous", "上一条"),
         ("g", "first_evidence", "第一条"),
         ("shift+g", "last_evidence", "最后一条"),
         ("r", "review", "复核结论"),
         ("m", "mark", "标记选手"),
         ("u", "switch_person", "切换标记对象 A/B"),
-        ("n", "next", "下一条"),
-        ("p", "previous", "上一条"),
+        ("o", "links", "在浏览器打开牛客页面"),
+        ("f", "toggle_view('normalize')", "统一格式（空格、缩进、括号）"),
+        ("c", "toggle_view('comments')", "去掉注释"),
+        ("i", "toggle_view('boilerplate')", "忽略头文件与 IO 样板"),
+        ("v", "toggle_view('rename')", "变量名对齐"),
+        ("a", "toggle_all", "规范化选项全开 / 全关"),
     ]
 
-    def __init__(self, data: ReviewData, parent_path: str, finding: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        data: ReviewData,
+        parent_path: str,
+        finding: dict[str, Any],
+        sequence: list[dict[str, Any]] | None = None,
+    ) -> None:
         super().__init__()
         self.data = data
         self.parent_path = parent_path
@@ -287,6 +420,11 @@ class EvidenceScreen(ShellScreen):
         self.contest = data.contest
         self.diff_mode = False
         self.person_side = 0
+        # 翻页顺序与上一页列表一致（列表可能按嫌疑度等排序）。
+        self.sequence = [self._key(item) for item in sequence] if sequence else None
+        self.options = _view_options()
+        self.link_spans: list[tuple[int, int, str]] = []
+        self.toggle_spans: list[tuple[int, int, str]] = []
         self._sync_path()
 
     def _sync_path(self) -> None:
@@ -295,154 +433,308 @@ class EvidenceScreen(ShellScreen):
     def compose(self) -> ComposeResult:
         yield from self.chrome_top()
         with Vertical(id="body"):
-            yield Static("", id="evidence-head")
-            yield Static("", id="evidence-meta")
+            with Vertical(id="evidence-panel", classes="panel"):
+                yield Static("", id="evidence-head")
+                yield Static("", id="evidence-meta")
+            yield Static("", id="view-bar")
             with Horizontal(id="code-pair"):
-                with VerticalScroll(id="pane-left", classes="source-pane"):
+                with SyncScroll(id="pane-left", classes="source-pane"):
                     yield Static("", id="code-left")
                 yield Splitter("pane-left", "evidence", minimum=24, keep_right=24)
-                with VerticalScroll(id="pane-right", classes="source-pane"):
+                with SyncScroll(id="pane-right", classes="source-pane"):
                     yield Static("", id="code-right")
         yield from self.chrome_bottom()
 
     def on_mount(self) -> None:
+        left, right = (
+            self.query_one("#pane-left", SyncScroll),
+            self.query_one("#pane-right", SyncScroll),
+        )
+        left.partner, right.partner = right, left
         self.render_evidence()
 
     def on_layout_change(self) -> None:
         self.render_evidence()
 
-    def _position(self) -> tuple[int, int]:
+    # ── 线索顺序 ────────────────────────────────────────
+
+    @staticmethod
+    def _key(item: dict[str, Any]) -> tuple[Any, ...]:
+        return tuple(item.get(k) for k in ("run_id", "uid_a", "uid_b", "problem_index", "language"))
+
+    def _findings(self) -> list[dict[str, Any]]:
         findings = self.data.findings()
+        if not self.sequence:
+            return findings
+        by_key = {self._key(item): item for item in findings}
+        ordered = [by_key[key] for key in self.sequence if key in by_key]
+        return ordered or findings
+
+    @staticmethod
+    def _same(a: dict[str, Any], b: dict[str, Any]) -> bool:
+        return EvidenceScreen._key(a) == EvidenceScreen._key(b)
+
+    def _position(self) -> tuple[int, int]:
+        findings = self._findings()
         current = next((i for i, f in enumerate(findings) if self._same(f, self.finding)), -1)
         return current + 1, len(findings)
 
-    def _timeline(self, timeline: dict[str, Any], names: tuple[str, str]) -> Text | None:
+    # ── 渲染 ────────────────────────────────────────────
+
+    def _timeline(self, timeline: dict[str, Any], people: tuple[Text, Text]) -> Text | None:
         colors = ui.palette(self.app)
         who = timeline.get("who_first")
         if who not in ("A", "B"):
             return None
-        first, later = (names[0], names[1]) if who == "A" else (names[1], names[0])
-        text = Text(f"{first} 先通过", style=colors.fg)
+        first, later = (people[0], people[1]) if who == "A" else (people[1], people[0])
+        text = first.copy()
+        text.append(" 先通过", style=colors.fg)
         if timeline.get("delta_seconds") is not None:
-            text.append(
-                f"，{later} 晚 {ui.duration(timeline['delta_seconds'])} 通过", style=colors.fg
-            )
+            text.append(" → ", style=colors.muted)
+            text.append_text(later.copy())
+            text.append(f" 晚 {ui.duration(timeline['delta_seconds'])} 通过", style=colors.fg)
         if timeline.get("direction_valid"):
-            text.append(f" · {later} 首次提交在 {first} 通过之后", style=colors.warn)
+            text.append("  首次提交在对方通过之后", style=f"bold {colors.warn}")
         failures = timeline.get("later_failures_before_ac")
         if failures:
-            text.append(f" · {later} 通过前失败 {failures} 次", style=colors.muted)
+            text.append(f"  通过前失败 {failures} 次", style=colors.muted)
         return text
+
+    def _person(self, person: dict[str, Any]) -> Text:
+        return ui.person_text(
+            str(person["name"]),
+            str(person["uid"]),
+            str(person.get("mark", "")),
+            bool(person.get("hidden")),
+            ui.palette(self.app),
+            show_uid=False,
+        )
 
     def render_evidence(self) -> None:
         colors = ui.palette(self.app)
         finding = self.finding
         scores = finding["scores"] if isinstance(finding["scores"], dict) else {}
-        reasons = (
-            finding["reasons"] if isinstance(finding["reasons"], list) else [finding["reasons"]]
-        )
         a = self.data.person(str(finding["uid_a"]))
         b = self.data.person(str(finding["uid_b"]))
-        names = (str(a["name"]), str(b["name"]))
         titles = {int(p["problem_index"]): p["title"] for p in self.data.problems()}
         index = int(finding["problem_index"])
         position, total = self._position()
+        language = finding["language"]
+        left = self.data.representative(str(finding["uid_a"]), index, language)
+        right = self.data.representative(str(finding["uid_b"]), index, language)
 
+        panel = self.query_one("#evidence-panel")
+        panel.border_title = f" 线索 {position}/{total} " if position else " 线索 "
+
+        # 第一行：等级、题目、语言、复核状态；右侧是可点击的牛客链接。
         head = Text(no_wrap=True)
         if finding["is_stale"]:
             head.append_text(ui.chip("已失效", colors.muted))
         else:
             head.append_text(level_chip(finding["verdict_level"], colors))
-        head.append(f"  {index} · {titles.get(index, f'题 {index}')}", style=f"bold {colors.fg}")
-        head.append(
-            f"  {LANGUAGES.get(finding['language'], finding['language'])}", style=colors.muted
-        )
-        head.append("    ")
+        head.append(f"  {ui.problem_label(index)}", style=f"bold {colors.accent}")
+        head.append(f" {titles.get(index, '')}", style=f"bold {colors.fg}")
+        head.append(f"  {LANGUAGES.get(language, language)}", style=colors.muted)
+        head.append("   ")
         head.append_text(status_text(finding["status"], colors, finding["is_stale"]))
         if finding.get("note"):
             head.append(f"  “{finding['note']}”", style=colors.muted)
-        if position:
-            head.append(f"    {position} / {total}", style=colors.muted)
-        head.append("\n")
-        for side, person in (("A", a), ("B", b)):
-            target = (side == "A") == (self.person_side == 0)
-            head.append(f"{side} ", style=f"bold {colors.accent}" if target else colors.muted)
-            head.append(str(person["name"]), style=f"bold {colors.fg}")
-            head.append(f" {person['uid']} ", style=colors.muted)
-            head.append_text(mark_text(person, colors))
-            if side == "A":
-                head.append("   ⇄   ", style=colors.muted)
+        links = nowcoder_links(self.contest, finding, left, right)
+        tail = Text(no_wrap=True)
+        spans = []
+        for name, url in links:
+            if tail:
+                tail.append("  ")
+            start = tail.cell_len
+            tail.append(f"↗ {name}", style=f"underline {colors.accent}")
+            spans.append((start, tail.cell_len, url))
+        width = max(panel.size.width - 4, 40)
+        gap = max(width - head.cell_len - tail.cell_len, 2)
+        head.append(" " * gap)
+        offset = head.cell_len
+        head.append_text(tail)
+        self.link_spans = [(offset + s0, offset + s1, url) for s0, s1, url in spans]
         self.query_one("#evidence-head", Static).update(head)
 
+        # 第二至四行：相似度、时间线、依据。
         meta = Text()
+        meta.append("相似度  ", style=colors.muted)
         numeric = [
             (key, float(value))
             for key, value in scores.items()
             if isinstance(value, (int, float))
             and not isinstance(value, bool)
             and 0 <= value <= 1
-            and key not in ("template_crowd",)
+            and key != "template_crowd"
         ]
         for i, (key, value) in enumerate(numeric):
             if i:
-                meta.append("    ")
+                meta.append("   ")
+            tone = colors.danger if value >= 0.9 else colors.warn if value >= 0.75 else colors.muted
             meta.append(SCORE_LABELS.get(key, key) + " ", style=colors.muted)
-            meta.append_text(
-                ui.bar(value, 6, colors.level(finding["verdict_level"]), colors.surface)
-            )
-            meta.append(f" {value:.0%}", style=f"bold {colors.fg}")
-        facts = []
-        if "md5_ws_equal" in scores:
-            facts.append(("去空白后完全一致", "是" if scores["md5_ws_equal"] else "否"))
-        if "template_crowd" in scores:
-            facts.append(("同码人数", str(scores["template_crowd"])))
-        if facts:
-            meta.append("\n")
-            for i, (name, value) in enumerate(facts):
-                if i:
-                    meta.append("    ")
-                meta.append(name + " ", style=colors.muted)
-                meta.append(value, style=colors.fg)
+            meta.append_text(ui.bar(value, 5, tone, colors.surface))
+            meta.append(f" {value:.0%}", style=f"bold {tone}")
+        people = (self._person(a), self._person(b))
         timeline = scores.get("timeline")
-        line = self._timeline(timeline, names) if isinstance(timeline, dict) else None
+        line = self._timeline(timeline, people) if isinstance(timeline, dict) else None
         if line is not None:
             meta.append("\n时间线  ", style=colors.muted)
             meta.append_text(line)
-        shown = [str(r) for r in reasons if not str(r).startswith(("时间线：", "检测分级："))]
-        if shown:
+        facts = []
+        if "md5_ws_equal" in scores:
+            facts.append(
+                Text("去空白后完全一致", style=f"bold {colors.danger}")
+                if scores["md5_ws_equal"]
+                else Text("去空白后不完全一致", style=colors.fg)
+            )
+        if "template_crowd" in scores:
+            facts.append(Text(f"同码 {scores['template_crowd']} 人", style=colors.fg))
+        rare = next(
+            (r for r in finding.get("reasons", []) if str(r).startswith("稀有片段共享")), ""
+        )
+        if rare:
+            facts.append(Text(f"共享稀有片段 {str(rare).split('：')[-1]} 个", style=colors.fg))
+        if facts:
             meta.append("\n依据    ", style=colors.muted)
-            meta.append(" · ".join(shown), style=colors.fg)
+            for i, fact in enumerate(facts):
+                if i:
+                    meta.append(" · ", style=colors.muted)
+                meta.append_text(fact)
         self.query_one("#evidence-meta", Static).update(meta)
+        self._render_view_bar()
+        self._render_code(a, b, left, right)
+        self.refresh_chrome()
 
-        left = self.data.representative(str(finding["uid_a"]), index, finding["language"])
-        right = self.data.representative(str(finding["uid_b"]), index, finding["language"])
+    def _render_view_bar(self) -> None:
+        colors = ui.palette(self.app)
+        bar = Text(no_wrap=True)
+        self.toggle_spans = []
+        for mode, name in ((False, "对照"), (True, "差异")):
+            start = bar.cell_len
+            if self.diff_mode == mode:
+                bar.append(f" {name} ", style=f"bold {colors.bg} on {colors.accent}")
+            else:
+                bar.append(f" {name} ", style=colors.muted)
+            self.toggle_spans.append((start, bar.cell_len, "diff"))
+        bar.append("   ")
+        for key, name, field in VIEW_TOGGLES:
+            on = getattr(self.options, field)
+            start = bar.cell_len
+            bar.append(key, style=f"bold {colors.accent}")
+            bar.append(" ✓ " if on else " · ", style=colors.ok if on else colors.muted)
+            bar.append(name, style=colors.fg if on else colors.muted)
+            self.toggle_spans.append((start, bar.cell_len, f"toggle_view('{field}')"))
+            bar.append("   ")
+        self.query_one("#view-bar", Static).update(bar)
+
+    def _render_code(self, a: dict[str, Any], b: dict[str, Any], left: Any, right: Any) -> None:
+        colors = ui.palette(self.app)
+        language = self.finding["language"]
         left_code = left["code"] if left else "（本地无对应提交）"
         right_code = right["code"] if right else "（本地无对应提交）"
-        left_pane = self.query_one("#pane-left")
-        right_pane = self.query_one("#pane-right")
+        options = self.options
+        lines_a = prepare_lines(left_code, language, options)
+        lines_b = prepare_lines(right_code, language, options)
+        renamed_marks = None
+        mapping: dict[str, str] = {}
+        if options.rename:
+            mapping = variable_mapping(lines_a, lines_b, language)
+            lines_b, renamed_marks = rename(lines_b, mapping)
+        rows = align(lines_a, lines_b, ignore_space=options.normalize)
+        stats = diff_stats(rows)
+        left_pane = self.query_one("#pane-left", SyncScroll)
+        right_pane = self.query_one("#pane-right", SyncScroll)
         if self.diff_mode:
             right_pane.display = False
             self.query_one(Splitter).display = False
+            left_pane.border_title = f"差异  A {a['name']} → B {b['name']}"
             left_pane.border_subtitle = ""
-            left_pane.border_title = f"差异  A {names[0]} → B {names[1]}"
             self.query_one("#code-left", Static).update(
-                _diff_text(left_code, right_code, names, colors)
+                _unified(lines_a, lines_b, (str(a["name"]), str(b["name"])), colors)
             )
-        else:
-            right_pane.display = True
-            self.query_one(Splitter).display = True
-            changed_left, changed_right = _changed_lines(left_code, right_code)
-            for pane, view, side, person, row, code, changed in (
-                (left_pane, "#code-left", "A", a, left, left_code, changed_left),
-                (right_pane, "#code-right", "B", b, right, right_code, changed_right),
-            ):
-                verdict = f" · {row['verdict']} · {ui.clock(row['submit_time'])}" if row else ""
-                pane.border_title = f"{side}  {person['name']}{verdict}"
-                self.query_one(view, Static).update(
-                    _syntax(self.app, code, finding["language"], changed)
+            return
+        right_pane.display = True
+        self.query_one(Splitter).display = True
+        tone = DiffColors(
+            change=_tint(colors.warn, colors),
+            change_strong=_tint(colors.warn, colors, 0.45),
+            delete=_tint(colors.danger, colors),
+            insert=_tint(colors.ok, colors),
+            filler=_tint(colors.muted, colors, 0.12),
+            muted=colors.muted,
+            renamed=colors.accent,
+        )
+        theme = getattr(self.app, "syntax_theme", "monokai")
+        numbers = getattr(self.app, "line_numbers", True)
+        for pane, view, side, person, row, lines, other, marks in (
+            (left_pane, "#code-left", "a", a, left, lines_a, lines_b, None),
+            (right_pane, "#code-right", "b", b, right, lines_b, lines_a, renamed_marks),
+        ):
+            target = (side == "a") == (self.person_side == 0)
+            title = Text(
+                ("▶ " if target else "") + side.upper() + "  ", style=f"bold {colors.accent}"
+            )
+            title.append_text(self._person(person))
+            if row:
+                title.append(
+                    f" · {row['verdict']} · {ui.clock(row['submit_time'])}", style=colors.fg
                 )
-            left_pane.border_subtitle = "高亮行与另一侧不同"
-        self.refresh_chrome()
+            pane.border_title = title
+            width = max(pane.size.width - 4, 20)
+            self.query_one(view, Static).update(
+                render_side(rows, side, lines, other, language, theme, tone, width, numbers, marks)
+            )
+        summary = f"相同 {stats['equal']} 行 · 不同 {stats['change']} 行 · 仅一侧 {stats['delete'] + stats['insert']} 行"
+        if mapping:
+            summary += f" · 已对齐变量 {len(mapping)} 个（下划线）"
+        left_pane.border_subtitle = summary
+        right_pane.border_subtitle = ""
+
+    # ── 交互 ────────────────────────────────────────────
+
+    def on_click(self, event: events.Click) -> None:
+        widget = event.widget
+        if widget is None:
+            return
+        spans = {"evidence-head": self.link_spans, "view-bar": self.toggle_spans}.get(
+            widget.id or ""
+        )
+        if not spans:
+            return
+        x = event.x - (1 if widget.id == "view-bar" else 0)
+        for start, end, target in spans:
+            if start <= x < end:
+                event.stop()
+                if target.startswith("http"):
+                    self.app.open_url(target)
+                else:
+                    self.call_later(self.run_action, target)
+                return
+
+    def action_links(self) -> None:
+        index = int(self.finding["problem_index"])
+        language = self.finding["language"]
+        left = self.data.representative(str(self.finding["uid_a"]), index, language)
+        right = self.data.representative(str(self.finding["uid_b"]), index, language)
+        links = nowcoder_links(self.contest, self.finding, left, right)
+        if not links:
+            self.notify("这个平台没有可打开的官网链接", severity="warning")
+            return
+        self.app.push_screen(
+            MenuPopup("打开牛客页面", [(name, url) for name, url in links]),
+            lambda url: url and self.app.open_url(url),
+        )
+
+    def action_toggle_view(self, field: str) -> None:
+        self.options = replace(self.options, **{field: not getattr(self.options, field)})
+        _save_view_options(self.options)
+        self.render_evidence()
+
+    def action_toggle_all(self) -> None:
+        on = not all(getattr(self.options, field) for _, _, field in VIEW_TOGGLES)
+        self.options = ViewOptions(**{field: on for _, _, field in VIEW_TOGGLES})
+        _save_view_options(self.options)
+        self.render_evidence()
 
     def action_first_evidence(self) -> None:
         self._move(-1000000)
@@ -474,15 +766,34 @@ class EvidenceScreen(ShellScreen):
                 MARK_CHOICES,
                 person["mark"],
                 person["note"],
-                hint=f"UID {uid} · 按 u 可切换 A/B",
+                hint="u 切换 A/B",
             ),
             lambda result: self._save_mark(uid, result),
         )
 
     def _save_mark(self, uid: str, result: tuple[str, str] | None) -> None:
-        if result is not None:
-            self.data.mark(uid, *result)
-            self.notify("人员标记已保存")
+        if result is None:
+            return
+        mark, note = result
+        self.data.mark(uid, mark, note)
+        settings = review_settings()
+        resolved = 0
+        if mark == "cheater" and settings["quick_mark"]:
+            # 快速标记：此人的其他待复核线索一并处理，作弊几道题对结论没有区别。
+            name = self.data.person(uid)["name"]
+            for item in self.data.findings():
+                if (
+                    not item["is_stale"]
+                    and item["status"] == DEFAULT_REVIEW_STATUS
+                    and uid in (str(item["uid_a"]), str(item["uid_b"]))
+                ):
+                    self.data.review(item, "已核查", f"随 {name} 标记为作弊者一并处理")
+                    resolved += 1
+        self.notify(f"已标记{'，并处理此人其余线索 ' + str(resolved) + ' 条' if resolved else ''}")
+        self._refresh_current()
+        if settings["auto_advance"]:
+            self._advance()
+        else:
             self.render_evidence()
 
     def action_review(self) -> None:
@@ -495,7 +806,6 @@ class EvidenceScreen(ShellScreen):
                 REVIEW_CHOICES,
                 (self.finding["status"] if self.finding["status"] in REVIEW_STATUSES else ""),
                 self.finding.get("note", ""),
-                hint="保存后自动跳到下一条待复核线索",
             ),
             self._save_review,
         )
@@ -505,8 +815,14 @@ class EvidenceScreen(ShellScreen):
             return
         self.data.review(self.finding, *result)
         self._refresh_current()
-        # 处理完后定位下一条待复核线索。
-        findings = self.data.findings()
+        if review_settings()["auto_advance"]:
+            self._advance()
+        else:
+            self.render_evidence()
+
+    def _advance(self) -> None:
+        """跳到下一条待复核线索（按列表顺序，循环）。"""
+        findings = self._findings()
         current = next(
             (index for index, item in enumerate(findings) if self._same(item, self.finding)), -1
         )
@@ -520,24 +836,17 @@ class EvidenceScreen(ShellScreen):
             self._sync_path()
             self.render_evidence()
         else:
+            self.render_evidence()
             self.notify("当前没有更多待复核线索")
-
-    @staticmethod
-    def _same(a: dict[str, Any], b: dict[str, Any]) -> bool:
-        return all(
-            a.get(key) == b.get(key)
-            for key in ("run_id", "uid_a", "uid_b", "problem_index", "language")
-        )
 
     def _refresh_current(self) -> None:
         for item in self.data.findings():
             if self._same(item, self.finding):
                 self.finding = item
-                self.render_evidence()
                 break
 
     def _move(self, delta: int) -> None:
-        findings = self.data.findings()
+        findings = self._findings()
         current = next((i for i, item in enumerate(findings) if self._same(item, self.finding)), 0)
         if findings:
             target = (current + delta) % len(findings)
@@ -556,9 +865,36 @@ class EvidenceScreen(ShellScreen):
         self._move(-1)
 
 
+def review_settings() -> dict[str, bool]:
+    from ojaudit.core.config import load_config
+
+    saved = load_config().get("review", {})
+    saved = saved if isinstance(saved, dict) else {}
+    return {
+        "auto_advance": bool(saved.get("auto_advance", True)),
+        "quick_mark": bool(saved.get("quick_mark", True)),
+    }
+
+
+def _tint(color: str, colors: ui.Palette, amount: float = 0.22) -> str:
+    """差异底色：把语义色按比例混入背景，避免整行纯色太刺眼。"""
+    if color.startswith("#") and colors.bg.startswith("#"):
+        return ui._mix(color, colors.bg, amount)
+    return {colors.warn: "yellow", colors.danger: "red", colors.ok: "green"}.get(
+        color, "bright_black"
+    )
+
+
+def _unified(
+    lines_a: list[str], lines_b: list[str], names: tuple[str, str], colors: ui.Palette
+) -> Text:
+    return _diff_text("\n".join(lines_a), "\n".join(lines_b), names, colors)
+
+
 class PeopleScreen(ReviewListScreen):
     TITLE = "选手"
-    HINTS = (("↵", "查看"), ("/", "搜索"), ("esc", "返回"))
+    HINTS = (("↵", "查看"), ("s", "排序"), ("/", "搜索"), ("esc", "返回"))
+    DEFAULT_SORT = (4, True)
     COLUMNS = (
         ui.Column("姓名"),
         ui.Column("UID", 14),
@@ -587,10 +923,22 @@ class PeopleScreen(ReviewListScreen):
             person["findings"] = findings[str(person["uid"])]
         return people
 
+    def sort_key(self, row: dict[str, Any], column: int) -> Any:
+        return {
+            0: str(row["name"]),
+            1: str(row["uid"]),
+            2: row["solved"],
+            3: row["submitted"],
+            4: row["findings"],
+            5: {"cheater": 0, "suspect": 1, "normal": 3}.get(str(row.get("mark", "")), 2),
+        }.get(column)
+
     def cells(self, row: dict[str, Any]) -> Sequence[str | Text]:
         colors = ui.palette(self.app)
         return [
-            Text(str(row["name"]), style=colors.muted if row["hidden"] else colors.fg),
+            ui.person_text(
+                str(row["name"]), str(row["uid"]), row["mark"], row["hidden"], colors, False
+            ),
             Text(str(row["uid"]), style=colors.muted),
             str(row["solved"]),
             str(row["submitted"]),
@@ -610,10 +958,11 @@ class PersonScreen(ReviewListScreen):
     TITLE = "选手"
     HINTS = (("↵", "提交历史"), ("m", "标记"), ("esc", "返回"))
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        *ShellScreen.BINDINGS,
+        *TableScreen.BINDINGS,
         ("m", "mark", "标记选手"),
     ]
     COLUMNS = (
+        ui.Column("题", 3),
         ui.Column("题目"),
         ui.Column("提交", 4, "right"),
         ui.Column("最终结果", 12),
@@ -625,6 +974,16 @@ class PersonScreen(ReviewListScreen):
         super().__init__(data, f"{path} › {person['name']}")
         self.uid = uid
         self.TITLE = str(person["name"])
+
+    def heading(self) -> Text:
+        colors = ui.palette(self.app)
+        person = self.data.person(self.uid)
+        text = ui.person_text(
+            str(person["name"]), self.uid, person["mark"], person["hidden"], colors, False
+        )
+        text.stylize("bold")
+        text.append("   " + self.subtitle(), style=colors.muted)
+        return text
 
     def subtitle(self) -> str:
         person = self.data.person(self.uid)
@@ -656,13 +1015,21 @@ class PersonScreen(ReviewListScreen):
                 )
         return rows
 
+    def sort_key(self, row: dict[str, Any], column: int) -> Any:
+        return {
+            0: int(row["problem_index"]),
+            1: str(row["title"]),
+            2: row["count"],
+            3: (row["solved"], str(row["final"])),
+            4: row["findings"],
+        }.get(column)
+
     def cells(self, row: dict[str, Any]) -> Sequence[str | Text]:
         colors = ui.palette(self.app)
-        problem = Text(f"{row['problem_index']} ", style=colors.muted)
-        problem.append(str(row["title"]), style=colors.fg)
         verdict = "通过" if row["solved"] else str(row["final"])
         return [
-            problem,
+            Text(ui.problem_label(row["problem_index"]), style=f"bold {colors.fg}"),
+            Text(str(row["title"]), style=colors.fg),
             str(row["count"]),
             Text(verdict, style=colors.ok if row["solved"] else ui.verdict_color(verdict, colors)),
             Text(str(row["findings"]), style=colors.warn)
@@ -709,7 +1076,7 @@ class SubmissionScreen(ReviewListScreen):
     )
 
     def __init__(self, data: ReviewData, path: str, uid: str, problem: int) -> None:
-        super().__init__(data, f"{path} › 题 {problem}")
+        super().__init__(data, f"{path} › {ui.problem_label(problem)}")
         self.uid = uid
         self.problem = problem
 
@@ -718,6 +1085,16 @@ class SubmissionScreen(ReviewListScreen):
 
     def items(self) -> list[dict[str, Any]]:
         return self.data.submissions(self.uid, self.problem)
+
+    def sort_key(self, row: dict[str, Any], column: int) -> Any:
+        return {
+            0: int(row["submit_time"]),
+            1: str(row["verdict"]),
+            2: float(row["score"]),
+            3: str(row["language"]),
+            4: str(row["phase"]),
+            5: str(row["submission_id"]),
+        }.get(column)
 
     def cells(self, row: dict[str, Any]) -> Sequence[str | Text]:
         colors = ui.palette(self.app)
@@ -740,8 +1117,9 @@ class SubmissionScreen(ReviewListScreen):
 
 class ProblemsScreen(ReviewListScreen):
     TITLE = "题目"
-    HINTS = (("↵", "查看代码"), ("/", "搜索"), ("esc", "返回"))
+    HINTS = (("↵", "查看代码"), ("s", "排序"), ("/", "搜索"), ("esc", "返回"))
     COLUMNS = (
+        ui.Column("题", 3),
         ui.Column("题目"),
         ui.Column("提交人数", 8, "right"),
         ui.Column("通过人数", 8, "right"),
@@ -765,12 +1143,20 @@ class ProblemsScreen(ReviewListScreen):
             row.update(tried=len(tried[index]), solved=len(solved[index]), findings=findings[index])
         return rows
 
+    def sort_key(self, row: dict[str, Any], column: int) -> Any:
+        return {
+            0: int(row["problem_index"]),
+            1: str(row["title"]),
+            2: row["tried"],
+            3: row["solved"],
+            4: row["findings"],
+        }.get(column)
+
     def cells(self, row: dict[str, Any]) -> Sequence[str | Text]:
         colors = ui.palette(self.app)
-        problem = Text(f"{row['problem_index']} ", style=colors.muted)
-        problem.append(str(row["title"]), style=colors.fg)
         return [
-            problem,
+            Text(ui.problem_label(row["problem_index"]), style=f"bold {colors.fg}"),
+            Text(str(row["title"]), style=colors.fg),
             str(row["tried"]),
             str(row["solved"]),
             Text(str(row["findings"]), style=colors.warn)
@@ -789,16 +1175,6 @@ class ProblemsScreen(ReviewListScreen):
 class ProblemScreen(ReviewListScreen):
     TITLE = "代表代码"
     HINTS = (("↵", "查看代码"), ("s", "排序"), ("esc", "返回"))
-    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        *ShellScreen.BINDINGS,
-        ("s", "sort", "切换排序"),
-    ]
-    ORDERS = ("time", "name", "findings")
-    ORDER_NAMES: ClassVar[dict[str, str]] = {
-        "time": "通过时间",
-        "name": "姓名",
-        "findings": "线索数",
-    }
     COLUMNS = (
         ui.Column("选手"),
         ui.Column("结果", 12),
@@ -809,25 +1185,39 @@ class ProblemScreen(ReviewListScreen):
     )
 
     def __init__(self, data: ReviewData, path: str, problem: int, name: str) -> None:
-        super().__init__(data, f"{path} › {name}")
+        super().__init__(data, f"{path} › {ui.problem_label(problem)}")
         self.problem = problem
-        self.order = "time"
-        self.TITLE = f"{problem} · {name}"
+        self.TITLE = f"{ui.problem_label(problem)} · {name}"
+        self._finding_counts: dict[str, int] = {}
 
     def subtitle(self) -> str:
-        return f"每人一份代表代码 · 按{self.ORDER_NAMES[self.order]}排序"
+        return "每人一份代表代码（最高分 → 最长 → 最早）"
 
     def items(self) -> list[dict[str, Any]]:
         self._finding_counts = self.data.finding_counts(self.problem)
-        return self.data.representatives(self.problem, self.order)
+        return self.data.representatives(self.problem, "time")
+
+    def sort_key(self, row: dict[str, Any], column: int) -> Any:
+        return {
+            0: str(row["name"] or row["uid"]),
+            1: str(row["verdict"]),
+            2: str(row["language"]),
+            3: int(row["submit_time"]),
+            4: self._finding_counts.get(row["uid"], 0),
+            5: {"cheater": 0, "suspect": 1, "normal": 3}.get(str(row.get("mark", "")), 2),
+        }.get(column)
 
     def cells(self, row: dict[str, Any]) -> Sequence[str | Text]:
         colors = ui.palette(self.app)
         count = self._finding_counts.get(row["uid"], 0)
         return [
-            Text(
+            ui.person_text(
                 str(row["name"] or row["uid"]),
-                style=colors.muted if row.get("hidden") else colors.fg,
+                str(row["uid"]),
+                str(row.get("mark", "")),
+                bool(row.get("hidden")),
+                colors,
+                False,
             ),
             Text(str(row["verdict"]), style=ui.verdict_color(row["verdict"], colors)),
             LANGUAGES.get(row["language"], row["language"]),
@@ -835,10 +1225,6 @@ class ProblemScreen(ReviewListScreen):
             Text(str(count), style=colors.warn) if count else Text("·", style=colors.muted),
             mark_text(row, colors),
         ]
-
-    def action_sort(self) -> None:
-        self.order = self.ORDERS[(self.ORDERS.index(self.order) + 1) % len(self.ORDERS)]
-        self.reload()
 
     def open_index(self, index: int) -> None:
         if self.selected_row(index):
@@ -899,7 +1285,10 @@ class CodeScreen(ShellScreen):
         row = self.current
         self.PATH = f"{self.base_path} › 代码"
         person = self.data.person(row["uid"])
-        meta = Text(str(person["name"]), style=f"bold {colors.fg}")
+        meta = ui.person_text(
+            str(person["name"]), str(row["uid"]), person["mark"], person["hidden"], colors, False
+        )
+        meta.stylize("bold")
         meta.append(f" {row['uid']}  ", style=colors.muted)
         meta.append_text(mark_text(person, colors))
         meta.append(f"    第 {self.index + 1} / {len(self.items)} 份", style=colors.muted)
@@ -907,7 +1296,7 @@ class CodeScreen(ShellScreen):
         pane = self.query_one("#code-pane")
         when = f" · {ui.clock(row['submit_time'])}" if "submit_time" in row else ""
         pane.border_title = (
-            f"题 {row['problem_index']} · {row['verdict']} · "
+            f"{ui.problem_label(row['problem_index'])} · {row['verdict']} · "
             f"{LANGUAGES.get(row['language'], row['language'])}{when}"
         )
         pane.border_subtitle = str(row["submission_id"])

@@ -195,8 +195,8 @@ class HomeScreen(ShellScreen):
         )
         entries = self.app.contests.list_contests(show_all=True)
         overview = Static(
-            "◈ ojaudit / review\\n"
-            "本地优先的训练赛证据审核工作台\\n"
+            "◈ ojaudit / review\n"
+            "本地优先的训练赛证据审核工作台\n"
             f"本地比赛 {len(entries)}  ·  请通过 ojaudit login 管理登录",
             id="home-overview",
         )
@@ -344,13 +344,21 @@ class ContestOverviewScreen(ShellScreen):
                             "◈ 本地审核概览",
                             "  ·  ".join(
                                 (
-                                    label("people", f"参赛者 {stats.participants}", self.app.nerd_font),
-                                    label("submissions", f"提交 {stats.submissions}", self.app.nerd_font),
+                                    label(
+                                        "people", f"参赛者 {stats.participants}", self.app.nerd_font
+                                    ),
+                                    label(
+                                        "submissions",
+                                        f"提交 {stats.submissions}",
+                                        self.app.nerd_font,
+                                    ),
                                 )
                             ),
                             "  ·  ".join(
                                 (
-                                    label("findings", f"检测线索 {stats.findings}", self.app.nerd_font),
+                                    label(
+                                        "findings", f"检测线索 {stats.findings}", self.app.nerd_font
+                                    ),
                                     label("problems", f"题目 {stats.problems}", self.app.nerd_font),
                                 )
                             ),

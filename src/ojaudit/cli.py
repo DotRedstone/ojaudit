@@ -20,7 +20,7 @@ from ojaudit.cli_operations import (
     plugins_command,
     save_cookie,
 )
-from ojaudit.core.config import data_dir
+from ojaudit.core.config import data_dir, load_config
 from ojaudit.core.filters import filter_contests, load_contest_filter
 from ojaudit.core.people import HiddenPerson, exclude_hidden_submissions
 from ojaudit.core.ranking import RankingOptions, build_final_ranking
@@ -217,7 +217,7 @@ def _export(store: Store, args: argparse.Namespace) -> Path:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ojaudit", description="训练赛代码审查 CLI")
-    parser.add_argument("--db", type=Path, default=data_dir() / "ojaudit.sqlite")
+    parser.add_argument("--db", type=Path, default=None)
     sub = parser.add_subparsers(dest="command")
 
     migration = sub.add_parser("migrate", help="导入旧版 JSON 数据包")
@@ -291,7 +291,7 @@ def main(argv: list[str] | None = None) -> None:
             entry = import_module("ojaudit.tui.app").main
         except (ImportError, AttributeError) as exc:
             raise SystemExit("TUI 入口尚未就绪，请使用 ojaudit --help") from exc
-        entry()
+        entry(db_path=args.db)
         return
     if args.command == "login":
         import getpass
@@ -302,7 +302,12 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "plugins":
         plugins_command(args.action, args.spec)
         return
-    with Store(args.db) as store:
+    configured = load_config().get("storage", {})
+    configured_db = configured.get("sqlite_path") if isinstance(configured, dict) else None
+    db_path = args.db or (
+        Path(configured_db).expanduser() if configured_db else data_dir() / "ojaudit.sqlite"
+    )
+    with Store(db_path) as store:
         if args.command == "migrate":
             if args.from_nowcoder_collect:
                 if args.input:

@@ -29,7 +29,6 @@ class EditValue(ModalScreen[str | None]):
         Binding("h", "cancel", "取消"),
     ]
 
-
     def __init__(self, option: Option, value: Any) -> None:
         super().__init__()
         self.option = option
@@ -74,7 +73,6 @@ class ConfirmLeave(ModalScreen[bool]):
         Binding("escape", "cancel", "继续编辑", priority=True),
         Binding("h", "cancel", "继续编辑"),
     ]
-
 
     def compose(self) -> ComposeResult:
         with Vertical(id="confirm", classes="dialog-box"):

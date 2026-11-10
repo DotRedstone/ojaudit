@@ -62,7 +62,7 @@ def test_page_inheritance_and_theme_contract():
     assert all(issubclass(screen, ShellScreen) for screen in pages)
     assert not issubclass(ShellScreen, ModalScreen)
 
-    css = (Path(__file__).resolve().parents[2] / "src/ojaudit/tui/themes/nowcoder.tcss")
+    css = Path(__file__).resolve().parents[2] / "src/ojaudit/tui/themes/nowcoder.tcss"
     rules = css.read_text(encoding="utf-8")
     assert "#breadcrumb {" in rules and "height: 1;" in rules
     assert ".dialog-box {" in rules and "max-height: 20;" in rules

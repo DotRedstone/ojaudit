@@ -41,7 +41,6 @@ class ChoiceDialog(ModalScreen[tuple[str, str] | None]):
         Binding("h", "back", "取消"),
     ]
 
-
     def __init__(
         self, title: str, options: tuple[tuple[str, str], ...], value: str = "", note: str = ""
     ) -> None:
@@ -269,7 +268,9 @@ class EvidenceScreen(ShellScreen):
             if isinstance(scores, dict)
             else "无"
         )
-        reason_text = "；".join(str(x) for x in reason) if isinstance(reason, list) else str(reason or "无")
+        reason_text = (
+            "；".join(str(x) for x in reason) if isinstance(reason, list) else str(reason or "无")
+        )
         stale = "【已失效】" if finding["is_stale"] else ""
         self.query_one("#evidence-meta", Static).update(
             label(

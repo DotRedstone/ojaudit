@@ -140,7 +140,6 @@ class EntryDialog(ModalScreen[str | None]):
         Binding("h", "cancel", "取消"),
     ]
 
-
     def __init__(self, *, login: bool = False) -> None:
         super().__init__()
         self.login = login
@@ -325,7 +324,9 @@ class ContestListScreen(ShellScreen):
                 label_text += "  · " + label("hidden", "规则外", self.app.nerd_font)
             view.append(StatusRow(label_text))
         if not self.entries:
-            view.append(StatusRow("暂无比赛：先执行 ojaudit login，再执行 ojaudit collect <比赛ID>"))
+            view.append(
+                StatusRow("暂无比赛：先执行 ojaudit login，再执行 ojaudit collect <比赛ID>")
+            )
         view.call_after_refresh(setattr, view, "index", 0)
         self.query_one("#breadcrumb", Static).update(
             self.breadcrumb_text() + (" · 全部" if self.show_all else " · 已筛选")

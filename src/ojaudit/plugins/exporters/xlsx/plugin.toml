@@ -1,0 +1,10 @@
+name = "builtin_xlsx"
+kind = "exporter"
+version = "1.0.0"
+api_version = 1
+description = "Excel 导出（中文表头、按人员标记着色）"
+languages = []
+module = "ojaudit.plugins.exporters.xlsx"
+
+# 导出器只接受 rows 和 destination，没有额外运行参数。
+[params]

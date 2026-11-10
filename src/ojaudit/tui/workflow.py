@@ -51,6 +51,16 @@ def pending_entries(local: LocalContests) -> list[PendingEntry]:
     return [entry for entry in review_entries(local) if is_pending(entry)]
 
 
+def local_codes(db_path: str | Path, platform: str, contest_id: str) -> dict[str, Any]:
+    """增量采集用：本地已有源码的提交。数据库不存在时为空。"""
+    from ojaudit.cli_operations import known_codes
+
+    if not Path(db_path).is_file():
+        return {}
+    with Store(db_path) as store:
+        return known_codes(store, platform, contest_id)
+
+
 def persist_bundle(db_path: str | Path, bundle: Any) -> Contest:
     """后台线程独立打开 SQLite，避免跨线程共享连接。"""
     with Store(db_path) as store:

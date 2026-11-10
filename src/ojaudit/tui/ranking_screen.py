@@ -73,20 +73,18 @@ class RankingScreen(ShellScreen):
 
     def compose(self) -> ComposeResult:
         yield from self.chrome_top()
-        with Vertical(id="body"):
-            yield Static("", id="heading")
-            with Horizontal(id="ranking-columns"):
-                with Vertical(id="ranking-side"):
-                    yield NavigateListView(
-                        *(ListItem(Label(name)) for name, _, _ in POLICIES),
-                        id="ranking-options",
-                        classes="panel",
-                    )
-                    yield Static("", id="ranking-warning", classes="panel")
-                yield Splitter("ranking-side", "ranking", minimum=30)
-                with Vertical(id="ranking-main", classes="panel"):
-                    yield Static("", classes="thead")
-                    yield NavigateListView(id="ranking-preview")
+        with Vertical(id="body"), Horizontal(id="ranking-columns"):
+            with Vertical(id="ranking-side"):
+                yield NavigateListView(
+                    *(ListItem(Label(name)) for name, _, _ in POLICIES),
+                    id="ranking-options",
+                    classes="panel",
+                )
+                yield Static("", id="ranking-warning", classes="panel")
+            yield Splitter("ranking-side", "ranking", minimum=30)
+            with Vertical(id="ranking-main", classes="panel"):
+                yield Static("", classes="thead")
+                yield NavigateListView(id="ranking-preview")
         yield from self.chrome_bottom()
 
     def on_mount(self) -> None:

@@ -51,17 +51,18 @@ def test_navigation_and_page_edges(tmp_path):
         async with app.run_test() as pilot:
             await pilot.pause()
             assert isinstance(app.screen, HomeScreen)
-            assert not app.screen.query_one("#pages").display
+            assert str(app.screen.query_one("#frame-top").render()).count("╭") == 1
             await pilot.press("enter")
             await pilot.pause()
             assert isinstance(app.screen, ContestListScreen)
             assert len(app.screen.entries) == 1
-            assert "首" in str(app.screen.query_one("#pages").render())
+            assert "首页" in str(app.screen.query_one("#frame-top").render())
             await pilot.press("enter")
             await pilot.pause()
             assert isinstance(app.screen, ContestOverviewScreen)
-            edges = str(app.screen.query_one("#pages").render())
-            assert "比" in edges and "首" in edges, "书脊竖排列出上层页面"
+            pages = str(app.screen.query_one("#frame-top").render()).splitlines()
+            assert [line.count("│") for line in pages] == [0, 1, 2], "上层页面依次错开叠放"
+            assert "比赛列表" in pages[1] and "校内练习甲" in pages[2]
             await pilot.press("escape")
             await pilot.pause()
             assert isinstance(app.screen, ContestListScreen)

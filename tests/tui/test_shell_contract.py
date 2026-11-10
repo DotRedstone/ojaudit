@@ -59,9 +59,9 @@ def test_every_page_has_shell_and_no_footer(tmp_path, monkeypatch):
                 if screen is not None:
                     app.push_screen(screen)
                     await pilot.pause()
-                edges = app.screen.query_one("#pages")
+                top = str(app.screen.query_one("#frame-top", Static).render())
                 bottom = str(app.screen.query_one("#status", Static).render())
-                assert edges.display == (screen is not None), "首页之外都有书脊"
+                assert top.count("╭") == len(app.screen_stack) - 1, "每一层页面露出一条标题边"
                 assert "帮助" in bottom
                 assert not list(app.screen.query(Footer))
                 assert "palette" not in app.export_screenshot()

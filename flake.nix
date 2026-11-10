@@ -17,6 +17,7 @@
           dependencies = [
             pkgs.python312Packages.tomli-w
             pkgs.python312Packages.textual
+            pkgs.python312Packages.qrcode
           ];
           doCheck = false;
         };

@@ -63,7 +63,7 @@ def _wechat_url(ticket: str) -> str:
         decoded = raw.decode("latin-1")
     except (ValueError, UnicodeError) as exc:
         raise ValueError("扫码票据无效") from exc
-    match = re.search(r"https?://weixin\\.qq\\.com/q/[A-Za-z0-9_./?=&%\\-]+", decoded)
+    match = re.search(r"https?://weixin\.qq\.com/q/[A-Za-z0-9_./?=&%\\-]+", decoded)
     if match is None:
         raise ValueError("未发现可验证的微信扫码地址")
     return match.group(0)
@@ -74,7 +74,7 @@ def qr_terminal_text(url: str) -> str:
     qr = qrcode.QRCode(border=2, box_size=1)
     qr.add_data(url)
     qr.make(fit=True)
-    return "\\n".join(
+    return "\n".join(
         "".join("██" if pixel else "  " for pixel in row) for row in qr.get_matrix()
     )
 

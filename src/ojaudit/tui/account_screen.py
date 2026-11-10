@@ -88,7 +88,7 @@ class AccountScreen(ShellScreen):
         status = "本机已存 Cookie" if logged_in_locally() else "本机未保存 Cookie"
         uid = current_uid() or "尚未设置"
         self.query_one("#account-state", Static).update(
-            f"牛客 UID：{uid} · {status}\\n"
+            f"牛客 UID：{uid} · {status}\n"
             "扫码仅在本地终端进行，登录凭据不会出现在 TUI、截图或日志中。"
         )
 

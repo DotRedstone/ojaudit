@@ -18,6 +18,7 @@ from textual.widgets import Button, Footer, Input, Label, ListView, Static
 
 from ojaudit.core.schema import Contest
 from ojaudit.tui.data import LocalContests
+from ojaudit.tui.icons import breadcrumb, label
 from ojaudit.tui.interaction import Breadcrumb, SearchDialog
 from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView as NavigationListView
@@ -38,7 +39,7 @@ class ShellScreen(Screen):
 
     def shell(self, content: list[object]) -> ComposeResult:
         hints = " · Enter/l 进入 · Esc/h 返回 · ? 帮助" if self.app.key_hints else ""
-        yield Breadcrumb(self.PATH + hints, id="breadcrumb")
+        yield Breadcrumb(breadcrumb(self.PATH, self.app.nerd_font) + hints, id="breadcrumb")
         with Vertical(id="pane"):
             yield from content
         yield Static("", id="status")
@@ -46,7 +47,7 @@ class ShellScreen(Screen):
 
     def on_mount(self) -> None:
         pane = self.query_one("#pane", Vertical)
-        pane.border_title = self.TITLE
+        pane.border_title = label("open", self.TITLE, self.app.nerd_font)
         view = next(iter(self.query(ListView)), None)
         if view is not None:
             pane.border_subtitle = f"{len(view.children)} 项"
@@ -142,7 +143,13 @@ class EntryDialog(ModalScreen[str | None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="entry-dialog"):
-            yield Label("牛客 Cookie（输入内容隐藏）" if self.login else "比赛 ID（本地查找）")
+            yield Label(
+                label(
+                    "login" if self.login else "contest",
+                    "牛客 Cookie（输入内容隐藏）" if self.login else "比赛 ID（本地查找）",
+                    self.app.nerd_font,
+                )
+            )
             yield Input(
                 placeholder="粘贴 Cookie" if self.login else "输入比赛 ID",
                 password=self.login,
@@ -150,9 +157,15 @@ class EntryDialog(ModalScreen[str | None]):
             )
             with Horizontal(id="entry-buttons"):
                 yield Button(
-                    "保存" if self.login else "打开", id="entry-confirm", variant="primary"
+                    label(
+                        "save" if self.login else "open",
+                        "保存" if self.login else "打开",
+                        self.app.nerd_font,
+                    ),
+                    id="entry-confirm",
+                    variant="primary",
                 )
-                yield Button("取消", id="entry-cancel")
+                yield Button(label("cancel", "取消", self.app.nerd_font), id="entry-cancel")
 
     def on_mount(self) -> None:
         self.query_one("#entry-value", Input).focus()
@@ -177,6 +190,7 @@ class HomeScreen(ShellScreen):
     TITLE = "ojaudit · 首页"
     PATH = "首页"
     OPTIONS = ("比赛列表", "打开比赛 ID", "账户 / 登录", "设置", "待复核", "采集比赛 ID")
+    ICON_KEYS = ("list", "open", "login", "settings", "pending", "collect")
 
     def compose(self) -> ComposeResult:
         hint = (
@@ -194,7 +208,12 @@ class HomeScreen(ShellScreen):
         items: list[object] = [
             overview,
             Static(hint),
-            NavigationListView(*(ListItem(Label(item)) for item in self.OPTIONS)),
+            NavigationListView(
+                *(
+                    ListItem(Label(label(key, item, self.app.nerd_font)))
+                    for key, item in zip(self.ICON_KEYS, self.OPTIONS)
+                )
+            ),
         ]
         if not self.app.contests.list_contests(show_all=True):
             items.append(
@@ -294,17 +313,20 @@ class ContestListScreen(ShellScreen):
         view = self.query_one("#contests", ListView)
         view.clear()
         for entry in self.entries:
-            label = f"{entry.contest.name}  [{entry.contest.platform}/{entry.contest.contest_id}]"
+            text = f"{entry.contest.name}  [{entry.contest.platform}/{entry.contest.contest_id}]"
+            label_text = label("contest", text, self.app.nerd_font)
             if not entry.visible:
-                label += "  · 规则外"
-            view.append(ListItem(Label(label)))
+                label_text += "  · " + label("hidden", "规则外", self.app.nerd_font)
+            view.append(ListItem(Label(label_text)))
         if not self.entries:
             view.append(
                 ListItem(Label("暂无比赛：先执行 ojaudit login，再执行 ojaudit collect <比赛ID>"))
             )
         view.call_after_refresh(setattr, view, "index", 0)
         self.query_one("#breadcrumb", Static).update(
-            self.PATH + (" › 全部" if self.show_all else " › 已筛选")
+            breadcrumb(
+                self.PATH + (" › 全部" if self.show_all else " › 已筛选"), self.app.nerd_font
+            )
         )
 
     @on(Button.Pressed, "#collect-contest")
@@ -345,6 +367,7 @@ class ContestListScreen(ShellScreen):
 class ContestOverviewScreen(ShellScreen):
     TITLE = "比赛总览"
     OPTIONS = ("线索", "选手", "题目", "排行榜", "采集并检测", "本地分析")
+    ICON_KEYS = ("findings", "people", "problems", "ranking", "collect_analyze", "analyze")
 
     def __init__(self, contest: Contest, contests: LocalContests):
         super().__init__()
@@ -356,7 +379,7 @@ class ContestOverviewScreen(ShellScreen):
     def compose(self) -> ComposeResult:
         with Vertical():
             hints = " · Enter/l 进入 · Esc/h 返回 · ? 帮助" if self.app.key_hints else ""
-            yield Breadcrumb(self.PATH + hints, id="breadcrumb")
+            yield Breadcrumb(breadcrumb(self.PATH, self.app.nerd_font) + hints, id="breadcrumb")
             with Vertical(id="pane"):
                 yield Static("", id="summary")
                 yield NavigationListView(id="overview-options")
@@ -379,10 +402,30 @@ class ContestOverviewScreen(ShellScreen):
     def refresh_overview(self) -> None:
         stats = self.contests.stats(self.contest)
         self.query_one("#summary", Static).update(
-            "◈ 本地审核概览\n"
-            f"参赛者 {stats.participants}  ·  提交 {stats.submissions}\n"
-            f"检测线索 {stats.findings}  ·  题目 {stats.problems}\n"
-            "线索为待审核提示，不代表违规结论"
+            "\n".join(
+                (
+                    "◈ 本地审核概览",
+                    "  ·  ".join(
+                        (
+                            label(
+                                "people", f"参赛者 {stats.participants}", self.app.nerd_font
+                            ),
+                            label(
+                                "submissions", f"提交 {stats.submissions}", self.app.nerd_font
+                            ),
+                        )
+                    ),
+                    "  ·  ".join(
+                        (
+                            label(
+                                "findings", f"检测线索 {stats.findings}", self.app.nerd_font
+                            ),
+                            label("problems", f"题目 {stats.problems}", self.app.nerd_font),
+                        )
+                    ),
+                    "线索为待审核提示，不代表违规结论",
+                )
+            )
         )
         counts = (
             stats.findings,
@@ -395,8 +438,8 @@ class ContestOverviewScreen(ShellScreen):
         view = self.query_one("#overview-options", ListView)
         index = view.index or 0
         view.clear()
-        for name, count in zip(self.OPTIONS, counts):
-            view.append(ListItem(Label(f"{name} · {count}")))
+        for key, name, count in zip(self.ICON_KEYS, self.OPTIONS, counts):
+            view.append(ListItem(Label(label(key, f"{name} · {count}", self.app.nerd_font))))
         view.call_after_refresh(setattr, view, "index", index)
 
     @on(Button.Pressed, "#cancel-overview-job")

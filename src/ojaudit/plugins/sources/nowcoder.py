@@ -20,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
-from ojaudit.core.schema import Contest, Participant, Problem, Submission
+from ojaudit.core.schema import Contest, Participant, Problem, Submission, language_bucket
 
 BASE_URL = "https://ac.nowcoder.com"
 USER_AGENT = "ojaudit/0.1 (+read-only contest import)"
@@ -32,17 +32,6 @@ class NowcoderBundle:
     problems: tuple[Problem, ...]
     participants: tuple[Participant, ...]
     submissions: tuple[Submission, ...]
-
-
-def _language(value: str) -> str:
-    text = (value or "").lower()
-    if any(token in text for token in ("c++", "cpp", "g++", "clang")):
-        return "cpp"
-    if "python" in text or "pypy" in text:
-        return "python"
-    if "java" in text:
-        return "java"
-    return "other"
 
 
 def _code_from_html(page: str) -> tuple[str, str, str, float]:
@@ -304,7 +293,7 @@ class NowcoderSource:
                     submission_id=submission_id,
                     uid=uid,
                     problem_index=problem.index,
-                    language=_language(language_text),
+                    language=language_bucket(language_text),
                     verdict=verdict,
                     score=score,
                     submit_time=submit_time,

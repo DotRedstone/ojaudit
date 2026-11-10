@@ -6,6 +6,7 @@ import stat
 from textual.widgets import Input, ListView
 
 from ojaudit.core.store import Store
+from ojaudit.tui.account_screen import AccountScreen
 from ojaudit.tui.app import AuditApp
 from ojaudit.tui.data import LocalContests
 from ojaudit.tui.screens import ContestOverviewScreen, EntryDialog, HomeScreen, MissingContestScreen
@@ -61,11 +62,18 @@ def test_login_masked_and_mode_0600(tmp_path, monkeypatch):
             app.screen.query_one(ListView).index = 2
             await pilot.press("enter")
             await pilot.pause()
+            assert isinstance(app.screen, AccountScreen)
+            app.screen.query_one(ListView).index = 2
+            await pilot.press("enter")
+            await pilot.pause()
             assert isinstance(app.screen, EntryDialog)
             field = app.screen.query_one(Input)
             assert field.password is True
             field.value = "synthetic_cookie=not_real"
             await pilot.press("enter")
+            await pilot.pause()
+            assert isinstance(app.screen, AccountScreen)
+            await pilot.press("escape")
             await pilot.pause()
             assert isinstance(app.screen, HomeScreen)
 

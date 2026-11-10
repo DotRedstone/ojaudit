@@ -2,7 +2,7 @@
 
 import json
 
-from ojaudit.cli import _import_json
+from ojaudit.core.ingest import import_json
 from ojaudit.core.schema import Contest
 from ojaudit.core.store import Store
 from ojaudit.tui.data import LocalContests
@@ -38,7 +38,7 @@ def test_json_migration_problems_and_legacy_fallback(tmp_path):
         encoding="utf-8",
     )
     with Store(db) as store:
-        _import_json(store, source)
+        import_json(store, source)
         assert store.execute("SELECT count(*) FROM problems").fetchone()[0] == 1
     local = LocalContests(db)
     data = ReviewData(local, Contest("synthetic", "sample", "sample"))

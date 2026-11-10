@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ojaudit.cli import _analyze
-from ojaudit.cli_operations import import_bundle
+from ojaudit.core.ingest import import_bundle
 from ojaudit.core.schema import Contest
 from ojaudit.core.store import Store
 from ojaudit.tui.data import LocalContests

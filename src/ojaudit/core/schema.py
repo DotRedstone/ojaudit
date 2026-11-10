@@ -66,3 +66,28 @@ def validate_submission(item: Submission) -> None:
         raise ValueError("不支持的语言桶")
     if item.phase not in {"before", "contest", "after"}:
         raise ValueError("不支持的提交阶段")
+
+
+def language_bucket(value: str) -> Language:
+    """把平台语言名归入 cpp / python / java / other。"""
+    text = (value or "").lower()
+    if any(token in text for token in ("c++", "cpp", "g++", "clang")):
+        return "cpp"
+    if "python" in text or "pypy" in text:
+        return "python"
+    if "java" in text and "javascript" not in text:
+        return "java"
+    return "other"
+
+
+def parse_problem_index(value: object) -> int:
+    """题号统一为从 0 开始的整数：数字原样，字母按 A=0、Z=25、AA=26 计算。"""
+    text = str(value).strip().upper()
+    if text.isdigit():
+        return int(text)
+    if text.isascii() and text.isalpha():
+        number = 0
+        for char in text:
+            number = number * 26 + (ord(char) - ord("A") + 1)
+        return number - 1
+    raise ValueError(f"无法识别的题号：{value!r}")

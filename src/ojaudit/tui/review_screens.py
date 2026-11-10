@@ -168,9 +168,41 @@ class ReviewListScreen(ShellScreen):
 
 class FindingsScreen(ReviewListScreen):
     TITLE = "线索 · 当前与已失效"
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+        *ShellScreen.BINDINGS,
+        ("f", "cycle_filter", "切换线索过滤"),
+    ]
+    FILTERS = ("全部", "高优先级", "未处理", "已处理")
+
+    def __init__(self, data: ReviewData, path: str) -> None:
+        super().__init__(data, path)
+        self.filter_index = 0
 
     def items(self) -> list[dict[str, Any]]:
-        return self.data.findings()
+        rows = self.data.findings()
+        mode = self.FILTERS[self.filter_index]
+        if mode == "高优先级":
+            return [
+                row for row in rows
+                if not row["is_stale"] and str(row["verdict_level"]).lower() == "high"
+            ]
+        if mode == "未处理":
+            return [
+                row for row in rows
+                if not row["is_stale"] and row["status"] == "待复核"
+            ]
+        if mode == "已处理":
+            return [
+                row for row in rows
+                if not row["is_stale"] and row["status"] != "待复核"
+            ]
+        return rows
+
+    def action_cycle_filter(self) -> None:
+        self.filter_index = (self.filter_index + 1) % len(self.FILTERS)
+        self.reload()
+        self.query_one("#pane", Vertical).border_subtitle = self.FILTERS[self.filter_index]
+        self.notify(f"线索筛选：{self.FILTERS[self.filter_index]}")
 
     def icon_for(self, row: dict[str, Any]) -> str:
         return "warning" if row["is_stale"] else "findings"

@@ -11,16 +11,15 @@ from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
-from textual.screen import Screen
-from textual.widgets import Footer, Label, ListView, Static
+from textual.widgets import ListView, Static
 
 from ojaudit.core.ranking import RankingOptions
-from ojaudit.tui.icons import breadcrumb
 from ojaudit.tui.icons import label as label_icon
-from ojaudit.tui.interaction import Breadcrumb
-from ojaudit.tui.interaction import NavigateListItem as ListItem
+from ojaudit.tui.interaction import NavigateListView
 from ojaudit.tui.ranking_data import export_ranking, final_ranking, pending_warnings
 from ojaudit.tui.review_data import ReviewData
+from ojaudit.tui.screens import ShellScreen
+from ojaudit.tui.ui_components import StatusRow
 
 POLICIES = (
     ("作弊者", ("剔除", "标记"), ("drop", "mark")),
@@ -30,8 +29,9 @@ POLICIES = (
 )
 
 
-class RankingScreen(Screen):
+class RankingScreen(ShellScreen):
     TITLE = "排行榜 · 本地推导（非官方）"
+    HINTS = "Enter 切换策略  e 导出  Tab 面板  j/k 移动  Esc 返回"
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("escape,h,left", "back", "返回"),
         ("right,l,enter,space", "next", "切换策略"),
@@ -43,38 +43,33 @@ class RankingScreen(Screen):
         ("tab,shift+tab", "focus_next", "切换面板"),
         ("e", "export", "导出"),
     ]
-    CSS = """
-    #ranking-options { height: 7; border: round $panel; }
-    #ranking-preview { height: 1fr; border: round $panel; }
-    #ranking-warning { height: 3; padding: 0 1; color: $warning; }
-    """
 
     def __init__(self, data: ReviewData) -> None:
         super().__init__()
         self.data = data
+        self.contest = data.contest
+        self.PATH = f"首页 › 比赛列表 › {data.contest.name} › 排行榜"
         self.choice_indices = [0, 0, 0, 0]
 
     def compose(self) -> ComposeResult:
-        yield Breadcrumb(
-            breadcrumb(f"首页 › 比赛列表 › {self.data.contest.name} › 排行榜", self.app.nerd_font),
-            id="breadcrumb",
-        )
-        with Vertical(id="pane"):
-            yield Static(
-                label_icon(
-                    "ranking",
-                    "无官方 submit-list 快照：本地提交成绩推算（非官方排名）",
-                    self.app.nerd_font,
+        yield from self.shell(
+            [
+                Static(
+                    label_icon(
+                        "ranking",
+                        "无官方 submit-list 快照：本地提交成绩推算（非官方排名）",
+                        self.app.nerd_font,
+                    ),
+                    id="ranking-note",
                 ),
-                id="ranking-note",
-            )
-            yield ListView(id="ranking-options")
-            yield Static("", id="ranking-warning")
-            yield ListView(id="ranking-preview")
-        yield Static("", id="status")
-        yield Footer()
+                NavigateListView(id="ranking-options"),
+                Static("", id="ranking-warning"),
+                NavigateListView(id="ranking-preview"),
+            ]
+        )
 
     def on_mount(self) -> None:
+        super().on_mount()
         self.query_one("#pane", Vertical).border_title = label_icon(
             "ranking", self.TITLE, self.app.nerd_font
         )
@@ -103,13 +98,11 @@ class RankingScreen(Screen):
         view.clear()
         for index, (label, titles, _) in enumerate(POLICIES):
             view.append(
-                ListItem(
-                    Label(
-                        label_icon(
-                            ("cheater", "suspect", "manager", "export")[index],
-                            f"{label}   ‹ {titles[self.choice_indices[index]]} ›",
-                            self.app.nerd_font,
-                        )
+                StatusRow(
+                    label_icon(
+                        ("cheater", "suspect", "manager", "export")[index],
+                        f"{label}   ‹ {titles[self.choice_indices[index]]} ›",
+                        self.app.nerd_font,
                     )
                 )
             )
@@ -129,21 +122,20 @@ class RankingScreen(Screen):
                 row.get("person_mark", ""), ""
             )
             preview.append(
-                ListItem(
-                    Label(
-                        label_icon(
-                            "ranking",
-                            f"#{row['rank']}  {row['name']} · {row['score']:g} 分"
-                            f"{' · ' + mark if mark else ''}",
-                            self.app.nerd_font,
-                        )
-                    )
+                StatusRow(
+                    label_icon(
+                        "ranking",
+                        f"#{row['rank']}  {row['name']} · {row['score']:g} 分"
+                        f"{' · ' + mark if mark else ''}",
+                        self.app.nerd_font,
+                    ),
+                    kind=f"mark-{row['person_mark']}"
+                    if row.get("person_mark") in {"cheater", "suspect", "normal", "manager"}
+                    else "",
                 )
             )
         if not preview.children:
-            preview.append(
-                ListItem(Label(label_icon("people", "当前策略下无可展示人员", self.app.nerd_font)))
-            )
+            preview.append(StatusRow("当前策略下无可展示人员"))
         self.query_one("#status", Static).update(
             self.app.status_line("排行榜 · 非官方推导", str(self.data.contest.contest_id))
         )
@@ -196,6 +188,10 @@ class RankingScreen(Screen):
             self.notify(f"导出失败：{exc}", severity="error")
         else:
             self.notify(f"已导出：{destination}")
+
+    def open_index(self, index: int) -> None:
+        if self.active_view().id == "ranking-options":
+            self.change(1)
 
     def action_back(self) -> None:
         self.app.pop_screen()

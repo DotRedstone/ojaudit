@@ -91,3 +91,11 @@ def parse_problem_index(value: object) -> int:
             number = number * 26 + (ord(char) - ord("A") + 1)
         return number - 1
     raise ValueError(f"无法识别的题号：{value!r}")
+
+
+def is_accepted(verdict: str) -> bool:
+    """提交是否通过；兼容 AC / Accepted / 答案正确 / 通过，排除「未通过」「部分通过」。"""
+    text = (verdict or "").strip()
+    if text.upper() in {"AC", "ACCEPTED", "OK"} or text.lower().startswith("accepted"):
+        return True
+    return "答案正确" in text or text == "通过"

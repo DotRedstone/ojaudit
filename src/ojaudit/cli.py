@@ -9,20 +9,18 @@ from __future__ import annotations
 
 import argparse
 import json
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
 from ojaudit.cli_operations import nowcoder_source, plugins_command, save_cookie
+from ojaudit.core.analysis import run_analysis
 from ojaudit.core.config import data_dir, load_config
 from ojaudit.core.filters import filter_contests, load_contest_filter
 from ojaudit.core.ingest import import_bundle, import_json, migrate_nowcoder
-from ojaudit.core.people import HiddenPerson, exclude_hidden_submissions
+from ojaudit.core.people import HiddenPerson
 from ojaudit.core.ranking import RankingOptions, build_final_ranking
 from ojaudit.core.schema import Contest
 from ojaudit.core.store import Store
-from ojaudit.plugins.detectors.nowcoder import analyze as analyze_nowcoder
-from ojaudit.plugins.detectors.pair import analyze_pair
 
 
 def _stamp() -> str:
@@ -30,120 +28,30 @@ def _stamp() -> str:
 
 
 def _analyze(
-    store: Store, platform: str, cid: str, threshold: float, json_out: Path | None = None
+    store: Store,
+    platform: str,
+    cid: str,
+    threshold: float | None = None,
+    json_out: Path | None = None,
 ) -> str:
-    if not store.contest_exists(platform, cid):
-        raise ValueError(f"比赛不存在：{platform}/{cid}；请先 collect 或 migrate")
-    settings = load_config()
-    detector = settings.get("detector", {})
-    detector = detector if isinstance(detector, dict) else {}
-    if not detector.get("enabled", True):
-        raise ValueError("检测已在设置中禁用")
-    plugins = settings.get("plugins", {})
-    plugins = plugins if isinstance(plugins, dict) else {}
-
-    def plugin(name: str) -> dict:
-        options = plugins.get(name, {})
-        return options if isinstance(options, dict) else {}
-
-    def params(name: str) -> dict:
-        options = plugin(name).get("params", {})
-        return options if isinstance(options, dict) else {}
-
-    def enabled(name: str) -> bool:
-        return bool(plugin(name).get("enabled", True))
-
-    submissions = store.submissions(platform, cid)
-    hidden = tuple(HiddenPerson(**p) for p in store.list_hidden_people())
-    visible = exclude_hidden_submissions(submissions, hidden)
-    pair_params = {"threshold": threshold, **params("builtin_pair")}
-    if not enabled("builtin_pair"):
-        raise ValueError("基础两两比较插件已禁用，无法生成线索")
-    if not enabled("nowcoder_similarity"):
-        raise ValueError("相似度插件已禁用，无法生成线索")
-    if not enabled("nowcoder_classify"):
-        raise ValueError("分级插件已禁用，无法生成线索")
-    candidates = {
-        (tuple(row["pair"]), row["problem"], row["language"]): row
-        for row in analyze_pair(visible, pair_params)
-    }
-    similarity_params = params("nowcoder_similarity")
-    thresholds = params("nowcoder_classify")
-    outputs = analyze_nowcoder(
-        visible,
-        {
-            **similarity_params,
-            "thresholds": thresholds,
-            "enable_template": enabled("nowcoder_template"),
-            "enable_timeline": enabled("nowcoder_timeline"),
-        },
-    )
-    findings = []
-    for item in outputs:
-        key = (tuple(item["pair"]), item["problem"], item["language"])
-        if key not in candidates or item["verdict"] == "排除":
-            continue
-        scores = {
-            "similarity": candidates[key]["similarity"],
-            **item["scores"],
-            "rare_score": item["rare"]["score"],
-            "template_crowd": item["crowd_count"],
-            "timeline": item["timeline"],
-        }
-        reasons = [
-            candidates[key]["reason"],
-            f"模板相同人数：{item['crowd_count']}",
-            f"稀有片段共享：{item['rare']['shared']}",
-            f"时间线：{item['timeline']}",
-            f"检测分级：{item['verdict']}（仅供人工复核）",
-        ]
-        findings.append(
-            {
-                **item,
-                "level": item["verdict"],
-                "similarity": candidates[key]["similarity"],
-                "scores_detail": scores,
-                "reasons_detail": reasons,
-            }
-        )
-    run_id = uuid.uuid4().hex
-    active = ["builtin_pair", "nowcoder_similarity", "nowcoder_classify"]
-    if enabled("nowcoder_template"):
-        active.append("nowcoder_template")
-    if enabled("nowcoder_timeline"):
-        active.append("nowcoder_timeline")
-    store.save_analysis(
-        run_id,
-        platform,
-        cid,
-        "+".join(active),
-        "cli",
-        _stamp(),
-        (
-            {
-                "uid_a": item["pair"][0],
-                "uid_b": item["pair"][1],
-                "problem_index": item["problem"],
-                "language": item["language"],
-                "level": item["level"],
-                "scores": item["scores_detail"],
-                "reasons": item["reasons_detail"],
-            }
-            for item in findings
-        ),
-    )
+    result = run_analysis(store, platform, cid, threshold=threshold, created_from="cli")
     if json_out is not None:
         json_out.parent.mkdir(parents=True, exist_ok=True)
         json_out.write_text(
             json.dumps(
-                {"run_id": run_id, "platform": platform, "contest_id": cid, "findings": findings},
+                {
+                    "run_id": result.run_id,
+                    "platform": platform,
+                    "contest_id": cid,
+                    "findings": list(result.findings),
+                },
                 ensure_ascii=False,
                 indent=2,
             ),
             encoding="utf-8",
         )
-    print(f"run_id={run_id} findings={len(findings)}")
-    return run_id
+    print(f"run_id={result.run_id} findings={len(result.findings)}")
+    return result.run_id
 
 
 def _rank_rows(store: Store, platform: str, cid: str) -> list[dict]:
@@ -200,7 +108,9 @@ def _parser() -> argparse.ArgumentParser:
     analysis.add_argument("legacy_contest", nargs="?")
     analysis.add_argument("--platform", default="nowcoder")
     analysis.add_argument("--json-out", type=Path)
-    analysis.add_argument("--threshold", type=float, default=0.5)
+    analysis.add_argument(
+        "--threshold", type=float, default=None, help="指纹相似度阈值，默认取设置"
+    )
 
     mark = sub.add_parser("mark", help="人工标记比赛选手")
     mark.add_argument("platform")
@@ -337,7 +247,7 @@ def main(argv: list[str] | None = None) -> None:
             import_bundle(store, bundle)
             print(f"collected={bundle.contest.contest_id} submissions={len(bundle.submissions)}")
             if collect_settings.get("auto_analyze", False):
-                _analyze(store, bundle.contest.platform, bundle.contest.contest_id, 0.5)
+                _analyze(store, bundle.contest.platform, bundle.contest.contest_id)
 
 
 if __name__ == "__main__":

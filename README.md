@@ -22,6 +22,6 @@
 
 ## 文档
 
-[架构](docs/architecture.md) · [TUI](docs/tui.md) · [插件参数](docs/plugin-params.md) · [检测](docs/detection.md) · [维护](docs/maintenance.md) · [发布流程](docs/release.md) · [路线图](docs/roadmap.md)。
+[架构](docs/architecture.md) · [TUI](docs/tui.md) · [检测](docs/detection.md) · [维护](docs/maintenance.md) · [发布流程](docs/release.md) · [路线图](docs/roadmap.md)。
 
 配置位于 `$XDG_CONFIG_HOME/ojaudit`，数据库位于 `$XDG_DATA_HOME/ojaudit/ojaudit.sqlite`（默认采用各自 XDG 标准路径）。勿提交真实 Cookie、UID、比赛提交或人工审查数据。

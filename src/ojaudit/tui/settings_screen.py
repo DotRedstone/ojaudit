@@ -120,6 +120,9 @@ class SettingsScreen(Screen):
         ("slash", "search", "搜索"),
         ("ctrl+s", "save", "保存"),
         ("r", "reset", "恢复本类默认"),
+        ("a", "add_white", "新增白名单/管理者"),
+        ("b", "add_black", "新增黑名单"),
+        ("d", "delete_list_item", "删除当前列表项"),
         ("tab", "focus_next", "切换窗格"),
         ("shift+tab", "focus_next", "切换窗格"),
     ]
@@ -156,7 +159,7 @@ class SettingsScreen(Screen):
         yield Static(
             label(
                 "help",
-                "↑↓/jk 移动 · ←/h 返回 · →/l/Enter 进入 · Space 切换 · Ctrl+S 保存",
+                "↑↓/jk 移动 · Enter 编辑 · Space 开关 · a 新增 · b 黑名单 · d 删除 · Ctrl+S 保存",
                 self.app.nerd_font,
             ),
             id="settings-help",
@@ -314,6 +317,48 @@ class SettingsScreen(Screen):
             self.reload()
         except (ValueError, TypeError) as exc:
             self.notify(f"设置无效：{exc}", severity="error")
+
+    def _add_list_item(self, group: str) -> None:
+        category = CATEGORIES[self.category_index]
+        if category not in {"比赛筛选", "人员名单"}:
+            return
+        try:
+            self.model.add_list_item(category, group)
+        except ValueError as exc:
+            self.notify(str(exc), severity="warning")
+            return
+        self.reload()
+        rows = self.model.options_for(category)
+        prefix = (
+            "contest_filter." + group + "." if category == "比赛筛选" else "people.manager_entries."
+        )
+        indices = [index for index, option in enumerate(rows) if option.key.startswith(prefix)]
+        if indices:
+            view = self.query_one("#settings-values", ListView)
+            view.call_after_refresh(
+                setattr, view, "index", indices[-2] if category == "比赛筛选" else indices[-3]
+            )
+            self.focus_values = True
+            view.focus()
+
+    def action_add_white(self) -> None:
+        self._add_list_item("whitelist")
+
+    def action_add_black(self) -> None:
+        self._add_list_item("blacklist")
+
+    def action_delete_list_item(self) -> None:
+        if not self.focus_values:
+            return
+        option = self.active_option()
+        if option is None or not self.model.lists.is_list_key(option.key):
+            return
+        try:
+            self.model.remove_list_item(option)
+        except (ValueError, IndexError) as exc:
+            self.notify(str(exc), severity="warning")
+            return
+        self.reload()
 
     def action_reset(self) -> None:
         self.model.restore(CATEGORIES[self.category_index])

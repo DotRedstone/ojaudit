@@ -16,6 +16,7 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
@@ -84,12 +85,17 @@ class NowcoderSource:
             url,
             headers={"Cookie": cookie, "User-Agent": USER_AGENT, "Accept": "*/*"},
         )
-        try:
-            response = self.opener(request, timeout=40)
-            raw = response.read()
-        except (OSError, TimeoutError) as exc:
-            raise RuntimeError(f"牛客只读请求失败：{type(exc).__name__}") from None
-        return raw.decode("utf-8", "replace")
+        retries = self.config.get("retry_count", 2)
+        if isinstance(retries, bool) or not isinstance(retries, int) or not 0 <= retries <= 10:
+            raise ValueError("retry_count 必须为 0–10 的整数")
+        for attempt in range(retries + 1):
+            try:
+                response = self.opener(request, timeout=40)
+                return response.read().decode("utf-8", "replace")
+            except (OSError, TimeoutError) as exc:
+                if attempt == retries:
+                    raise RuntimeError(f"牛客只读请求失败：{type(exc).__name__}") from None
+        raise RuntimeError("牛客只读请求失败")
 
     def _json(self, url: str, cookie: str) -> dict[str, Any]:
         try:
@@ -154,7 +160,12 @@ class NowcoderSource:
         del session  # 网络会话由本插件的只读 opener 管理。
         if not str(contest_id).isdigit():
             raise ValueError("牛客比赛 ID 必须为数字字符串")
+        if self.config.get("readonly", True) is not True:
+            raise ValueError("牛客数据源仅支持只读采集，请启用 collect.readonly")
         cookie = self._cookie()
+        threads = self.config.get("threads", 1)
+        if isinstance(threads, bool) or not isinstance(threads, int) or not 1 <= threads <= 16:
+            raise ValueError("threads 必须为 1–16 的整数")
         phase = str(self.config.get("phase", "contest"))
         if phase not in {"contest", "after", "all"}:
             raise ValueError("phase 仅支持 contest、after、all")
@@ -254,19 +265,32 @@ class NowcoderSource:
                         )
                     )
 
+        # 并发选项仅作用于独立的 GET 源码请求；原有提交顺序不变。
+        def read_code(item: tuple[dict[str, Any], Problem, str]) -> tuple[str, str, str, float]:
+            raw, _problem, _phase = item
+            submission_id = str(raw.get("submissionId") or "")
+            if not submission_id:
+                return "", "", "", 0.0
+            url = (
+                f"{BASE_URL}/acm/contest/view-submission?"
+                f"{urllib.parse.urlencode({'submissionId': submission_id})}"
+            )
+            return _code_from_html(self._get(url, cookie))
+
+        if threads > 1 and len(selected) > 1:
+            with ThreadPoolExecutor(max_workers=threads) as executor:
+                codes = list(executor.map(read_code, selected))
+        else:
+            codes = [read_code(item) for item in selected]
         submissions = []
         seen = set()
-        for raw, problem, submission_phase in selected:
+        for (raw, problem, submission_phase), parsed in zip(selected, codes):
             submission_id = str(raw.get("submissionId") or "")
             uid = str(raw.get("uid") or "")
             if not submission_id or not uid or submission_id in seen:
                 continue
             seen.add(submission_id)
-            page_url = (
-                f"{BASE_URL}/acm/contest/view-submission?"
-                f"{urllib.parse.urlencode({'submissionId': submission_id})}"
-            )
-            code, language_text, verdict, score = _code_from_html(self._get(page_url, cookie))
+            code, language_text, verdict, score = parsed
             try:
                 submit_time = int(raw.get("submitTime") or 0)
             except (TypeError, ValueError):

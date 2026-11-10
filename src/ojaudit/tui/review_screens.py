@@ -18,7 +18,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Input, Label, ListView, Select, Static
+from textual.widgets import Button, Input, Label, ListView, Select, Static
 
 from ojaudit.core.reviews import REVIEW_STATUSES
 from ojaudit.tui import palette
@@ -217,6 +217,7 @@ class FindingsScreen(ReviewListScreen):
 
 class EvidenceScreen(ShellScreen):
     TITLE = "线索证据"
+    HINTS = "Tab 差异  r 复核  m 标记  j/k 下一条  Esc 返回"
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("escape,h,left", "back", "返回"),
         ("tab", "diff", "差异视图"),
@@ -247,16 +248,19 @@ class EvidenceScreen(ShellScreen):
         self.CURRENT = f"{self.finding['uid_a']} ↔ {self.finding['uid_b']}"
 
     def compose(self) -> ComposeResult:
-        yield Breadcrumb(breadcrumb(self.PATH, self.app.nerd_font), id="breadcrumb")
-        with Vertical(id="pane"):
-            yield Static("", id="evidence-meta")
-            with Horizontal(id="code-pair"):
-                yield Static("", id="code-left", classes="source-pane")
-                yield Static("", id="code-right", classes="source-pane")
-        yield Static("", id="status")
-        yield Footer()
+        yield from self.shell(
+            [
+                Static("", id="evidence-meta"),
+                Horizontal(
+                    Static("", id="code-left", classes="source-pane"),
+                    Static("", id="code-right", classes="source-pane"),
+                    id="code-pair",
+                ),
+            ]
+        )
 
     def on_mount(self) -> None:
+        super().on_mount()
         self.query_one("#pane", Vertical).border_title = label(
             "evidence", self.TITLE, self.app.nerd_font
         )
@@ -319,7 +323,7 @@ class EvidenceScreen(ShellScreen):
             "low": palette.SUSPECT,
         }.get(str(finding["verdict_level"]).lower(), palette.EXCLUDED)
         self.query_one("#evidence-meta", Static).styles.border_left = ("solid", color)
-        self.query_one("#breadcrumb", Static).update(breadcrumb(self.PATH, self.app.nerd_font))
+        self.refresh_breadcrumb()
         self._update_status()
 
     def action_first_evidence(self) -> None:
@@ -584,6 +588,7 @@ class ProblemScreen(ReviewListScreen):
 
 class CodeScreen(ShellScreen):
     TITLE = "代码浏览"
+    HINTS = "j/k 上下份  m 标记  [ ] 历史  Esc 返回"
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("escape,h,left", "back", "返回"),
         ("n,j,down,right,l,enter,space", "next", "下一份"),
@@ -605,14 +610,10 @@ class CodeScreen(ShellScreen):
         self.base_path = path
 
     def compose(self) -> ComposeResult:
-        yield Breadcrumb("", id="breadcrumb")
-        with Vertical(id="pane"):
-            yield Static("", id="code-meta")
-            yield Static("", id="code-body")
-        yield Static("", id="status")
-        yield Footer()
+        yield from self.shell([Static("", id="code-meta"), Static("", id="code-body")])
 
     def on_mount(self) -> None:
+        super().on_mount()
         self.query_one("#pane", Vertical).border_title = label(
             "code", self.TITLE, self.app.nerd_font
         )

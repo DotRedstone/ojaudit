@@ -313,6 +313,13 @@ class Store:
         ).fetchall()
         return [Contest(**dict(row)) for row in rows]
 
+    def participants(self, platform: str, contest_id: str) -> list[tuple[str, str]]:
+        rows = self.connection.execute(
+            "SELECT uid, name FROM participants WHERE platform=? AND contest_id=? ORDER BY uid",
+            (platform, contest_id),
+        ).fetchall()
+        return [(row["uid"], row["name"]) for row in rows]
+
     def submissions(self, platform: str, contest_id: str) -> list[Submission]:
         rows = self.connection.execute(
             """SELECT * FROM submissions WHERE platform=? AND contest_id=?

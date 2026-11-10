@@ -83,6 +83,8 @@ def _git(*argv: str, timeout: int) -> subprocess.CompletedProcess[str]:
             text=True,
             env={**os.environ, **_GIT_ENV},
         )
+    except FileNotFoundError as exc:
+        raise RuntimeError("未找到 git，请先安装 git") from exc
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"git {argv[0]} 超时（{timeout} 秒）") from exc
     except subprocess.CalledProcessError as exc:

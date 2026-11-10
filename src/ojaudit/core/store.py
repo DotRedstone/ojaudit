@@ -266,6 +266,30 @@ class Store:
             )
         return len(stale)
 
+    def delete_contest(self, platform: str, contest_id: str) -> None:
+        """删除一场比赛在本地的全部数据：比赛、题目、选手、提交、分析结果与人工复核。"""
+        key = (platform, contest_id)
+        runs = "SELECT run_id FROM analysis_runs WHERE platform=? AND contest_id=?"
+        with self.transaction():
+            for table in ("findings", "single_signals"):
+                self.connection.execute(f"DELETE FROM {table} WHERE run_id IN ({runs})", key)
+            self.connection.execute(
+                f"DELETE FROM finding_reviews WHERE (platform=? AND contest_id=?) "
+                f"OR run_id IN ({runs})",
+                key + key,
+            )
+            for table in (
+                "analysis_runs",
+                "person_marks",
+                "submissions",
+                "participants",
+                "problems",
+                "contests",
+            ):
+                self.connection.execute(
+                    f"DELETE FROM {table} WHERE platform=? AND contest_id=?", key
+                )
+
     def put_participants(self, people: Iterable[Participant], *, keep_names: bool = False) -> None:
         """keep_names=True 时只补缺失的人员，不覆盖已有姓名（用于提交里出现的 UID）。"""
         action = "NOTHING" if keep_names else "UPDATE SET name=excluded.name"

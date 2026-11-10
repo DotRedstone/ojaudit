@@ -9,6 +9,8 @@ Notes:
 
 from __future__ import annotations
 
+import sqlite3
+from pathlib import Path
 from typing import Any, ClassVar
 
 from rich.text import Text
@@ -155,8 +157,22 @@ class SettingsScreen(Chrome, Screen):
             text = Text(option.title, style=f"bold {colors.accent}")
             return text
         if option.kind == "action":
-            text = Text("  + " + option.title, style=colors.muted)
-            return text
+            mark = "  + " if option.key.endswith(".add") else "  › "
+            return Text(mark + option.title, style=colors.fg if mark == "  › " else colors.muted)
+        if option.kind == "excluded":
+            return ui.table_row(
+                [changed, Text(option.title, style=colors.fg), Text("d 恢复", style=colors.muted)],
+                (ui.Column("", 1), ui.Column(""), ui.Column("", 8, "right")),
+                width,
+            )
+        if option.kind == "contest":
+            submissions, runs = value
+            detail = f"提交 {submissions}" + (" · 已分析" if runs else "")
+            return ui.table_row(
+                [Text(" "), Text(option.title, style=colors.fg), Text(detail, style=colors.muted)],
+                (ui.Column("", 1), ui.Column(""), ui.Column("", 18, "right")),
+                width,
+            )
         if option.kind == "rule":
             mark = Text(
                 "✓ " if value["enabled"] else "· ",
@@ -232,6 +248,20 @@ class SettingsScreen(Chrome, Screen):
                     style=colors.muted,
                 )
                 text.append("\n↵ 编辑  space 启用/停用  d 删除", style=colors.muted)
+            elif option.kind == "excluded":
+                text.append(option.title, style=f"bold {colors.fg}")
+                text.append(
+                    f"\n{self.model.value(option)} · 手动剔除，不显示、不进待复核\nd 恢复",
+                    style=colors.muted,
+                )
+            elif option.kind == "contest":
+                submissions, runs = self.model.value(option)
+                text.append(option.title, style=f"bold {colors.fg}")
+                text.append(
+                    f"\n提交 {submissions}{' · 已分析' if runs else ''}"
+                    "\n↵ / d 删除这场比赛的本地数据（选手、提交、线索与复核），可重新采集",
+                    style=colors.muted,
+                )
             elif option.kind == "manager":
                 row = self.model.value(option)
                 text.append(f"{row['uid']} {row['nickname']}", style=f"bold {colors.fg}")
@@ -379,6 +409,14 @@ class SettingsScreen(Chrome, Screen):
             self._edit_rule(None)
         elif option.key == "managers.add":
             self._edit_manager(None)
+        elif option.key == "data.export":
+            self._export_config()
+        elif option.key == "data.import":
+            self._import_config()
+        elif option.kind == "contest":
+            self._delete_contest(option)
+        elif option.kind == "excluded":
+            self.action_delete()
         else:
             self.app.push_screen(
                 EditValue(option, self.model.value(option), self.model),
@@ -471,10 +509,112 @@ class SettingsScreen(Chrome, Screen):
 
     def action_delete(self) -> None:
         option = self.active_option()
-        if not self.focus_values or option is None or option.kind not in {"rule", "manager"}:
+        if not self.focus_values or option is None:
+            return
+        if option.kind == "contest":
+            self._delete_contest(option)
+            return
+        if option.kind not in {"rule", "manager", "excluded"}:
             return
         self.model.remove(option)
         self._after_change()
+
+    # ── 数据 ────────────────────────────────────────────
+
+    def _export_config(self) -> None:
+        def done(path: str | None) -> None:
+            if not path:
+                return
+            try:
+                target = self.model.export_config(path)
+            except (OSError, ValueError, TypeError) as exc:
+                self.notify(f"导出失败：{exc}", severity="error")
+                return
+            from ojaudit.tui.ranking_screen import copy_to_clipboard
+
+            copy_to_clipboard(self.app, str(target))
+            extra = "（未保存的修改不包含在内）" if self.model.dirty else ""
+            self.notify(f"已导出配置，路径已复制：{target}{extra}")
+
+        self.app.push_screen(
+            InputPopup(
+                "导出配置",
+                str(Path.home() / "ojaudit-config.toml"),
+                note="导出已保存的设置与管理者名单，不含 Cookie",
+                validate=lambda text: None if text.strip() else "请输入文件路径",
+                input_id="export-path",
+            ),
+            done,
+        )
+
+    def _import_config(self) -> None:
+        def check(text: str) -> str | None:
+            if not text.strip():
+                return "请输入文件路径"
+            try:
+                self.model.read_import(text.strip())
+            except ValueError as exc:
+                return str(exc)
+            return None
+
+        def confirm(path: str | None) -> None:
+            if not path:
+                return
+            lost = "\n当前未保存的修改会被放弃。" if self.model.dirty else ""
+            self.app.push_screen(
+                ConfirmPopup(
+                    "导入配置",
+                    f"用 {path} 替换当前设置与管理者名单？{lost}",
+                ),
+                lambda ok: ok and apply(path),
+            )
+
+        def apply(path: str) -> None:
+            try:
+                self.model.import_config(path.strip())
+            except (OSError, ValueError, TypeError) as exc:
+                self.notify(f"导入失败：{exc}", severity="error")
+                return
+            self.app.apply_appearance(self.model.appearance())
+            self.reload()
+            self.notify(label("success", "配置已导入", self.app.nerd_font))
+
+        self.app.push_screen(
+            InputPopup(
+                "导入配置",
+                str(Path.home() / "ojaudit-config.toml"),
+                note="选择之前导出的 TOML 文件",
+                validate=check,
+                input_id="import-path",
+            ),
+            confirm,
+        )
+
+    def _delete_contest(self, option: Option) -> None:
+        platform, contest_id = option.key.removeprefix("data.contest.").split("/", 1)
+        if self.app.job_running:
+            self.notify("后台任务进行中，完成后再删除", severity="warning")
+            return
+
+        def apply(ok: bool | None) -> None:
+            if not ok:
+                return
+            try:
+                self.model.delete_contest(platform, contest_id)
+            except (OSError, ValueError, sqlite3.Error) as exc:
+                self.notify(f"删除失败：{exc}", severity="error")
+                return
+            self.reload()
+            self.notify(f"已删除「{option.title}」的本地数据")
+
+        self.app.push_screen(
+            ConfirmPopup(
+                "删除比赛数据",
+                f"删除「{option.title}」在本地的选手、提交、检测线索与人工复核？\n"
+                "此操作不可撤销；之后可以重新采集。",
+            ),
+            apply,
+        )
 
     def action_reset(self) -> None:
         self.model.restore(self.category)

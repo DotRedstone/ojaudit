@@ -28,9 +28,12 @@ class PendingEntry:
 
 
 def review_entries(local: LocalContests) -> list[PendingEntry]:
-    """所有比赛当前分析轮次的线索（含已处理），以及被标为存疑的人员。"""
+    """过滤规则内各比赛当前分析轮次的线索（含已处理），以及被标为存疑的人员。
+
+    被过滤或手动剔除的比赛不需要复核，不列入。
+    """
     result: list[PendingEntry] = []
-    for entry in local.list_contests(show_all=True):
+    for entry in local.list_contests():
         contest = entry.contest
         data = ReviewData(local, contest)
         for finding in data.findings():

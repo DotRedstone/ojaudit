@@ -48,6 +48,17 @@ class LocalContests:
         connection.row_factory = sqlite3.Row
         return connection
 
+    def toggle_excluded(self, contest: Contest) -> bool:
+        """手动剔除 / 恢复比赛（写入配置）；返回现在是否被剔除。"""
+        from ojaudit.core.filters import toggle_excluded
+
+        updated, removed = toggle_excluded(contest)
+        if self.contest_filter is not None:
+            from dataclasses import replace
+
+            self.contest_filter = replace(self.contest_filter, excluded=updated.excluded)
+        return removed
+
     def list_contests(self, show_all: bool = False) -> list[ContestEntry]:
         connection = self._connect()
         if connection is None:

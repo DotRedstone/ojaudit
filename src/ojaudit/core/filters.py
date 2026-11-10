@@ -7,6 +7,7 @@ Notes:
 - 黑名单：命中任一启用规则的比赛被隐藏；白名单：只显示命中任一启用规则的比赛，
   没有启用的规则时显示全部。
 - 兼容旧配置 whitelist / blacklist 两组列表：有启用的白名单规则时按白名单读取。
+- excluded 为手动剔除的比赛（「平台/比赛 ID」），不论模式与规则一律隐藏，不必写正则。
 """
 
 from __future__ import annotations
@@ -32,8 +33,11 @@ class ContestFilter:
     mode: Mode = "blacklist"
     match_field: Literal["name", "name_id"] = "name"
     case_sensitive: bool = False
+    excluded: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        if not all(isinstance(key, str) for key in self.excluded):
+            raise TypeError("excluded 必须为「平台/比赛 ID」字符串列表")
         if self.mode not in {"blacklist", "whitelist"}:
             raise ValueError("过滤模式必须为 blacklist 或 whitelist")
         if self.match_field not in {"name", "name_id"}:
@@ -75,7 +79,13 @@ def matches(contest: Contest, rule: ContestRule, config: ContestFilter = _DEFAUL
     return bool(rule.pattern) and bool(re.search(rule.pattern, candidate, flags))
 
 
+def contest_key(contest: Contest) -> str:
+    return f"{contest.platform}/{contest.contest_id}"
+
+
 def evaluate_contest(contest: Contest, config: ContestFilter = _DEFAULT_FILTER) -> ContestDecision:
+    if contest_key(contest) in config.excluded:
+        return ContestDecision(contest, False, "已手动剔除")
     rules = config.active
     hit = next((rule for rule in rules if matches(contest, rule, config)), None)
     if config.mode == "blacklist":
@@ -118,9 +128,13 @@ def filter_from_config(raw: Any) -> ContestFilter:
         return ContestFilter()
     if not isinstance(raw, dict):
         raise TypeError("contest_filter 必须为 TOML 表")
+    excluded = raw.get("excluded", [])
+    if not isinstance(excluded, list):
+        raise TypeError("excluded 必须为列表")
     common = {
         "match_field": raw.get("match_field", "name"),
         "case_sensitive": raw.get("case_sensitive", False),
+        "excluded": tuple(excluded),
     }
     if "rules" in raw or "mode" in raw:
         return ContestFilter(
@@ -141,7 +155,23 @@ def filter_to_config(config: ContestFilter) -> dict[str, Any]:
         "match_field": config.match_field,
         "case_sensitive": config.case_sensitive,
         "rules": [{"pattern": rule.pattern, "enabled": rule.enabled} for rule in config.rules],
+        "excluded": list(config.excluded),
     }
+
+
+def toggle_excluded(contest: Contest, path=None) -> tuple[ContestFilter, bool]:
+    """手动剔除 / 恢复一场比赛并写回配置；返回新的过滤器与「现在是否被剔除」。"""
+    from dataclasses import replace
+
+    current = load_contest_filter(path)
+    key = contest_key(contest)
+    excluded = tuple(item for item in current.excluded if item != key)
+    removed = key not in current.excluded
+    if removed:
+        excluded += (key,)
+    updated = replace(current, excluded=excluded)
+    save_contest_filter(updated, path)
+    return updated, removed
 
 
 def load_contest_filter(path=None) -> ContestFilter:

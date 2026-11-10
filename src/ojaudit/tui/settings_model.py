@@ -1,16 +1,19 @@
 """
 Module: TUI / settings model
-Description: 设置页的数据模型：普通选项、过滤规则（比赛正则 + 管理者名单）与检测插件参数。
+Description: 设置页的数据模型：普通选项、过滤规则（比赛正则、手动剔除的比赛、管理者名单）、
+    检测插件参数，以及「数据」：导出 / 导入配置、删除某场比赛的本地数据。
 Scope: TUI
 Notes:
-- 只保存非机密设置；Cookie 与令牌不进入配置文件。
+- 只保存非机密设置；Cookie 与令牌不进入配置文件，导出时也会剔除。
 - 修改先暂存在模型里，save() 时一次写入配置文件与数据库；管理者名单保存在数据库。
+- 导入配置与删除比赛数据立即生效（界面先确认），不经过 save()。
 """
 
 from __future__ import annotations
 
 import copy
 import sqlite3
+import tomllib
 from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
@@ -29,7 +32,8 @@ from ojaudit.core.plugins import PluginManifest, discover_manifests, validate_pa
 from ojaudit.core.schema import Contest
 from ojaudit.core.store import Store
 
-CATEGORIES = ("账户", "过滤规则", "采集", "检测", "复核", "外观", "插件", "关于")
+CATEGORIES = ("账户", "过滤规则", "采集", "检测", "复核", "外观", "插件", "数据", "关于")
+SECRET_KEYS = frozenset({"cookie", "token", "password"})
 MANAGER_PLATFORM = "nowcoder"
 
 
@@ -434,11 +438,17 @@ class SettingsModel:
         self.values["contest_filter.match_field"] = current.match_field
         self.values["contest_filter.case_sensitive"] = current.case_sensitive
         self.rules = [{"pattern": r.pattern, "enabled": r.enabled} for r in current.rules]
+        self.excluded = list(current.excluded)
         self.managers = self._read_managers()
         self._baseline = self._snapshot()
 
     def _snapshot(self) -> tuple[Any, ...]:
-        return (copy.deepcopy(self.values), copy.deepcopy(self.rules), copy.deepcopy(self.managers))
+        return (
+            copy.deepcopy(self.values),
+            copy.deepcopy(self.rules),
+            copy.deepcopy(self.managers),
+            list(self.excluded),
+        )
 
     # ── 选项列表 ────────────────────────────────────────
 
@@ -454,6 +464,20 @@ class SettingsModel:
             for index, rule in enumerate(self.rules)
         ]
         rows.append(Option("过滤规则", "rules.add", "添加规则", "action"))
+        names = {f"{c.platform}/{c.contest_id}": c.name for c in self.contests}
+        rows.append(
+            Option(
+                "过滤规则",
+                "excluded.header",
+                f"已剔除的比赛 · {len(self.excluded)}",
+                "header",
+                description="在首页或比赛列表按 d 剔除，不用写正则",
+            )
+        )
+        rows += [
+            Option("过滤规则", f"excluded.{index}", names.get(key, key), "excluded")
+            for index, key in enumerate(self.excluded)
+        ]
         rows.append(
             Option(
                 "过滤规则",
@@ -486,9 +510,55 @@ class SettingsModel:
             Option("关于", "about.database", "数据库", "text", str(self.db_path), readonly=True),
         ]
 
+    def data_options(self) -> list[Option]:
+        counts = {
+            (row["platform"], row["contest_id"]): (row["subs"], row["runs"])
+            for row in self._query(
+                "SELECT c.platform, c.contest_id, "
+                "(SELECT COUNT(*) FROM submissions s WHERE s.platform=c.platform "
+                "AND s.contest_id=c.contest_id) AS subs, "
+                "(SELECT COUNT(*) FROM analysis_runs a WHERE a.platform=c.platform "
+                "AND a.contest_id=c.contest_id) AS runs FROM contests c"
+            )
+        }
+        self.contest_counts = counts
+        stored = [c for c in self.contests if any(counts.get((c.platform, c.contest_id), (0, 0)))]
+        rows = [
+            Option("数据", "data.config", "配置文件", "header"),
+            Option(
+                "数据",
+                "data.export",
+                "导出配置",
+                "action",
+                description="把已保存的设置连同管理者名单导出为 TOML 文件（不含 Cookie），"
+                "可在另一台电脑导入",
+            ),
+            Option(
+                "数据",
+                "data.import",
+                "导入配置",
+                "action",
+                description="用导出的 TOML 文件替换当前设置与管理者名单，立即生效",
+            ),
+            Option(
+                "数据",
+                "data.contests",
+                f"本地比赛数据 · {len(stored)} 场",
+                "header",
+                description="删除后可重新采集；只登记未采集的比赛不在这里",
+            ),
+        ]
+        rows += [
+            Option("数据", f"data.contest.{c.platform}/{c.contest_id}", c.name, "contest")
+            for c in sorted(stored, key=lambda c: c.name)
+        ]
+        return rows
+
     def options_for(self, category: str) -> list[Option]:
         if category == "过滤规则":
             return self.filter_options()
+        if category == "数据":
+            return self.data_options()
         if category == "关于":
             return self.about_options()
         return [opt for opt in self.base_options if opt.category == category]
@@ -498,12 +568,20 @@ class SettingsModel:
             return self.rules[int(option.key.split(".")[1])]
         if option.kind == "manager":
             return self.managers[int(option.key.split(".")[1])]
+        if option.kind == "excluded":
+            return self.excluded[int(option.key.split(".")[1])]
+        if option.kind == "contest":
+            platform, contest_id = option.key.removeprefix("data.contest.").split("/", 1)
+            return getattr(self, "contest_counts", {}).get((platform, contest_id), (0, 0))
         return self.values.get(option.key, option.default)
 
     # ── 修改 ────────────────────────────────────────────
 
     def changed(self, option: Option) -> bool:
-        values, rules, managers = self._baseline
+        values, rules, managers, excluded = self._baseline
+        if option.kind == "excluded":
+            index = int(option.key.split(".")[1])
+            return index >= len(excluded) or excluded[index] != self.excluded[index]
         if option.kind in {"rule", "manager"}:
             index = int(option.key.split(".")[1])
             before, after = (
@@ -519,7 +597,13 @@ class SettingsModel:
         return self._snapshot() != self._baseline
 
     def change(self, option: Option, value: Any) -> None:
-        if not option.editable or option.kind in {"rule", "manager", "action"}:
+        if not option.editable or option.kind in {
+            "rule",
+            "manager",
+            "action",
+            "excluded",
+            "contest",
+        }:
             raise ValueError("只读设置")
         if option.kind == "bool" and not isinstance(value, bool):
             raise TypeError("开关需使用布尔值")
@@ -621,12 +705,15 @@ class SettingsModel:
             del self.rules[index]
         elif option.kind == "manager":
             del self.managers[index]
+        elif option.kind == "excluded":
+            del self.excluded[index]
         else:
-            raise ValueError("只能删除规则或管理者")
+            raise ValueError("只能删除规则、管理者或剔除的比赛")
 
     def restore(self, category: str) -> None:
         if category == "过滤规则":
             self.rules = []
+            self.excluded = []
             for option in FILTER_OPTIONS:
                 self.values[option.key] = option.default
             return
@@ -647,8 +734,9 @@ class SettingsModel:
     # ── 保存 ────────────────────────────────────────────
 
     def save(self) -> None:
-        values, _, managers = self._baseline
+        values, _, managers, _ = self._baseline
         contest_filter = ContestFilter(
+            excluded=tuple(self.excluded),
             rules=tuple(ContestRule(r["pattern"], r["enabled"]) for r in self.rules),
             mode=self.values["contest_filter.mode"],
             match_field=self.values["contest_filter.match_field"],
@@ -686,3 +774,58 @@ class SettingsModel:
         save_config(config, self.path)
         self.contests = self._read_contests()
         self._load()
+
+    # ── 数据（立即生效） ─────────────────────────────────
+
+    def export_config(self, destination: str | Path) -> Path:
+        """导出已保存的配置（剔除机密字段）与管理者名单。"""
+
+        def clean(value: Any) -> Any:
+            if isinstance(value, dict):
+                return {k: clean(v) for k, v in value.items() if k.lower() not in SECRET_KEYS}
+            return value
+
+        exported = clean(load_config(self.path))
+        exported["managers"] = [dict(row) for row in self._read_managers()]
+        target = Path(destination).expanduser()
+        return save_config(exported, target)
+
+    @staticmethod
+    def read_import(source: str | Path) -> dict[str, Any]:
+        """读取并校验要导入的文件；格式不对时抛 ValueError。"""
+        path = Path(source).expanduser()
+        try:
+            data = tomllib.loads(path.read_text(encoding="utf-8"))
+        except OSError as exc:
+            raise ValueError(f"无法读取：{exc.strerror or exc}") from exc
+        except tomllib.TOMLDecodeError as exc:
+            raise ValueError(f"不是有效的 TOML：{exc}") from exc
+        try:
+            filter_from_config(data.get("contest_filter"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"过滤规则无效：{exc}") from exc
+        managers = data.get("managers", [])
+        if not isinstance(managers, list) or not all(
+            isinstance(row, dict) and isinstance(row.get("uid"), str) for row in managers
+        ):
+            raise ValueError("managers 必须是含 uid 的表数组")
+        return data
+
+    def import_config(self, source: str | Path) -> None:
+        """用导入文件替换配置与管理者名单；未保存的修改会被放弃。"""
+        data = self.read_import(source)
+        managers = data.pop("managers", [])
+        for key in SECRET_KEYS:
+            data.pop(key, None)
+        with Store(self.db_path) as store, store.transaction():
+            for row in self._read_managers():
+                store.remove_hidden_person(MANAGER_PLATFORM, row["uid"])
+            for row in managers:
+                store.put_hidden_person(MANAGER_PLATFORM, row["uid"], str(row.get("nickname", "")))
+        save_config(data, self.path)
+        self._load()
+
+    def delete_contest(self, platform: str, contest_id: str) -> None:
+        with Store(self.db_path) as store:
+            store.delete_contest(platform, contest_id)
+        self.contests = self._read_contests()

@@ -92,7 +92,7 @@ def fixture(tmp_path):
 
 
 async def navigate_overview(app, pilot):
-    await pilot.press("enter")
+    await pilot.press("1")
     await pilot.pause()
     assert isinstance(app.screen, ContestListScreen)
     await pilot.press("enter")

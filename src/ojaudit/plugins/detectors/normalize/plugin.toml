@@ -1,0 +1,7 @@
+name = "nowcoder_normalize"
+kind = "detector.pair"
+version = "1.0.0"
+api_version = 1
+description = "牛客旧检测器 L1/L2/L3 归一化"
+languages = ["cpp", "python", "java"]
+module = "ojaudit.plugins.detectors.normalize"

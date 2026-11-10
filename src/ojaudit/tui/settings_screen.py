@@ -16,6 +16,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Footer, Input, Label, ListView, Static
 
+from ojaudit.tui.icons import breadcrumb, label
 from ojaudit.tui.interaction import Breadcrumb
 from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.settings_model import CATEGORIES, Option, SettingsModel
@@ -39,11 +40,19 @@ class EditValue(ModalScreen[str | None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="edit-dialog"):
-            yield Label(f"{self.option.title} · 默认：{self.option.default}")
+            yield Label(
+                label(
+                    "settings",
+                    f"{self.option.title} · 默认：{self.option.default}",
+                    self.app.nerd_font,
+                )
+            )
             yield Input(value=self.current, id="edit-value")
             with Horizontal():
-                yield Button("确定", id="accept", variant="primary")
-                yield Button("取消", id="cancel")
+                yield Button(
+                    label("save", "确定", self.app.nerd_font), id="accept", variant="primary"
+                )
+                yield Button(label("cancel", "取消", self.app.nerd_font), id="cancel")
 
     def on_mount(self) -> None:
         self.query_one("#edit-value", Input).focus()
@@ -77,10 +86,14 @@ class ConfirmLeave(ModalScreen[bool]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="confirm"):
-            yield Label("设置尚未保存，是否放弃更改？")
+            yield Label(label("warning", "设置尚未保存，是否放弃更改？", self.app.nerd_font))
             with Horizontal():
-                yield Button("放弃更改", id="discard", variant="warning")
-                yield Button("继续编辑", id="stay", variant="primary")
+                yield Button(
+                    label("cancel", "放弃更改", self.app.nerd_font), id="discard", variant="warning"
+                )
+                yield Button(
+                    label("back", "继续编辑", self.app.nerd_font), id="stay", variant="primary"
+                )
 
     def on_mount(self) -> None:
         self.query_one("#stay", Button).focus()
@@ -128,25 +141,36 @@ class SettingsScreen(Screen):
         self.focus_values = False
 
     def compose(self) -> ComposeResult:
-        yield Breadcrumb("首页 › 设置", id="breadcrumb")
+        yield Breadcrumb(breadcrumb("首页 › 设置", self.app.nerd_font), id="breadcrumb")
         with Horizontal(id="settings-columns"):
             yield ListView(
-                *(ListItem(Label(category)) for category in CATEGORIES),
+                *(
+                    ListItem(Label(label("settings", category, self.app.nerd_font)))
+                    for category in CATEGORIES
+                ),
                 id="categories",
             )
             with Vertical(id="options-pane"):
                 yield ListView(id="settings-values")
                 yield Static("", id="settings-detail")
         yield Static(
-            "↑↓/jk 移动 · ←/h 返回 · →/l/Enter 进入 · Space 切换 · Ctrl+S 保存",
+            label(
+                "help",
+                "↑↓/jk 移动 · ←/h 返回 · →/l/Enter 进入 · Space 切换 · Ctrl+S 保存",
+                self.app.nerd_font,
+            ),
             id="settings-help",
         )
         yield Static("", id="status")
         yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one("#categories", ListView).border_title = "分类"
-        self.query_one("#options-pane", Vertical).border_title = "选项"
+        self.query_one("#categories", ListView).border_title = label(
+            "list", "分类", self.app.nerd_font
+        )
+        self.query_one("#options-pane", Vertical).border_title = label(
+            "settings", "选项", self.app.nerd_font
+        )
         self.query_one("#categories", ListView).index = 0
         self.reload()
         self.query_one("#categories", ListView).focus()
@@ -176,7 +200,13 @@ class SettingsScreen(Screen):
             else:
                 display = str(value)
             marker = "● " if self.model.changed(option) else "  "
-            view.append(ListItem(Label(f"{marker}{option.title}   {display}")))
+            view.append(
+                ListItem(
+                    Label(
+                        label("settings", f"{marker}{option.title}   {display}", self.app.nerd_font)
+                    )
+                )
+            )
         if not self.rows:
             view.append(ListItem(Label("本类暂无可编辑项")))
         view.call_after_refresh(setattr, view, "index", min(previous, len(self.rows) - 1))
@@ -296,7 +326,25 @@ class SettingsScreen(Screen):
             self.notify(f"保存失败：{exc}", severity="error")
             return
         self.reload()
-        self.notify("设置已保存")
+        self.app.nerd_font = bool(self.model.values["appearance.nerd_font"])
+        self.query_one("#breadcrumb", Static).update(breadcrumb("首页 › 设置", self.app.nerd_font))
+        self.query_one("#categories", ListView).border_title = label(
+            "list", "分类", self.app.nerd_font
+        )
+        self.query_one("#options-pane", Vertical).border_title = label(
+            "settings", "选项", self.app.nerd_font
+        )
+        categories = self.query_one("#categories", ListView)
+        for category, item in zip(CATEGORIES, categories.children):
+            item.query_one(Label).update(label("settings", category, self.app.nerd_font))
+        self.query_one("#settings-help", Static).update(
+            label(
+                "help",
+                "↑↓/jk 移动 · ←/h 返回 · →/l/Enter 进入 · Space 切换 · Ctrl+S 保存",
+                self.app.nerd_font,
+            )
+        )
+        self.notify(label("success", "设置已保存", self.app.nerd_font))
 
     def action_back(self) -> None:
         if self.model.dirty:

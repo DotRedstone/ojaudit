@@ -19,6 +19,7 @@ from textual.app import App
 
 from ojaudit.core.config import data_dir, load_config
 from ojaudit.tui.data import LocalContests
+from ojaudit.tui.icons import label
 from ojaudit.tui.rice_theme import load_wallpaper_theme, wallpaper_signature
 from ojaudit.tui.screens import HomeScreen
 from ojaudit.tui.workflow import analyze_local, persist_bundle
@@ -200,7 +201,7 @@ class AuditApp(App[None]):
         index = self.THEMES.index(self.theme_name) if self.theme_name in self.THEMES else 0
         self.theme_name = self.THEMES[(index + 1) % len(self.THEMES)]
         self._apply_theme()
-        self.notify(f"主题：{self.theme_name}（设置页可保存）")
+        self.notify(label("theme", f"主题：{self.theme_name}（设置页可保存）", self.nerd_font))
 
     def action_context_quit(self) -> None:
         from ojaudit.tui.screens import HomeScreen

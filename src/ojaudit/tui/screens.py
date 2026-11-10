@@ -17,6 +17,7 @@ from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Footer, Input, Label, ListView, Static
 
 from ojaudit.core.schema import Contest
+from ojaudit.tui.contest_list_data import contest_list_description
 from ojaudit.tui.data import LocalContests
 from ojaudit.tui.icons import breadcrumb, label
 from ojaudit.tui.interaction import Breadcrumb, SearchDialog
@@ -315,7 +316,10 @@ class ContestListScreen(ShellScreen):
         view = self.query_one("#contests", ListView)
         view.clear()
         for entry in self.entries:
-            text = f"{entry.contest.name}  [{entry.contest.platform}/{entry.contest.contest_id}]"
+            text = (
+                f"{entry.contest.name}  [{entry.contest.platform}/{entry.contest.contest_id}]"
+                f" · {contest_list_description(self.contests, entry.contest)}"
+            )
             label_text = label("contest", text, self.app.nerd_font)
             if not entry.visible:
                 label_text += "  · " + label("hidden", "规则外", self.app.nerd_font)

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 
-from textual.widgets import Static
+from textual.widgets import ListView, Static
 
 from ojaudit.core.config import load_config
 from ojaudit.core.schema import Contest, Participant, Problem, Submission
@@ -222,3 +222,64 @@ def test_nowcoder_links():
     assert "B 提交" not in links
     assert links["题目"] == "https://ac.nowcoder.com/acm/contest/143786/C"
     assert nowcoder_links(Contest("other", "1", "x"), finding, None, None) == []
+
+
+def test_ranking_quick_manager_and_inactive_policy(tmp_path, monkeypatch):
+    from ojaudit.tui.ranking_screen import POLICIES, RankingScreen
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    local, data = _fixture(tmp_path)
+    with Store(local.db_path) as store:
+        store.put_participants([Participant("nowcoder", "143786", "idle", "只报名")])
+
+    async def scenario():
+        app = AuditApp(local)
+        async with app.run_test(size=(140, 34)) as pilot:
+            app.push_screen(RankingScreen(data))
+            await pilot.pause()
+            screen = app.screen
+            uids = [row["uid"] for row in screen.preview_rows]
+            assert "idle" in uids
+            inactive = [name for name, _, _ in POLICIES].index("未提交者")
+            screen.query_one("#ranking-options", ListView).index = inactive
+            await pilot.press("l")
+            await pilot.pause()
+            assert screen.policy().inactive == "drop"
+            assert "idle" not in [row["uid"] for row in screen.preview_rows]
+
+            preview = screen.query_one("#ranking-preview", ListView)
+            preview.focus()
+            preview.index = [row["uid"] for row in screen.preview_rows].index("b")
+            await pilot.press("a")
+            await pilot.pause()
+            assert "b" not in [row["uid"] for row in screen.preview_rows], "管理者默认剔除"
+            assert data.person("b")["hidden"]
+            managers = [name for name, _, _ in POLICIES].index("管理者")
+            screen.choice_indices[managers] = 1
+            screen.refresh_ranking()
+            preview.index = [row["uid"] for row in screen.preview_rows].index("b")
+            await pilot.press("a")
+            await pilot.pause()
+            assert not data.person("b")["hidden"], "再按一次取消"
+
+    asyncio.run(scenario())
+
+
+def test_people_page_quick_manager(tmp_path, monkeypatch):
+    from ojaudit.tui.review_screens import PeopleScreen
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    local, data = _fixture(tmp_path)
+
+    async def scenario():
+        app = AuditApp(local)
+        async with app.run_test(size=(140, 30)) as pilot:
+            app.push_screen(PeopleScreen(data, "首页"))
+            await pilot.pause()
+            view = app.screen.query_one("#items", ListView)
+            view.index = [row["uid"] for row in app.screen.rows].index("c")
+            await pilot.press("a")
+            await pilot.pause()
+            assert data.person("c")["hidden"]
+
+    asyncio.run(scenario())

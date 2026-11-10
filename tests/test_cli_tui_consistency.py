@@ -65,3 +65,34 @@ def test_cli_and_tui_rank_exports_match(tmp_path):
             ),
         )
         assert tui_path.read_bytes() == cli_path.read_bytes()
+
+
+def test_cli_rank_inactive_drop(tmp_path, capsys):
+    from ojaudit.cli import main
+    from ojaudit.core.schema import Participant, Submission
+
+    db = tmp_path / "db.sqlite"
+    with Store(db) as store:
+        store.import_contest(
+            Contest("nowcoder", "9", "合成"),
+            [Participant("nowcoder", "9", "a", "甲"), Participant("nowcoder", "9", "idle", "乙")],
+            submissions=[
+                Submission("nowcoder", "9", "s", "a", 0, "cpp", "AC", 100, 1, "contest", "x")
+            ],
+        )
+    out = tmp_path / "rank.csv"
+    main(
+        [
+            "--db",
+            str(db),
+            "rank",
+            "9",
+            "--format",
+            "csv",
+            "--inactive",
+            "drop",
+            "--output",
+            str(out),
+        ]
+    )
+    assert "idle" not in out.read_text(encoding="utf-8-sig")

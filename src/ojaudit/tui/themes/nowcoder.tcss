@@ -150,7 +150,7 @@ ListView:focus > ListItem.-highlight {
 
 #ranking-columns { height: 1fr; }
 #ranking-side { width: 44; }
-#ranking-options { height: 8; }
+#ranking-options { height: 9; }
 #ranking-warning { height: auto; margin-top: 1; padding: 0 1; }
 #ranking-main { width: 1fr; height: 1fr; }
 #ranking-main .thead { padding: 0 2; }

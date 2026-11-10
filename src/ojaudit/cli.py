@@ -61,7 +61,12 @@ def _analyze(
 
 
 def _export(store: Store, args: argparse.Namespace) -> Path:
-    options = RankingOptions(cheaters=args.cheaters, suspects=args.suspects, managers=args.managers)
+    options = RankingOptions(
+        cheaters=args.cheaters,
+        suspects=args.suspects,
+        managers=args.managers,
+        inactive=getattr(args, "inactive", "keep"),
+    )
     ranking = contest_ranking(store, args.platform, args.contest, options)
     fmt = getattr(args, "format", "csv")
     path = (
@@ -128,9 +133,13 @@ def _parser() -> argparse.ArgumentParser:
     export.add_argument("--cheaters", choices=["drop", "mark"], default="drop")
     export.add_argument("--suspects", choices=["keep", "mark", "drop"], default="keep")
     export.add_argument("--managers", choices=["drop", "mark"], default="drop")
+    export.add_argument("--inactive", choices=["keep", "drop"], default="keep")
     rank.add_argument("--cheaters", choices=["drop", "mark"], default="drop")
     rank.add_argument("--suspects", choices=["keep", "mark", "drop"], default="keep")
     rank.add_argument("--managers", choices=["drop", "mark"], default="drop")
+    rank.add_argument(
+        "--inactive", choices=["keep", "drop"], default="keep", help="drop：剔除一次都未提交的人"
+    )
     plugins = sub.add_parser("plugins", help="插件登记")
     plugins.add_argument("action", choices=["list", "install", "enable", "disable"])
     plugins.add_argument("spec", nargs="?")

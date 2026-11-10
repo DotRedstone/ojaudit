@@ -20,7 +20,7 @@ from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Horizontal, ScrollableContainer, Vertical, VerticalScroll
-from textual.widgets import Static
+from textual.widgets import ListView, Static
 
 from ojaudit.core.reviews import DEFAULT_REVIEW_STATUS, REVIEW_STATUSES
 from ojaudit.core.schema import is_accepted
@@ -893,7 +893,17 @@ def _unified(
 
 class PeopleScreen(ReviewListScreen):
     TITLE = "选手"
-    HINTS = (("↵", "查看"), ("s", "排序"), ("/", "搜索"), ("esc", "返回"))
+    HINTS = (
+        ("↵", "查看"),
+        ("a", "设为/取消管理者"),
+        ("s", "排序"),
+        ("/", "搜索"),
+        ("esc", "返回"),
+    )
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+        *TableScreen.BINDINGS,
+        ("a", "toggle_manager", "设为 / 取消管理者"),
+    ]
     DEFAULT_SORT = (4, True)
     COLUMNS = (
         ui.Column("姓名"),
@@ -952,6 +962,16 @@ class PeopleScreen(ReviewListScreen):
         person = self.selected_row(index)
         if person:
             self.app.push_screen(PersonScreen(self.data, self.PATH, person["uid"]))
+
+    def action_toggle_manager(self) -> None:
+        view = self.query_one("#items", ListView)
+        person = self.selected_row(view.index if view.index is not None else -1)
+        if not person:
+            return
+        manager = not person["hidden"]
+        self.data.set_manager(str(person["uid"]), manager)
+        self.reload()
+        self.notify(f"已把 {person['name']} {'设为' if manager else '移出'}管理者")
 
 
 class PersonScreen(ReviewListScreen):

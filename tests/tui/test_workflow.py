@@ -59,7 +59,7 @@ def test_collect_analyze_pending_and_overview(tmp_path, monkeypatch):
                 if not app.job_running:
                     break
             assert not app.job_running
-            assert "任务完成" in app.job_status
+            assert "已完成" in app.job_status
             contest = local.list_contests()[0].contest
             assert local.stats(contest).submissions == 2
             assert local.stats(contest).findings >= 1

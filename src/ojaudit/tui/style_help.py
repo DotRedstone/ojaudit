@@ -59,6 +59,7 @@ class StyleHelpScreen(Popup):
     ]
     WIDTH = 72
     ICON = "help"
+    ACTIONS = (("关闭", "close"),)
 
     def __init__(self) -> None:
         super().__init__("按键", "esc 关闭")

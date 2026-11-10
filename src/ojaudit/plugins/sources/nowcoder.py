@@ -16,7 +16,8 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Any
 
@@ -79,7 +80,7 @@ class NowcoderSource:
             raise ValueError("retry_count 必须为 0–10 的整数")
         for attempt in range(retries + 1):
             try:
-                response = self.opener(request, timeout=40)
+                response = self.opener(request, timeout=20)
                 return response.read().decode("utf-8", "replace")
             except (OSError, TimeoutError) as exc:
                 if attempt == retries:
@@ -136,7 +137,7 @@ class NowcoderSource:
                 result.append(
                     {
                         "contest_id": str(row["contestId"]),
-                        "name": str(row.get("contestName") or row["contestId"]),
+                        "name": html.unescape(str(row.get("contestName") or row["contestId"])),
                         "start_time": row.get("startTime"),
                         "end_time": row.get("endTime"),
                     }
@@ -167,8 +168,24 @@ class NowcoderSource:
             collected.extend(payload.get("data") or [])
         return collected
 
-    def fetch_contest(self, session: Any, contest_id: str) -> NowcoderBundle:
+    def fetch_contest(
+        self,
+        session: Any,
+        contest_id: str,
+        *,
+        progress: Callable[[str, int, int], None] | None = None,
+        cancelled: Callable[[], bool] | None = None,
+    ) -> NowcoderBundle:
+        """progress(阶段, 已完成, 总数) 报告进度；cancelled() 返回 True 时尽快停止并抛出
+        InterruptedError（正在进行的单个请求会先完成）。"""
         del session  # 网络会话由本插件的只读 opener 管理。
+        report = progress or (lambda _stage, _done, _total: None)
+        stop = cancelled or (lambda: False)
+
+        def check() -> None:
+            if stop():
+                raise InterruptedError("采集已取消")
+
         if not str(contest_id).isdigit():
             raise ValueError("牛客比赛 ID 必须为数字字符串")
         if self.config.get("readonly", True) is not True:
@@ -180,6 +197,7 @@ class NowcoderSource:
         phase = str(self.config.get("phase", "contest"))
         if phase not in {"contest", "after", "all"}:
             raise ValueError("phase 仅支持 contest、after、all")
+        report("读取比赛信息", 0, 0)
         info = (
             self._json(
                 f"{BASE_URL}/acm/contest/contest-info?{urllib.parse.urlencode({'id': contest_id})}",
@@ -194,6 +212,8 @@ class NowcoderSource:
                 "rankScope": "ALL",
             }
         )
+        check()
+        report("读取榜单", 0, 0)
         rank_data = (
             self._json(
                 f"{BASE_URL}/acm/contest/rank/submit-list?{rank_query}",
@@ -210,7 +230,7 @@ class NowcoderSource:
         contest = Contest(
             platform="nowcoder",
             contest_id=str(info.get("sourceId") or contest_id),
-            name=str(info.get("name") or contest_id),
+            name=html.unescape(str(info.get("name") or contest_id)),
             start_time=info.get("startTime"),
             end_time=info.get("endTime"),
             raw_meta={"description": str(info.get("description") or "")},
@@ -230,7 +250,7 @@ class NowcoderSource:
                 contest_id=contest.contest_id,
                 index=index,
                 problem_id=problem_id,
-                title=str(raw.get("title") or ""),
+                title=html.unescape(str(raw.get("title") or "")),
                 full_score=float(raw.get("score") or 0),
             )
             problems.append(problem)
@@ -242,12 +262,12 @@ class NowcoderSource:
                 platform="nowcoder",
                 contest_id=contest.contest_id,
                 uid=str(row.get("uid", "")),
-                name=str(row.get("name") or ""),
+                name=html.unescape(str(row.get("name") or "")),
             )
             for row in signup
             if row.get("uid") is not None
         )
-        names = {str(row.get("uid")): str(row.get("name") or "") for row in signup}
+        names = {str(row.get("uid")): html.unescape(str(row.get("name") or "")) for row in signup}
         selected: list[tuple[dict[str, Any], Problem, str]] = []
         if phase in {"contest", "all"}:
             for raw in rank_submissions:
@@ -255,6 +275,8 @@ class NowcoderSource:
                 if problem is not None:
                     selected.append((raw, problem, "contest"))
         if phase in {"after", "all"}:
+            check()
+            report("读取赛后提交", 0, 0)
             for raw in self._fetch_after_submissions(contest_id, cookie):
                 try:
                     stamp = int(raw.get("submitTime") or 0)
@@ -288,11 +310,25 @@ class NowcoderSource:
             )
             return _code_from_html(self._get(url, cookie))
 
-        if threads > 1 and len(selected) > 1:
-            with ThreadPoolExecutor(max_workers=threads) as executor:
-                codes = list(executor.map(read_code, selected))
+        total = len(selected)
+        codes: list[tuple[str, str, str, float]] = [("", "", "", 0.0)] * total
+        report("下载源码", 0, total)
+        if threads > 1 and total > 1:
+            executor = ThreadPoolExecutor(max_workers=threads)
+            try:
+                futures = {executor.submit(read_code, item): i for i, item in enumerate(selected)}
+                for done, future in enumerate(as_completed(futures), 1):
+                    codes[futures[future]] = future.result()
+                    report("下载源码", done, total)
+                    check()
+            finally:
+                # 取消或出错时丢弃尚未开始的请求，不让后台线程继续跑完全部源码。
+                executor.shutdown(wait=False, cancel_futures=True)
         else:
-            codes = [read_code(item) for item in selected]
+            for i, item in enumerate(selected):
+                check()
+                codes[i] = read_code(item)
+                report("下载源码", i + 1, total)
         submissions = []
         seen = set()
         for (raw, problem, submission_phase), parsed in zip(selected, codes):

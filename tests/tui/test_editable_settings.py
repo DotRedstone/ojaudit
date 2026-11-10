@@ -129,13 +129,15 @@ def test_collect_settings_are_consumed(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("command", ["rank", "export"])
-def test_invalid_contest_no_output(tmp_path, command):
+def test_invalid_contest_no_output(tmp_path, command, capsys):
     output = tmp_path / "should-not-exist.md"
     arguments = ["--db", str(tmp_path / "fixture.sqlite")]
     if command == "rank":
         arguments += ["rank", "404", "--platform", "synthetic", "--output", str(output)]
     else:
         arguments += ["export", "synthetic", "404", "--output", str(output), "--format", "md"]
-    with pytest.raises(ValueError, match="比赛不存在"):
+    with pytest.raises(SystemExit) as exit_info:
         main(arguments)
+    assert exit_info.value.code == 1
+    assert "比赛不存在" in capsys.readouterr().err
     assert not output.exists()

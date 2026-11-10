@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import sqlite3
+import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -140,6 +143,28 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     args = _parser().parse_args(argv)
+    try:
+        _run(args)
+    except KeyboardInterrupt:
+        raise SystemExit(130) from None
+    except (
+        ValueError,
+        TypeError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        sqlite3.Error,
+        subprocess.SubprocessError,
+    ) as exc:
+        # 预期内的错误只给一行提示；异常文本不含 Cookie（采集层不把凭据写入异常）。
+        message = str(exc) or type(exc).__name__
+        if isinstance(exc, KeyError):
+            message = f"缺少字段 {exc}"
+        print(f"ojaudit: {message}", file=sys.stderr)
+        raise SystemExit(1) from None
+
+
+def _run(args: argparse.Namespace) -> None:
     if args.command is None:
         from importlib import import_module
 

@@ -19,8 +19,8 @@ from textual.widgets import Button, Input, Label, ListView, Static
 from ojaudit.tui.icons import label
 from ojaudit.tui.interaction import NavigateListView
 from ojaudit.tui.screens import ShellScreen
-from ojaudit.tui.ui_components import StatusRow
 from ojaudit.tui.settings_model import CATEGORIES, Option, SettingsModel
+from ojaudit.tui.ui_components import StatusRow
 
 
 class EditValue(ModalScreen[str | None]):

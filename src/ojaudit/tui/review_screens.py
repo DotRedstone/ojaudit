@@ -301,16 +301,22 @@ class EvidenceScreen(ShellScreen):
                     tofile=str(finding["uid_b"]),
                 )
             )
-            left_view.update(Syntax(
+            left_view.update(
+                Syntax(
                     diff or "（无文本差异）",
                     "diff",
                     line_numbers=True,
                     background_color=str(self.app.current_theme.background),
-                ))
+                )
+            )
             right_view.update("Tab：返回代码对照")
         else:
-            left_view.update(_syntax(left_code, finding["language"], str(self.app.current_theme.background)))
-            right_view.update(_syntax(right_code, finding["language"], str(self.app.current_theme.background)))
+            left_view.update(
+                _syntax(left_code, finding["language"], str(self.app.current_theme.background))
+            )
+            right_view.update(
+                _syntax(right_code, finding["language"], str(self.app.current_theme.background))
+            )
         meta = self.query_one("#evidence-meta", Static)
         meta.remove_class("level-high", "level-medium", "level-low")
         level = str(finding["verdict_level"]).lower()
@@ -637,7 +643,9 @@ class CodeScreen(ShellScreen):
                 self.app.nerd_font,
             )
         )
-        self.query_one("#code-body", Static).update(_syntax(row["code"], row["language"], str(self.app.current_theme.background)))
+        self.query_one("#code-body", Static).update(
+            _syntax(row["code"], row["language"], str(self.app.current_theme.background))
+        )
         self._update_status()
 
     def action_first_code(self) -> None:

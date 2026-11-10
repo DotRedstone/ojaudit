@@ -8,7 +8,7 @@ from textual.widgets import Input, ListView
 from ojaudit.core.store import Store
 from ojaudit.tui.app import AuditApp
 from ojaudit.tui.data import LocalContests
-from ojaudit.tui.screens import ContestOverviewScreen, EntryDialog, HomeScreen
+from ojaudit.tui.screens import ContestOverviewScreen, EntryDialog, HomeScreen, MissingContestScreen
 
 
 def test_open_local_contest_by_id(tmp_path):
@@ -33,7 +33,7 @@ def test_open_local_contest_by_id(tmp_path):
     asyncio.run(scenario())
 
 
-def test_missing_contest_returns_to_home(tmp_path):
+def test_missing_contest_shows_actionable_path(tmp_path):
     async def scenario():
         app = AuditApp(LocalContests(tmp_path / "missing.sqlite"))
         async with app.run_test() as pilot:
@@ -42,6 +42,10 @@ def test_missing_contest_returns_to_home(tmp_path):
             await pilot.pause()
             app.screen.query_one(Input).value = "999"
             await pilot.press("enter")
+            await pilot.pause()
+            assert isinstance(app.screen, MissingContestScreen)
+            assert app.screen.contest_id == "999"
+            await pilot.press("escape")
             await pilot.pause()
             assert isinstance(app.screen, HomeScreen)
 

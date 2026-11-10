@@ -223,6 +223,14 @@ class ReviewData:
         with Store(self.local.db_path) as store:
             store.put_person_mark(*self.key, uid, mark, note, datetime.now(UTC).isoformat())
 
+    def set_manager(self, uid: str, manager: bool) -> None:
+        """把选手加入或移出全局管理者名单（管理者不参与检测，排行榜按策略处理）。"""
+        with Store(self.local.db_path) as store:
+            if manager:
+                store.put_hidden_person(self.contest.platform, uid, str(self.person(uid)["name"]))
+            else:
+                store.remove_hidden_person(self.contest.platform, uid)
+
     def review(self, finding: dict[str, Any], status: str, note: str) -> None:
         if finding["is_stale"]:
             raise ValueError("不能修改已失效线索")

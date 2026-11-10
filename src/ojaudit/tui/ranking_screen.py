@@ -27,6 +27,7 @@ POLICIES = (
     ("作弊者", ("除名", "标记"), ("drop", "mark")),
     ("存疑者", ("照常", "标记", "剔除"), ("keep", "mark", "drop")),
     ("管理者", ("剔除", "标记"), ("drop", "mark")),
+    ("未提交者", ("保留", "剔除"), ("keep", "drop")),
     ("导出格式", ("Excel", "Markdown", "CSV", "HTML"), ("xlsx", "md", "csv", "html")),
 )
 PREVIEW_COLUMNS = (
@@ -42,6 +43,7 @@ class RankingScreen(ShellScreen):
     HINTS = (
         ("←→", "切换取值"),
         ("tab", "策略/预览"),
+        ("a", "设为/取消管理者"),
         ("e", "导出"),
         ("esc", "返回"),
     )
@@ -55,13 +57,14 @@ class RankingScreen(ShellScreen):
         ("shift+g", "last", "末项"),
         ("tab,shift+tab", "focus_next", "切换策略 / 预览"),
         ("e", "export", "导出"),
+        ("a", "toggle_manager", "把预览中选中的人设为 / 取消管理者"),
     ]
 
     def __init__(self, data: ReviewData) -> None:
         super().__init__()
         self.data = data
         self.contest = data.contest
-        self.choice_indices = [0, 0, 0, 0]
+        self.choice_indices = [0] * len(POLICIES)
         self.PATH = f"首页 › 比赛列表 › {data.contest.name} › 排行榜"
 
     def subtitle(self) -> str:
@@ -102,10 +105,11 @@ class RankingScreen(ShellScreen):
             cheaters=POLICIES[0][2][self.choice_indices[0]],
             suspects=POLICIES[1][2][self.choice_indices[1]],
             managers=POLICIES[2][2][self.choice_indices[2]],
+            inactive=POLICIES[3][2][self.choice_indices[3]],
         )
 
     def format_name(self) -> str:
-        return POLICIES[3][2][self.choice_indices[3]]
+        return POLICIES[-1][2][self.choice_indices[-1]]
 
     def refresh_ranking(self) -> None:
         colors = ui.palette(self.app)
@@ -134,7 +138,8 @@ class RankingScreen(ShellScreen):
         )
         selected = preview.index or 0
         preview.clear()
-        for row in final_ranking(self.data, self.policy()).rows:
+        self.preview_rows = list(final_ranking(self.data, self.policy()).rows)
+        for row in self.preview_rows:
             mark = row.get("person_mark", "")
             label_text = {"manager": "管理", "suspect": "存疑", "cheater": "作弊者"}.get(mark, "")
             color = {"manager": colors.muted}.get(mark, colors.mark(mark))
@@ -204,6 +209,25 @@ class RankingScreen(ShellScreen):
     def action_up(self) -> None:
         view = self.active_view()
         view.index = max((view.index or 0) - 1, 0)
+
+    def action_toggle_manager(self) -> None:
+        """在预览里选中自己或其他工作人员，一键加入管理者名单（再按一次取消）。"""
+        preview = self.query_one("#ranking-preview", ListView)
+        rows = getattr(self, "preview_rows", [])
+        index = preview.index if preview.index is not None else -1
+        if not 0 <= index < len(rows):
+            self.notify("先在右侧预览中选中一个人", severity="warning")
+            return
+        row = rows[index]
+        uid, name = str(row["uid"]), str(row["name"])
+        manager = row.get("person_mark") != "manager"
+        self.data.set_manager(uid, manager)
+        self.refresh_ranking()
+        if manager:
+            hint = "，已从榜单剔除" if self.policy().managers == "drop" else ""
+            self.notify(f"已把 {name} 设为管理者{hint}（管理者策略选「标记」可在预览中看到并取消）")
+        else:
+            self.notify(f"已把 {name} 移出管理者名单")
 
     def action_export(self) -> None:
         try:

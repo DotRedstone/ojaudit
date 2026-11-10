@@ -24,7 +24,7 @@ class AuditApp(App[None]):
     TITLE = "ojaudit · 审核工作台"
     CSS_PATH = "themes/nowcoder.tcss"
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        ("q", "quit", "退出"),
+        ("q", "context_quit", "返回/退出"),
         ("question_mark", "help", "帮助"),
         ("t", "cycle_theme", "切换主题"),
     ]
@@ -126,6 +126,21 @@ class AuditApp(App[None]):
         self.theme_name = self.THEMES[(index + 1) % len(self.THEMES)]
         self._apply_theme()
         self.notify(f"主题：{self.theme_name}（设置页可保存）")
+
+    def action_context_quit(self) -> None:
+        from ojaudit.tui.screens import HomeScreen
+
+        if isinstance(self.screen, HomeScreen):
+            self.exit()
+        else:
+            cancel = getattr(self.screen, "action_cancel", None)
+            back = getattr(self.screen, "action_back", None)
+            if callable(cancel):
+                cancel()
+            elif callable(back):
+                back()
+            else:
+                self.pop_screen()
 
     def action_help(self) -> None:
         from ojaudit.tui.style_help import StyleHelpScreen

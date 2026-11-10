@@ -12,9 +12,11 @@ from typing import ClassVar
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.screen import Screen
-from textual.widgets import Label, ListItem, ListView, Static
+from textual.widgets import Footer, Label, ListView, Static
 
 from ojaudit.core.ranking import RankingOptions
+from ojaudit.tui.interaction import Breadcrumb
+from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.ranking_data import export_ranking, final_ranking, pending_warnings
 from ojaudit.tui.review_data import ReviewData
 
@@ -29,13 +31,15 @@ POLICIES = (
 class RankingScreen(Screen):
     TITLE = "排行榜 · 本地推导（非官方）"
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        ("escape", "back", "返回"),
-        ("h", "previous", "前一选项"),
-        ("l", "next", "后一选项"),
-        ("enter", "next", "切换选项"),
+        ("escape,h,left", "back", "返回"),
+        ("right,l,enter,space", "next", "切换策略"),
+        ("shift+left", "previous", "前一选项"),
+        ("j,down", "down", "向下"),
+        ("k,up", "up", "向上"),
+        ("g", "first", "首项"),
+        ("shift+g", "last", "末项"),
+        ("tab,shift+tab", "focus_next", "切换面板"),
         ("e", "export", "导出"),
-        ("j", "down", "向下"),
-        ("k", "up", "向上"),
     ]
     CSS = """
     #ranking-options { height: 7; border: round $panel; }
@@ -49,13 +53,14 @@ class RankingScreen(Screen):
         self.choice_indices = [0, 0, 0, 0]
 
     def compose(self) -> ComposeResult:
-        yield Static(f"首页 › 比赛列表 › {self.data.contest.name} › 排行榜", id="breadcrumb")
+        yield Breadcrumb(f"首页 › 比赛列表 › {self.data.contest.name} › 排行榜", id="breadcrumb")
         with Vertical(id="pane"):
             yield Static("本地提交成绩推导，非官方排名", id="ranking-note")
             yield ListView(id="ranking-options")
             yield Static("", id="ranking-warning")
             yield ListView(id="ranking-preview")
         yield Static("", id="status")
+        yield Footer()
 
     def on_mount(self) -> None:
         self.query_one("#pane", Vertical).border_title = self.TITLE
@@ -102,7 +107,7 @@ class RankingScreen(Screen):
         if not preview.children:
             preview.append(ListItem(Label("当前策略下无可展示人员")))
         self.query_one("#status", Static).update(
-            self.app.status_line("排行榜 · 非官方推导", self.data.contest.contest_id)
+            self.app.status_line("排行榜 · 非官方推导", str(self.data.contest.contest_id))
         )
 
     def change(self, delta: int) -> None:
@@ -113,17 +118,37 @@ class RankingScreen(Screen):
         self.refresh_ranking()
 
     def action_previous(self) -> None:
-        self.change(-1)
+        if self.active_view().id == "ranking-options":
+            self.change(-1)
 
     def action_next(self) -> None:
-        self.change(1)
+        if self.active_view().id == "ranking-options":
+            self.change(1)
+
+    def active_view(self) -> ListView:
+        view = self.app.focused
+        if isinstance(view, ListView) and view.id == "ranking-preview":
+            return view
+        return self.query_one("#ranking-options", ListView)
+
+    def action_focus_next(self) -> None:
+        view = self.active_view()
+        target = "#ranking-preview" if view.id == "ranking-options" else "#ranking-options"
+        self.query_one(target, ListView).focus()
+
+    def action_first(self) -> None:
+        self.active_view().index = 0
+
+    def action_last(self) -> None:
+        view = self.active_view()
+        view.index = max(0, len(view.children) - 1)
 
     def action_down(self) -> None:
-        view = self.query_one("#ranking-options", ListView)
-        view.index = min((view.index or 0) + 1, len(POLICIES) - 1)
+        view = self.active_view()
+        view.index = min((view.index or 0) + 1, len(view.children) - 1)
 
     def action_up(self) -> None:
-        view = self.query_one("#ranking-options", ListView)
+        view = self.active_view()
         view.index = max((view.index or 0) - 1, 0)
 
     def action_export(self) -> None:

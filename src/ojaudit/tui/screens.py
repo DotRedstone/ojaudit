@@ -11,34 +11,38 @@ from typing import ClassVar
 
 from textual import on
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
-from textual.widgets import Button, Input, Label, ListItem, ListView, Static
+from textual.widgets import Button, Footer, Input, Label, ListView, Static
 
 from ojaudit.core.schema import Contest
 from ojaudit.tui.data import LocalContests
+from ojaudit.tui.interaction import Breadcrumb, SearchDialog
+from ojaudit.tui.interaction import NavigateListItem as ListItem
+from ojaudit.tui.interaction import NavigateListView as NavigationListView
 
 
 class ShellScreen(Screen):
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        ("escape", "back", "返回"),
-        ("h", "back", "返回"),
-        ("j", "down", "下移"),
-        ("k", "up", "上移"),
+        ("escape,left,h", "back", "返回"),
+        ("j,down", "down", "下移"),
+        ("k,up", "up", "上移"),
         ("g", "first", "首项"),
         ("shift+g", "last", "末项"),
-        ("enter", "open", "进入"),
-        ("l", "open", "进入"),
+        ("enter,l,right,space", "open", "进入"),
+        ("slash", "search", "搜索"),
     ]
     TITLE = ""
     PATH = "首页"
 
     def shell(self, content: list[object]) -> ComposeResult:
         hints = " · Enter/l 进入 · Esc/h 返回 · ? 帮助" if self.app.key_hints else ""
-        yield Static(self.PATH + hints, id="breadcrumb")
+        yield Breadcrumb(self.PATH + hints, id="breadcrumb")
         with Vertical(id="pane"):
             yield from content
         yield Static("", id="status")
+        yield Footer()
 
     def on_mount(self) -> None:
         pane = self.query_one("#pane", Vertical)
@@ -61,40 +65,64 @@ class ShellScreen(Screen):
         if len(self.app.screen_stack) > 1:
             self.app.pop_screen()
 
+    def _list(self) -> ListView | None:
+        return next(iter(self.query(ListView)), None)
+
     def action_down(self) -> None:
-        view = self.query_one(ListView)
-        if view.children:
+        view = self._list()
+        if view is not None and view.children:
             view.index = min((view.index or 0) + 1, len(view.children) - 1)
 
     def action_up(self) -> None:
-        view = self.query_one(ListView)
-        if view.children:
+        view = self._list()
+        if view is not None and view.children:
             view.index = max((view.index or 0) - 1, 0)
 
     def action_first(self) -> None:
-        self.query_one(ListView).index = 0
+        view = self._list()
+        if view is not None and view.children:
+            view.index = 0
 
     def action_last(self) -> None:
-        view = self.query_one(ListView)
-        if view.children:
+        view = self._list()
+        if view is not None and view.children:
             view.index = len(view.children) - 1
 
     def action_open(self) -> None:
-        view = self.query_one(ListView)
-        if view.children:
+        view = self._list()
+        if view is not None and view.children:
             self.open_index(view.index if view.index is not None else 0)
+
+    def action_search(self) -> None:
+        if self._list() is not None:
+            self.app.push_screen(SearchDialog(), self._search_result)
+
+    def _search_result(self, query: str | None) -> None:
+        view = self._list()
+        if view is None or not query:
+            return
+        for index, item in enumerate(view.children):
+            if query.casefold() in str(item.query_one(Label).render()).casefold():
+                view.index = index
+                view.focus()
+                return
+        self.notify("未找到匹配项", severity="warning")
 
     def open_index(self, index: int) -> None:
         raise NotImplementedError
 
-    @on(ListView.Selected)
-    def selected(self, event: ListView.Selected) -> None:
-        if event.list_view.index is not None:
-            self.open_index(event.list_view.index)
+    @on(NavigationListView.Activated)
+    def activated(self, event: NavigationListView.Activated) -> None:
+        self.open_index(event.index)
 
 
 class EntryDialog(ModalScreen[str | None]):
     """比赛 ID / Cookie 输入框；Cookie 仅通过密码输入控件传递。"""
+
+    BINDINGS: ClassVar[list[Binding]] = [
+        Binding("escape", "cancel", "取消", priority=True),
+        Binding("h", "cancel", "取消"),
+    ]
 
     CSS = """
     EntryDialog { align: center middle; }
@@ -124,6 +152,9 @@ class EntryDialog(ModalScreen[str | None]):
     def on_mount(self) -> None:
         self.query_one("#entry-value", Input).focus()
 
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
     @on(Input.Submitted)
     def submit_input(self, event: Input.Submitted) -> None:
         self.dismiss(event.value)
@@ -143,6 +174,11 @@ class HomeScreen(ShellScreen):
     OPTIONS = ("比赛列表", "打开比赛 ID", "账户 / 登录", "设置")
 
     def compose(self) -> ComposeResult:
+        hint = (
+            "本地数据库不存在：先运行 ojaudit login，再运行 ojaudit collect <比赛ID>。"
+            if not self.app.contests.db_path.is_file()
+            else ""
+        )
         entries = self.app.contests.list_contests(show_all=True)
         overview = Static(
             "◈ ojaudit / review\n"
@@ -150,14 +186,20 @@ class HomeScreen(ShellScreen):
             f"本地比赛 {len(entries)}  ·  请通过 ojaudit login 管理登录",
             id="home-overview",
         )
-        hint = (
-            "本地数据库不存在：先运行 ojaudit login，再运行 ojaudit collect <比赛ID>。"
-            if not self.app.contests.db_path.is_file()
-            else ""
-        )
-        yield from self.shell(
-            [overview, Static(hint), ListView(*(ListItem(Label(item)) for item in self.OPTIONS))]
-        )
+        items: list[object] = [
+            overview,
+            Static(hint),
+            NavigationListView(*(ListItem(Label(item)) for item in self.OPTIONS)),
+        ]
+        if not self.app.contests.list_contests(show_all=True):
+            items.append(
+                Static(
+                    "首次使用：ojaudit login → ojaudit collect <比赛ID> "
+                    "→ ojaudit analyze <比赛ID> → ojaudit",
+                    id="empty-guide",
+                )
+            )
+        yield from self.shell(items)
 
     def open_index(self, index: int) -> None:
         if index == 0:
@@ -223,7 +265,7 @@ class ContestListScreen(ShellScreen):
         self.entries = []
 
     def compose(self) -> ComposeResult:
-        yield from self.shell([ListView(id="contests")])
+        yield from self.shell([NavigationListView(id="contests")])
 
     def on_mount(self) -> None:
         self.refresh_entries()
@@ -239,7 +281,9 @@ class ContestListScreen(ShellScreen):
                 label += "  · 规则外"
             view.append(ListItem(Label(label)))
         if not self.entries:
-            view.append(ListItem(Label("暂无比赛（本地存储为空或均被规则过滤）")))
+            view.append(
+                ListItem(Label("暂无比赛：先执行 ojaudit login，再执行 ojaudit collect <比赛ID>"))
+            )
         view.call_after_refresh(setattr, view, "index", 0)
         self.query_one("#breadcrumb", Static).update(
             self.PATH + (" › 全部" if self.show_all else " › 已筛选")
@@ -268,7 +312,8 @@ class ContestOverviewScreen(ShellScreen):
     def compose(self) -> ComposeResult:
         stats = self.contests.stats(self.contest)
         with Vertical():
-            yield Static(self.PATH, id="breadcrumb")
+            hints = " · Enter/l 进入 · Esc/h 返回 · ? 帮助" if self.app.key_hints else ""
+            yield Breadcrumb(self.PATH + hints, id="breadcrumb")
             with Vertical(id="pane"):
                 yield Static(
                     "◈ 本地审核概览\n"
@@ -277,7 +322,7 @@ class ContestOverviewScreen(ShellScreen):
                     "线索为待审核提示，不代表违规结论",
                     id="summary",
                 )
-                yield ListView(
+                yield NavigationListView(
                     *(
                         ListItem(Label(f"{name} · {count}"))
                         for name, count in zip(
@@ -292,6 +337,7 @@ class ContestOverviewScreen(ShellScreen):
                     ),
                 )
             yield Static("", id="status")
+            yield Footer()
 
     def open_index(self, index: int) -> None:
         from ojaudit.tui.review_data import ReviewData

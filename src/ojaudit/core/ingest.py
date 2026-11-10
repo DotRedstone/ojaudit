@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -157,8 +158,30 @@ def _read_reviews(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def migrate_nowcoder(store: Store, source: Path, reviews: Path | None = None) -> int:
-    """只读导入 nowcoder-collect 旧库；返回导入的提交数。"""
+@dataclass(frozen=True, slots=True)
+class MigrationReport:
+    submissions: int
+    reviews: int = 0
+    # 无法唯一确定比赛的复核记录：(run_id, uid_a, uid_b, 题号, 原因)
+    skipped_reviews: tuple[tuple[str, str, str, int, str], ...] = ()
+
+
+def _review_contests(
+    submissions: Iterable[Submission],
+) -> dict[tuple[str, int, str], set[str]]:
+    """(UID, 题号, 语言) → 出现过该提交的比赛集合，用于推断复核记录属于哪场比赛。"""
+    index: dict[tuple[str, int, str], set[str]] = {}
+    for item in submissions:
+        index.setdefault((item.uid, item.problem_index, item.language), set()).add(item.contest_id)
+    return index
+
+
+def migrate_nowcoder(store: Store, source: Path, reviews: Path | None = None) -> MigrationReport:
+    """只读导入 nowcoder-collect 旧库。
+
+    reviews.json 不含比赛 ID：用双方 UID、题号与语言在旧库提交中定位比赛，
+    只有恰好一场比赛同时包含双方该题该语言的提交时才导入，其余在报告中列出。
+    """
     contests, rows = _read_legacy(source.expanduser())
     review_rows = _read_reviews(reviews) if reviews is not None else []
 
@@ -171,7 +194,7 @@ def migrate_nowcoder(store: Store, source: Path, reviews: Path | None = None) ->
         by_contest.setdefault(cid, {"name": cid, "rows": []})["rows"].append(row)
 
     plans = []
-    total = 0
+    every_submission: list[Submission] = []
     for cid, entry in sorted(by_contest.items()):
         names: dict[str, str] = {}
         parsed = []
@@ -204,11 +227,26 @@ def migrate_nowcoder(store: Store, source: Path, reviews: Path | None = None) ->
                 parsed,
             )
         )
-        total += len(parsed)
+        every_submission.extend(parsed)
+
+    located = _review_contests(every_submission)
+    placed = []
+    skipped = []
+    for review in review_rows:
+        language = language_bucket(review["language"])
+        key = (review["run_id"], review["uid_a"], review["uid_b"], review["problem_index"])
+        candidates = located.get(
+            (review["uid_a"], review["problem_index"], language), set()
+        ) & located.get((review["uid_b"], review["problem_index"], language), set())
+        if len(candidates) == 1:
+            placed.append({**review, "language": language, "contest_id": candidates.pop()})
+        else:
+            reason = "旧库中找不到双方的对应提交" if not candidates else "多场比赛都符合"
+            skipped.append((*key, reason))
 
     with store.transaction():
         for plan in plans:
             store.import_contest(*plan)
-        for review in review_rows:
-            store.put_finding_review(**review, overwrite=False)
-    return total
+        for review in placed:
+            store.put_finding_review(**review, platform="nowcoder", overwrite=False)
+    return MigrationReport(len(every_submission), len(placed), tuple(skipped))

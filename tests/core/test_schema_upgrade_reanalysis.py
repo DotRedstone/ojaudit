@@ -71,3 +71,21 @@ def test_reanalysis_keeps_manual_records_and_marks_disappeared_findings_stale(tm
         old_reviews = store.list_finding_reviews(first.run_id)
         assert old_reviews[0]["note"] == "保留的线索备注"
         assert annotate_review_staleness(old_reviews, [])[0]["is_stale"]
+
+
+def test_v2_reviews_are_backfilled_with_their_contest(tmp_path):
+    path = tmp_path / "synthetic-v2.sqlite"
+    with sqlite3.connect(path) as connection:
+        connection.executescript(_MIGRATIONS[1] + _MIGRATIONS[2])
+        connection.execute("CREATE TABLE schema_version (version INTEGER NOT NULL)")
+        connection.execute("INSERT INTO schema_version VALUES (2)")
+        connection.execute(
+            "INSERT INTO analysis_runs VALUES ('run-1','synthetic','c1','x','test','2026-01-01')"
+        )
+        connection.execute(
+            "INSERT INTO finding_reviews(run_id,uid_a,uid_b,problem_index,language,status,"
+            "note,updated_at) VALUES ('run-1','u1','u2',0,'cpp','已核查','旧备注','2026-01-01')"
+        )
+    with Store(path) as store:
+        assert store.execute("SELECT version FROM schema_version").fetchone()[0] == 3
+        assert store.list_contest_reviews("synthetic", "c1")[0]["note"] == "旧备注"

@@ -181,3 +181,50 @@ def test_delete_contest_data_from_settings(tmp_path, monkeypatch):
     assert [
         o.title for o in SettingsModel(db_path=db).options_for("数据") if o.kind == "contest"
     ] == ["正式赛"]
+
+
+def test_settings_import_reviews_shows_summary(tmp_path, monkeypatch):
+    from textual.widgets import Input
+
+    from ojaudit.core.review_exchange import export_reviews, write_reviews
+    from ojaudit.tui.popup import InfoPopup, InputPopup
+    from ojaudit.tui.settings_screen import SettingsScreen
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    db = _db(tmp_path)
+    other = tmp_path / "other.sqlite"
+    with Store(other) as store:
+        store.import_contest(
+            Contest("nowcoder", "1", "正式赛"), [Participant("nowcoder", "1", "v", "乙")]
+        )
+        store.put_person_mark("nowcoder", "1", "v", "cheater", "别人认定", "t")
+        exported = write_reviews(export_reviews(store), tmp_path / "r.json")
+    model = SettingsModel(db_path=db)
+
+    async def scenario():
+        app = AuditApp(LocalContests(db))
+        async with app.run_test(size=(120, 34)) as pilot:
+            app.push_screen(SettingsScreen(model))
+            await pilot.pause()
+            screen = app.screen
+            screen.query_one("#categories", ListView).index = CATEGORIES.index("数据")
+            await pilot.pause()
+            await pilot.press("tab")
+            values = screen.query_one("#settings-values", ListView)
+            values.index = [o.key for o in screen.rows].index("data.reviews_import")
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+            assert isinstance(app.screen, InputPopup)
+            app.screen.query_one(Input).value = str(exported)
+            await pilot.press("enter")
+            await pilot.pause()
+            assert isinstance(app.screen, InfoPopup)
+            await pilot.press("enter")
+            await pilot.pause()
+            assert isinstance(app.screen, SettingsScreen)
+
+    asyncio.run(scenario())
+    with Store(db) as store:
+        marks = {row["uid"]: row["mark"] for row in store.list_person_marks("nowcoder", "1")}
+    assert marks == {"v": "cheater"}

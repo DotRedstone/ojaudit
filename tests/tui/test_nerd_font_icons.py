@@ -118,6 +118,6 @@ def test_all_major_screens_render_with_icon_mode(tmp_path, enabled):
             assert isinstance(app.screen, HomeScreen)
             assert _private(app.export_screenshot()) is enabled
             assert app.screen.query_one(ListView).children
-            assert "NORMAL" in str(app.screen.query_one("#status", Static).render())
+            assert "帮助" in str(app.screen.query_one("#status", Static).render())
 
     asyncio.run(scenario())

@@ -1,15 +1,19 @@
 """
 Module: TUI / screens
-Description: 实现首页、比赛列表与比赛总览的分层导航。
+Description: 统一页面外壳、表格列表基类，以及首页、比赛列表与比赛总览。
 Scope: TUI
-Notes: 第七阶段详情页由 review_screens 实现，排行榜保留第八阶段入口。
+Notes:
+- 每个页面由「顶栏路径 + 标题 + 内容 + 按键提示栏」组成，提示栏只列本页关键操作。
+- 详情页由 review_screens 实现；本模块不写数据库。
 """
 
 from __future__ import annotations
 
-from typing import ClassVar
+from collections.abc import Sequence
+from typing import Any, ClassVar
 
-from textual import on
+from rich.text import Text
+from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -17,71 +21,121 @@ from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Input, Label, ListView, Static
 
 from ojaudit.core.schema import Contest
-from ojaudit.tui.contest_list_data import contest_list_description
+from ojaudit.tui import ui
+from ojaudit.tui.contest_list_data import ContestSummary, contest_summary
 from ojaudit.tui.data import LocalContests
-from ojaudit.tui.icons import label
+from ojaudit.tui.icons import breadcrumb, glyph, label
 from ojaudit.tui.interaction import Breadcrumb, SearchDialog
+from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView as NavigationListView
-from ojaudit.tui.ui_components import StatusRow
+
+NAV_HINTS: tuple[tuple[str, str], ...] = (("↵", "打开"), ("esc", "返回"), ("/", "搜索"))
 
 
-class ShellScreen(Screen):
+class Chrome:
+    """顶栏与提示栏渲染；所有全屏页面共用，保证位置和配色一致。"""
+
+    PATH = "首页"
+    HINTS: ClassVar[Sequence[tuple[str, str]]] = NAV_HINTS
+
+    def chrome_top(self) -> ComposeResult:
+        yield Breadcrumb("", id="breadcrumb")
+
+    def chrome_bottom(self) -> ComposeResult:
+        yield Static("", id="status")
+
+    def _update_status(self) -> None:
+        app: Any = self.app  # type: ignore[attr-defined]
+        colors = ui.palette(app)
+        width = app.size.width
+        top = Text(no_wrap=True)
+        top.append(" ", style=f"on {colors.accent}")
+        top.append(
+            label("home", "ojaudit", app.nerd_font) + " ",
+            style=f"bold {colors.bg} on {colors.accent}",
+        )
+        top.append("  ")
+        parts = breadcrumb(self.PATH, app.nerd_font).split(" › ")
+        for index, part in enumerate(parts):
+            if index:
+                top.append(" › ", style=colors.muted)
+            last = index == len(parts) - 1
+            top.append(part, style=f"bold {colors.fg}" if last else colors.muted)
+        job = str(app.job_status)
+        busy = app.job_running
+        right = Text("● " + job, style=colors.warn if busy else colors.muted)
+        gap = width - top.cell_len - right.cell_len - 2
+        if gap > 0:
+            top.append(" " * gap)
+            top.append_text(right)
+        self.query_one("#breadcrumb", Static).update(top)  # type: ignore[attr-defined]
+        hints = list(self.HINTS) + [("?", "帮助")]
+        if not app.key_hints:
+            hints = [("?", "帮助")]
+        self.query_one("#status", Static).update(  # type: ignore[attr-defined]
+            ui.keybar(hints, colors, str(app.theme_name), width)
+        )
+
+
+class ShellScreen(Chrome, Screen):
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("escape,left,h", "back", "返回"),
         ("j,down", "down", "下移"),
         ("k,up", "up", "上移"),
         ("g", "first", "首项"),
         ("shift+g", "last", "末项"),
-        ("enter,l,right,space", "open", "进入"),
+        ("enter,l,right,space", "open", "打开"),
         ("slash", "search", "搜索"),
     ]
     TITLE = ""
-    PATH = "首页"
 
-    HINTS = "Enter 打开  Esc 返回  / 搜索  j/k 移动"
+    def heading(self) -> Text:
+        """页面标题行：粗体标题 + 弱化的副标题。"""
+        colors = ui.palette(self.app)
+        text = Text(self.TITLE, style=f"bold {colors.fg}")
+        subtitle = self.subtitle()
+        if subtitle:
+            text.append("   " + subtitle, style=colors.muted)
+        return text
 
-    def breadcrumb_text(self) -> str:
-        return self.PATH + (f"    {self.HINTS}" if self.app.key_hints and self.HINTS else "")
-
-    def refresh_breadcrumb(self) -> None:
-        self.query_one("#breadcrumb", Static).update(self.breadcrumb_text())
+    def subtitle(self) -> str:
+        return ""
 
     def shell(self, content: list[object]) -> ComposeResult:
-        yield Breadcrumb(self.breadcrumb_text(), id="breadcrumb")
-        with Vertical(id="pane"):
-            yield from content
-        yield Static("", id="status")
+        yield from self.chrome_top()
+        with Vertical(id="body"):
+            yield Static("", id="heading")
+            yield from content  # type: ignore[misc]
+        yield from self.chrome_bottom()
 
     def on_mount(self) -> None:
-        pane = self.query_one("#pane", Vertical)
-        pane.border_title = self.TITLE
-        self.refresh_count()
-        self._update_status()
+        self.refresh_chrome()
         for view in self.query(ListView):
             view.focus()
             break
 
-    def refresh_count(self) -> None:
-        view = next(iter(self.query(ListView)), None)
-        if view is not None:
-            self.query_one("#pane", Vertical).border_subtitle = f"{len(view.children)} 项"
+    def refresh_chrome(self) -> None:
+        for heading in self.query("#heading"):
+            heading.update(self.heading())  # type: ignore[attr-defined]
+        self._update_status()
 
-    def _update_status(self) -> None:
-        current = getattr(self, "CURRENT", self.TITLE)
-        contest = getattr(self, "contest", None)
-        contest_id = str(contest.contest_id) if contest is not None else "—"
-        if getattr(self.app, "job_running", False):
-            current = f"{current} · {self.app.job_status}"
-        self.query_one("#status", Static).update(self.app.status_line(current, contest_id))
+    def on_resize(self, _event: events.Resize) -> None:
+        self.call_after_refresh(self.on_layout_change)
+
+    def on_layout_change(self) -> None:
+        self.refresh_chrome()
 
     def on_screen_resume(self) -> None:
-        self._update_status()
+        self.refresh_chrome()
 
     def action_back(self) -> None:
         if len(self.app.screen_stack) > 1:
             self.app.pop_screen()
 
     def _list(self) -> ListView | None:
+        focused = self.app.focused
+        if isinstance(focused, ListView):
+            return focused
         return next(iter(self.query(ListView)), None)
 
     def action_down(self) -> None:
@@ -132,7 +186,85 @@ class ShellScreen(Screen):
         self.open_index(event.index)
 
 
-class EntryDialog(ModalScreen[str | None]):
+class TableScreen(ShellScreen):
+    """带表头的单列表页：子类声明列与每行单元格，基类负责对齐和保持选中位置。"""
+
+    COLUMNS: ClassVar[Sequence[ui.Column]] = ()
+    EMPTY = "暂无数据"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.rows: list[Any] = []
+
+    def table(self) -> list[object]:
+        return [Static("", classes="thead"), NavigationListView(id="items")]
+
+    def compose(self) -> ComposeResult:
+        yield from self.shell(self.table())
+
+    def on_mount(self) -> None:
+        self.reload()
+        super().on_mount()
+
+    def on_screen_resume(self) -> None:
+        self.reload()
+        super().on_screen_resume()
+
+    def on_layout_change(self) -> None:
+        self.reload()
+        super().on_layout_change()
+
+    def items(self) -> list[Any]:
+        return []
+
+    def cells(self, row: Any) -> Sequence[str | Text]:
+        return [str(row)]
+
+    def row_width(self) -> int:
+        return max(self.app.size.width - 8, 40)
+
+    def reload(self) -> None:
+        colors = ui.palette(self.app)
+        width = self.row_width()
+        self.query_one(".thead", Static).update(ui.table_header(self.COLUMNS, width, colors.muted))
+        view = self.query_one("#items", ListView)
+        previous = view.index or 0
+        self.rows = self.items()
+        view.clear()
+        for row in self.rows:
+            view.append(ListItem(Label(ui.table_row(self.cells(row), self.COLUMNS, width))))
+        if not self.rows:
+            view.append(ListItem(Label(Text(self.EMPTY, style=colors.muted))))
+        view.call_after_refresh(setattr, view, "index", max(0, min(previous, len(self.rows) - 1)))
+        self.refresh_chrome()
+
+    def selected_row(self, index: int) -> Any:
+        return self.rows[index] if 0 <= index < len(self.rows) else None
+
+
+class Dialog(ModalScreen[Any]):
+    """所有弹窗共用的外框：标题、正文、右对齐按钮；Esc 始终取消。"""
+
+    BINDINGS: ClassVar[list[Binding]] = [
+        Binding("escape", "cancel", "取消", priority=True),
+    ]
+    DEFAULT_CSS = """
+    Dialog { align: center middle; background: $background 60%; }
+    """
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+def dialog_buttons(confirm: tuple[str, str], cancel: tuple[str, str], icons: bool) -> Horizontal:
+    return Horizontal(
+        Button(label("cancel", cancel[1], icons), id=cancel[0]),
+        Button(label("save", confirm[1], icons), id=confirm[0], variant="primary"),
+        classes="dialog-buttons",
+    )
+
+
+class EntryDialog(Dialog):
     """比赛 ID / Cookie 输入框；Cookie 仅通过密码输入控件传递。"""
 
     BINDINGS: ClassVar[list[Binding]] = [
@@ -140,41 +272,37 @@ class EntryDialog(ModalScreen[str | None]):
         Binding("h", "cancel", "取消"),
     ]
 
-    def __init__(self, *, login: bool = False) -> None:
+    def __init__(self, *, login: bool = False, title: str = "") -> None:
         super().__init__()
         self.login = login
+        self.title_text = title or ("粘贴牛客 Cookie" if login else "打开本地比赛")
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="entry-dialog", classes="dialog-box"):
+        icons = self.app.nerd_font
+        with Vertical(id="entry-dialog", classes="dialog"):
             yield Label(
-                label(
-                    "login" if self.login else "contest",
-                    "牛客 Cookie（输入内容隐藏）" if self.login else "比赛 ID（本地查找）",
-                    self.app.nerd_font,
-                )
+                label("login" if self.login else "contest", self.title_text, icons),
+                classes="dialog-title",
+            )
+            yield Label(
+                "输入内容隐藏，仅保存到本机配置目录（0600）"
+                if self.login
+                else "输入比赛 ID，例如 90001",
+                classes="dialog-hint",
             )
             yield Input(
-                placeholder="粘贴 Cookie" if self.login else "输入比赛 ID",
+                placeholder="Cookie" if self.login else "比赛 ID",
                 password=self.login,
                 id="entry-value",
             )
-            with Horizontal(id="entry-buttons"):
-                yield Button(
-                    label(
-                        "save" if self.login else "open",
-                        "保存" if self.login else "打开",
-                        self.app.nerd_font,
-                    ),
-                    id="entry-confirm",
-                    variant="primary",
-                )
-                yield Button(label("cancel", "取消", self.app.nerd_font), id="entry-cancel")
+            yield dialog_buttons(
+                ("entry-confirm", "保存" if self.login else "确定"),
+                ("entry-cancel", "取消"),
+                icons,
+            )
 
     def on_mount(self) -> None:
         self.query_one("#entry-value", Input).focus()
-
-    def action_cancel(self) -> None:
-        self.dismiss(None)
 
     @on(Input.Submitted)
     def submit_input(self, event: Input.Submitted) -> None:
@@ -189,50 +317,149 @@ class EntryDialog(ModalScreen[str | None]):
         )
 
 
+def _menu_row(icon: str, name: str, detail: str, width: int, app: Any) -> Text:
+    colors = ui.palette(app)
+    mark = glyph(icon, app.nerd_font)
+    left = Text((mark + "  " if mark else "") + name, style=colors.fg)
+    return ui.table_row(
+        [left, Text(detail, style=colors.muted)],
+        (ui.Column(""), ui.Column("", 14, "right")),
+        width,
+    )
+
+
 class HomeScreen(ShellScreen):
-    TITLE = "ojaudit · 首页"
+    TITLE = "首页"
     PATH = "首页"
-    OPTIONS = ("比赛列表", "打开比赛 ID", "账户 / 登录", "设置", "待复核", "采集比赛 ID")
+    HINTS = (("↵", "打开"), ("q", "退出"), ("t", "主题"))
+    OPTIONS = ("比赛列表", "打开比赛 ID", "账户与登录", "设置", "待复核", "采集新比赛")
     ICON_KEYS = ("list", "open", "login", "settings", "pending", "collect")
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+        *ShellScreen.BINDINGS,
+        ("c", "collect", "采集新比赛"),
+        ("o", "open_id", "打开比赛 ID"),
+    ]
 
     def compose(self) -> ComposeResult:
-        hint = (
-            "本地数据库不存在：先运行 ojaudit login，再运行 ojaudit collect <比赛ID>。"
-            if not self.app.contests.db_path.is_file()
-            else ""
-        )
-        entries = self.app.contests.list_contests(show_all=True)
-        overview = Static(
-            "◈ ojaudit / review\n"
-            "本地优先的训练赛证据审核工作台\n"
-            f"本地比赛 {len(entries)}  ·  请通过 ojaudit login 管理登录",
-            id="home-overview",
-        )
-        items: list[object] = [
-            overview,
-            Static(hint),
-            NavigationListView(
-                *(
-                    StatusRow(label(key, item, self.app.nerd_font))
-                    for key, item in zip(self.ICON_KEYS, self.OPTIONS)
-                )
-            ),
-        ]
-        if not self.app.contests.list_contests(show_all=True):
-            items.append(
-                Static(
+        yield from self.chrome_top()
+        with Vertical(id="body"):
+            yield Static("", id="hero")
+            with Horizontal(id="home-columns"):
+                with Vertical(id="home-menu", classes="panel"):
+                    yield NavigationListView(
+                        *(ListItem(Label(name)) for name in self.OPTIONS), id="menu"
+                    )
+                yield Static("", id="home-overview", classes="panel")
+            yield Static("", id="home-recent")
+            if not self.app.contests.list_contests(show_all=True):
+                yield Static(
                     "首次使用：ojaudit login → ojaudit collect <比赛ID> "
                     "→ ojaudit analyze <比赛ID> → ojaudit",
                     id="empty-guide",
                 )
+        yield from self.chrome_bottom()
+
+    def on_mount(self) -> None:
+        self.query_one("#home-menu").border_title = "开始"
+        self.query_one("#home-overview").border_title = "概况"
+        self.refresh_home()
+        super().on_mount()
+
+    def on_screen_resume(self) -> None:
+        self.refresh_home()
+        super().on_screen_resume()
+
+    def on_workflow_finished(self) -> None:
+        self.refresh_home()
+
+    def on_layout_change(self) -> None:
+        self.refresh_home()
+        super().on_layout_change()
+
+    def refresh_home(self) -> None:
+        from ojaudit.tui.account_service import logged_in_locally
+        from ojaudit.tui.workflow import pending_entries
+
+        colors = ui.palette(self.app)
+        contests = self.app.contests.list_contests(show_all=True)
+        pending = pending_entries(self.app.contests) if contests else []
+        findings = sum(entry.kind == "finding" for entry in pending)
+        suspects = len(pending) - findings
+
+        hero = Text("ojaudit", style=f"bold {colors.accent}")
+        hero.append("  训练赛代码审查工作台\n", style=colors.fg)
+        hero.append("检测结果只是复核线索，不等于违规认定。", style=colors.muted)
+        self.query_one("#hero", Static).update(hero)
+
+        details = (
+            f"{len(contests)} 场" if contests else "",
+            "",
+            "",
+            "",
+            f"{findings} 条" if findings else "",
+            "",
+        )
+        menu = self.query_one("#menu", ListView)
+        width = max(menu.size.width - 4, 24)
+        for item, icon, name, detail in zip(menu.children, self.ICON_KEYS, self.OPTIONS, details):
+            item.query_one(Label).update(_menu_row(icon, name, detail, width, self.app))
+
+        db = self.app.contests.db_path
+        try:
+            shown = "~/" + str(db.relative_to(db.home()))
+        except ValueError:
+            shown = str(db)
+        rows = (
+            ("本地比赛", str(len(contests)), colors.fg),
+            ("待复核线索", str(findings), colors.warn if findings else colors.fg),
+            ("存疑选手", str(suspects), colors.caution if suspects else colors.fg),
+            (
+                "牛客登录",
+                "已保存 Cookie" if logged_in_locally() else "未登录",
+                colors.ok if logged_in_locally() else colors.muted,
+            ),
+            ("数据库", shown if db.is_file() else "尚未创建", colors.muted),
+        )
+        overview = Text()
+        for index, (name, value, color) in enumerate(rows):
+            if index:
+                overview.append("\n")
+            overview.append_text(ui.fit(Text(name, style=colors.muted), 12))
+            overview.append(value, style=color)
+        self.query_one("#home-overview", Static).update(overview)
+
+        recent = Text()
+        if contests:
+            columns = (
+                ui.Column("最近比赛"),
+                ui.Column("状态", 8),
+                ui.Column("实锤 强 疑", 10),
+                ui.Column("复核", 14),
             )
-        yield from self.shell(items)
+            total = max(self.app.size.width - 10, 60)
+            recent.append_text(ui.table_header(columns, total, colors.muted))
+            for entry in contests[:8]:
+                summary = contest_summary(self.app.contests, entry.contest)
+                recent.append("\n")
+                recent.append_text(
+                    ui.table_row(
+                        [
+                            Text(entry.contest.name, style=colors.fg),
+                            state_text(summary, colors),
+                            level_counts(summary, colors),
+                            ui.progress(summary.reviewed, summary.findings, colors, 6),
+                        ],
+                        columns,
+                        total,
+                    )
+                )
+        self.query_one("#home-recent", Static).update(recent)
 
     def open_index(self, index: int) -> None:
         if index == 0:
             self.app.push_screen(ContestListScreen(self.app.contests))
         elif index == 1:
-            self.app.push_screen(EntryDialog(), self.open_contest_id)
+            self.action_open_id()
         elif index == 2:
             from ojaudit.tui.account_screen import AccountScreen
 
@@ -247,7 +474,13 @@ class HomeScreen(ShellScreen):
 
             self.app.push_screen(PendingScreen())
         elif index == 5:
-            self.app.push_screen(EntryDialog(), self.collect_contest_id)
+            self.action_collect()
+
+    def action_open_id(self) -> None:
+        self.app.push_screen(EntryDialog(), self.open_contest_id)
+
+    def action_collect(self) -> None:
+        self.app.push_screen(EntryDialog(title="采集新比赛"), self.collect_contest_id)
 
     def collect_contest_id(self, raw: str | None) -> None:
         if raw is not None and raw.strip():
@@ -272,121 +505,148 @@ class HomeScreen(ShellScreen):
         else:
             self.app.push_screen(MissingContestScreen(cid))
 
-    def save_login(self, value: str | None) -> None:
-        if value is None:
-            return
-        from ojaudit.cli_operations import save_cookie
 
-        try:
-            save_cookie(value)
-        except (OSError, ValueError):
-            self.notify("Cookie 保存失败：请检查内容及配置目录权限", severity="error")
-        else:
-            self.notify("Cookie 已保存到本地配置目录（权限 0600）")
+def level_counts(summary: ContestSummary, colors: ui.Palette) -> Text:
+    if not summary.findings:
+        return Text("—", style=colors.muted)
+    text = Text()
+    for count, color in zip(summary.levels, (colors.danger, colors.warn, colors.caution)):
+        if text:
+            text.append(" ")
+        text.append(f"{count:>2}", style=f"bold {color}" if count else colors.muted)
+    return text
 
 
-class ContestListScreen(ShellScreen):
+def state_text(summary: ContestSummary, colors: ui.Palette) -> Text:
+    color = {"已分析": colors.ok, "已采集": colors.accent}.get(summary.state, colors.muted)
+    return ui.dot(summary.state, color)
+
+
+class ContestListScreen(TableScreen):
     TITLE = "比赛列表"
-    HINTS = "Enter 打开  Esc 返回  / 搜索  j/k 移动  a 全部  c 采集  A 分析  x 取消"
     PATH = "首页 › 比赛列表"
+    HINTS = (("↵", "打开"), ("a", "全部/已筛选"), ("c", "采集"), ("R", "重新分析"), ("/", "搜索"))
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         *ShellScreen.BINDINGS,
-        ("a", "toggle_all", "切换全部"),
-        ("c", "collect", "采集比赛"),
-        ("shift+a", "analyze_selected", "分析选中比赛"),
-        ("x", "cancel_task", "取消任务"),
+        ("a", "toggle_all", "显示全部 / 仅筛选"),
+        ("c", "collect", "采集新比赛"),
+        ("R", "analyze", "重新分析所选比赛"),
+        ("x", "cancel_job", "取消后台任务"),
     ]
+    COLUMNS = (
+        ui.Column("比赛"),
+        ui.Column("ID", 10),
+        ui.Column("日期", 10),
+        ui.Column("提交", 6, "right"),
+        ui.Column("状态", 8),
+        ui.Column("实锤 强 疑", 10),
+        ui.Column("复核", 14),
+    )
+    EMPTY = "暂无比赛：按 c 采集，或运行 ojaudit collect <比赛ID>"
 
     def __init__(self, contests: LocalContests):
         super().__init__()
         self.contests = contests
         self.show_all = False
-        self.entries = []
+        self.summaries: dict[tuple[str, str], ContestSummary] = {}
 
-    def compose(self) -> ComposeResult:
-        yield from self.shell([NavigationListView(id="contests")])
+    @property
+    def entries(self) -> list[Any]:
+        return self.rows
 
-    def on_mount(self) -> None:
-        self.refresh_entries()
-        super().on_mount()
+    def subtitle(self) -> str:
+        mode = "全部" if self.show_all else "按规则筛选"
+        return f"{mode} · {len(self.rows)} 场"
+
+    def items(self) -> list[Any]:
+        entries = self.contests.list_contests(self.show_all)
+        self.summaries = {
+            (e.contest.platform, e.contest.contest_id): contest_summary(self.contests, e.contest)
+            for e in entries
+        }
+        return entries
+
+    def cells(self, row: Any) -> Sequence[str | Text]:
+        colors = ui.palette(self.app)
+        contest = row.contest
+        summary = self.summaries[(contest.platform, contest.contest_id)]
+        name = Text(contest.name, style=colors.fg)
+        if not row.visible:
+            name.append("  规则外", style=colors.muted)
+        return [
+            name,
+            Text(contest.contest_id, style=colors.muted),
+            Text(summary.date, style=colors.muted),
+            str(summary.submissions),
+            state_text(summary, colors),
+            level_counts(summary, colors),
+            ui.progress(summary.reviewed, summary.findings, colors, 6),
+        ]
 
     def refresh_entries(self) -> None:
-        self.entries = self.contests.list_contests(self.show_all)
-        view = self.query_one("#contests", ListView)
-        view.clear()
-        for entry in self.entries:
-            text = (
-                f"{entry.contest.name}  [{entry.contest.platform}/{entry.contest.contest_id}]"
-                f" · {contest_list_description(self.contests, entry.contest)}"
-            )
-            label_text = label("contest", text, self.app.nerd_font)
-            if not entry.visible:
-                label_text += "  · " + label("hidden", "规则外", self.app.nerd_font)
-            view.append(StatusRow(label_text))
-        if not self.entries:
-            view.append(
-                StatusRow("暂无比赛：先执行 ojaudit login，再执行 ojaudit collect <比赛ID>")
-            )
-        view.call_after_refresh(setattr, view, "index", 0)
-        self.query_one("#breadcrumb", Static).update(
-            self.breadcrumb_text() + (" · 全部" if self.show_all else " · 已筛选")
-        )
-        self.refresh_count()
+        self.reload()
 
     def action_collect(self) -> None:
-        self.app.push_screen(EntryDialog(), self.collect_id)
+        self.app.push_screen(EntryDialog(title="采集新比赛"), self.collect_id)
 
     def collect_id(self, cid: str | None) -> None:
         if cid is not None and cid.strip():
             self.app.start_workflow(cid.strip(), "collect_analyze")
 
-    def action_analyze_selected(self) -> None:
-        view = self.query_one("#contests", ListView)
-        index = view.index if view.index is not None else 0
-        if not 0 <= index < len(self.entries):
+    def action_analyze(self) -> None:
+        view = self.query_one("#items", ListView)
+        row = self.selected_row(view.index if view.index is not None else 0)
+        if row is None:
             self.notify("请先选择已有比赛", severity="warning")
             return
-        contest = self.entries[index].contest
-        self.app.start_workflow(contest.contest_id, "analyze", contest.platform)
+        self.app.start_workflow(row.contest.contest_id, "analyze", row.contest.platform)
 
-    def action_cancel_task(self) -> None:
+    def action_cancel_job(self) -> None:
         self.app.cancel_workflow()
 
     def on_workflow_finished(self) -> None:
-        self.refresh_entries()
-        self._update_status()
+        self.reload()
 
     def action_toggle_all(self) -> None:
         self.show_all = not self.show_all
-        self.refresh_entries()
+        self.reload()
 
     def open_index(self, index: int) -> None:
-        if index < len(self.entries):
-            self.app.push_screen(ContestOverviewScreen(self.entries[index].contest, self.contests))
+        row = self.selected_row(index)
+        if row is not None:
+            self.app.push_screen(ContestOverviewScreen(row.contest, self.contests))
 
 
 class ContestOverviewScreen(ShellScreen):
     TITLE = "比赛总览"
-    HINTS = "Enter 打开/运行  Esc 返回  j/k 移动  x 取消任务"
+    HINTS = (("↵", "打开"), ("esc", "返回"), ("c", "重新采集"), ("R", "重新分析"))
+    OPTIONS = ("线索", "选手", "题目", "排行榜")
+    ICON_KEYS = ("findings", "people", "problems", "ranking")
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         *ShellScreen.BINDINGS,
-        ("x", "cancel_task", "取消任务"),
+        ("c", "collect", "重新采集并检测"),
+        ("R", "analyze", "重新本地分析"),
+        ("x", "cancel_job", "取消后台任务"),
     ]
-    OPTIONS = ("线索", "选手", "题目", "排行榜", "采集并检测", "本地分析")
-    ICON_KEYS = ("findings", "people", "problems", "ranking", "collect_analyze", "analyze")
 
     def __init__(self, contest: Contest, contests: LocalContests):
         super().__init__()
         self.contest = contest
         self.contests = contests
         self.PATH = f"首页 › 比赛列表 › {contest.name}"
-        self.CURRENT = f"{contest.platform}/{contest.contest_id}"
+        self.TITLE = contest.name
 
     def compose(self) -> ComposeResult:
         yield from self.shell(
             [
+                Horizontal(
+                    *(Static("", id=f"card-{i}", classes="card") for i in range(5)),
+                    id="cards",
+                ),
                 Static("", id="summary"),
-                NavigationListView(id="overview-options"),
+                NavigationListView(
+                    *(ListItem(Label(name)) for name in self.OPTIONS), id="overview-options"
+                ),
             ]
         )
 
@@ -396,71 +656,99 @@ class ContestOverviewScreen(ShellScreen):
 
     def on_workflow_finished(self) -> None:
         self.refresh_overview()
-        self._update_status()
 
     def on_screen_resume(self) -> None:
         self.refresh_overview()
         super().on_screen_resume()
 
+    def on_layout_change(self) -> None:
+        self.refresh_overview()
+        super().on_layout_change()
+
+    def subtitle(self) -> str:
+        summary = getattr(self, "summary", None)
+        extra = f" · {summary.date} · {summary.state}" if summary else ""
+        return f"{self.contest.platform}/{self.contest.contest_id}{extra}"
+
     def refresh_overview(self) -> None:
-        stats = self.contests.stats(self.contest)
+        colors = ui.palette(self.app)
+        summary = contest_summary(self.contests, self.contest)
+        self.summary = summary
+        stats = summary.stats
+
+        def card(index: int, value: Text | str, caption: str) -> None:
+            body = Text()
+            if isinstance(value, Text):
+                body.append_text(value)
+            else:
+                body.append(value, style=f"bold {colors.fg}")
+            body.append("\n" + caption, style=colors.muted)
+            self.query_one(f"#card-{index}", Static).update(body)
+
+        card(0, str(stats.participants), "参赛者")
+        card(1, str(stats.submissions), "提交")
+        card(2, str(stats.problems), "题目")
+        levels = Text()
+        for count, name, color in zip(
+            summary.levels, ("实锤", "中强", "存疑"), (colors.danger, colors.warn, colors.caution)
+        ):
+            if levels:
+                levels.append("  ")
+            levels.append(str(count), style=f"bold {color}" if count else colors.muted)
+            levels.append(" " + name, style=colors.muted)
+        card(3, levels if summary.findings else Text("0", style=f"bold {colors.fg}"), "检测线索")
+        card(4, ui.progress(summary.reviewed, summary.findings, colors, 10), "人工复核")
         self.query_one("#summary", Static).update(
-            "\n".join(
-                (
-                    "◈ 本地审核概览",
-                    "  ·  ".join(
-                        (
-                            label("people", f"参赛者 {stats.participants}", self.app.nerd_font),
-                            label("submissions", f"提交 {stats.submissions}", self.app.nerd_font),
-                        )
-                    ),
-                    "  ·  ".join(
-                        (
-                            label("findings", f"检测线索 {stats.findings}", self.app.nerd_font),
-                            label("problems", f"题目 {stats.problems}", self.app.nerd_font),
-                        )
-                    ),
-                    "线索为待审核提示，不代表违规结论",
-                )
+            Text(
+                f"参赛者 {stats.participants} · 提交 {stats.submissions} · "
+                f"题目 {stats.problems} · 线索 {stats.findings}",
+                style=colors.muted,
             )
         )
-        counts = (
-            stats.findings,
-            stats.participants,
-            stats.problems,
-            stats.participants,
-            "运行",
-            "运行",
+
+        details = (
+            f"{summary.findings} 条 · {summary.findings - summary.reviewed} 待复核"
+            if summary.findings
+            else ("尚未分析，按 R 运行" if summary.state != "已分析" else "无线索"),
+            f"{stats.participants} 人 · {summary.marked} 已标记",
+            f"{stats.problems} 题",
+            "本地推导，非官方",
         )
         view = self.query_one("#overview-options", ListView)
-        index = view.index or 0
-        view.clear()
-        for key, name, count in zip(self.ICON_KEYS, self.OPTIONS, counts):
-            view.append(StatusRow(label(key, f"{name} · {count}", self.app.nerd_font)))
-        view.call_after_refresh(setattr, view, "index", index)
-        self.refresh_count()
+        width = max(view.size.width - 4, 40)
+        for item, icon, name, detail in zip(view.children, self.ICON_KEYS, self.OPTIONS, details):
+            mark = glyph(icon, self.app.nerd_font)
+            left = Text((mark + "  " if mark else "") + name, style=colors.fg)
+            item.query_one(Label).update(
+                ui.table_row(
+                    [left, Text(detail, style=colors.muted)],
+                    (ui.Column("", 16), ui.Column("")),
+                    width,
+                )
+            )
+        self.refresh_chrome()
 
-    def action_cancel_task(self) -> None:
+    def action_collect(self) -> None:
+        self.app.start_workflow(self.contest.contest_id, "collect_analyze")
+
+    def action_analyze(self) -> None:
+        self.app.start_workflow(self.contest.contest_id, "analyze", self.contest.platform)
+
+    def action_cancel_job(self) -> None:
         self.app.cancel_workflow()
 
     def open_index(self, index: int) -> None:
         from ojaudit.tui.review_data import ReviewData
         from ojaudit.tui.review_screens import FindingsScreen, PeopleScreen, ProblemsScreen
 
-        if index == 4:
-            self.app.start_workflow(self.contest.contest_id, "collect_analyze")
-            return
-        if index == 5:
-            self.app.start_workflow(self.contest.contest_id, "analyze", self.contest.platform)
-            return
         if index not in (0, 1, 2, 3):
             return
+        data = ReviewData(self.contests, self.contest)
         if index == 3:
             from ojaudit.tui.ranking_screen import RankingScreen
 
-            self.app.push_screen(RankingScreen(ReviewData(self.contests, self.contest)))
+            self.app.push_screen(RankingScreen(data))
             return
-        data = ReviewData(self.contests, self.contest)
         screen_type = (FindingsScreen, PeopleScreen, ProblemsScreen)[index]
         self.app.push_screen(screen_type(data, self.PATH))
 
@@ -468,29 +756,20 @@ class ContestOverviewScreen(ShellScreen):
 class MissingContestScreen(ShellScreen):
     """没有本地数据时保留可操作的采集引导。"""
 
-    TITLE = "本地缺少比赛"
-    HINTS = "Enter 选择  Esc 返回  j/k 移动"
+    TITLE = "本地没有这场比赛"
     OPTIONS = ("采集并检测", "仅采集", "返回")
 
     def __init__(self, contest_id: str) -> None:
         super().__init__()
         self.contest_id = contest_id
-        self.PATH = f"首页 › 比赛 {contest_id} › 未采集"
+        self.PATH = f"首页 › 比赛 {contest_id}"
+
+    def subtitle(self) -> str:
+        return f"比赛 {self.contest_id} 尚未采集；也可以运行 ojaudit collect {self.contest_id}"
 
     def compose(self) -> ComposeResult:
         yield from self.shell(
-            [
-                Static(
-                    f"比赛 {self.contest_id} 尚未在本地数据库中。"
-                    f"可选择采集，或运行 ojaudit collect {self.contest_id}。",
-                ),
-                NavigationListView(
-                    *(
-                        StatusRow(label(key, item, self.app.nerd_font))
-                        for key, item in zip(("collect_analyze", "collect", "back"), self.OPTIONS)
-                    )
-                ),
-            ]
+            [NavigationListView(*(ListItem(Label(item)) for item in self.OPTIONS))]
         )
 
     def open_index(self, index: int) -> None:

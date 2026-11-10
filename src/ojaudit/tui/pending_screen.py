@@ -7,64 +7,79 @@ Notes: 只读取本地分析与人工标记，不执行网络请求。
 
 from __future__ import annotations
 
-from ojaudit.tui.icons import label
-from ojaudit.tui.interaction import NavigateListView as NavigationListView
+from collections.abc import Sequence
+from typing import Any
+
+from rich.text import Text
+
+from ojaudit.tui import ui
 from ojaudit.tui.review_data import ReviewData
-from ojaudit.tui.review_screens import EvidenceScreen, PersonScreen
-from ojaudit.tui.screens import ShellScreen
-from ojaudit.tui.ui_components import StatusRow
+from ojaudit.tui.review_screens import EvidenceScreen, PersonScreen, level_chip
+from ojaudit.tui.screens import TableScreen
 from ojaudit.tui.workflow import PendingEntry, pending_entries
 
 
-class PendingScreen(ShellScreen):
-    TITLE = "待复核 · 跨比赛"
+class PendingScreen(TableScreen):
+    TITLE = "待复核"
     PATH = "首页 › 待复核"
+    HINTS = (("↵", "打开"), ("/", "搜索"), ("esc", "返回"))
+    COLUMNS = (
+        ui.Column("类型", 8),
+        ui.Column("比赛"),
+        ui.Column("内容"),
+    )
+    EMPTY = "所有比赛都已处理完毕"
 
     def __init__(self) -> None:
         super().__init__()
-        self.entries: list[PendingEntry] = []
+        self._people_names: dict[tuple[str, str, str], str] = {}
 
-    def compose(self):
-        yield from self.shell([NavigationListView(id="pending-items")])
+    @property
+    def entries(self) -> list[PendingEntry]:
+        return self.rows
 
-    def on_mount(self) -> None:
-        self.reload()
-        super().on_mount()
+    def subtitle(self) -> str:
+        return f"跨比赛 · {len(self.rows)} 项未处理线索与存疑选手"
 
-    def on_screen_resume(self) -> None:
-        self.reload()
+    def items(self) -> list[PendingEntry]:
+        entries = pending_entries(self.app.contests)
+        self._people_names = {}
+        contests = {(e.contest.platform, e.contest.contest_id): e.contest for e in entries}
+        for contest in contests.values():
+            for person in ReviewData(self.app.contests, contest).people():
+                self._people_names[(contest.platform, contest.contest_id, person["uid"])] = person[
+                    "name"
+                ]
+        return entries
+
+    def _person_name(self, entry: PendingEntry, uid: str) -> str:
+        return self._people_names.get((entry.contest.platform, entry.contest.contest_id, uid), uid)
+
+    def cells(self, row: Any) -> Sequence[str | Text]:
+        colors = ui.palette(self.app)
+        entry: PendingEntry = row
+        contest = Text(entry.contest.name, style=colors.fg)
+        contest.append(f" {entry.contest.contest_id}", style=colors.muted)
+        if entry.kind == "finding":
+            item = entry.finding or {}
+            body = Text(f"题 {item.get('problem_index')}  ", style=colors.muted)
+            body.append(self._person_name(entry, str(item.get("uid_a"))), style=colors.fg)
+            body.append(" ⇄ ", style=colors.muted)
+            body.append(self._person_name(entry, str(item.get("uid_b"))), style=colors.fg)
+            return [level_chip(item.get("verdict_level", ""), colors), contest, body]
+        return [
+            ui.dot("存疑", colors.caution),
+            contest,
+            Text(f"{self._person_name(entry, entry.uid)} {entry.uid}", style=colors.fg),
+        ]
 
     def on_workflow_finished(self) -> None:
         self.reload()
 
-    def reload(self) -> None:
-        from textual.widgets import ListView
-
-        self.entries = pending_entries(self.app.contests)
-        view = self.query_one("#pending-items", ListView)
-        view.clear()
-        for entry in self.entries:
-            prefix = f"{entry.contest.name} [{entry.contest.contest_id}]"
-            if entry.kind == "finding":
-                item = entry.finding
-                assert item is not None
-                title = (
-                    f"{prefix} · 待复核 · 题 {item['problem_index']} "
-                    f"· {item['uid_a']} ↔ {item['uid_b']}"
-                )
-            else:
-                title = f"{prefix} · 存疑人员 · {entry.uid}"
-            kind = "level-high" if entry.kind == "finding" else "mark-suspect"
-            icon = "review" if entry.kind == "finding" else "suspect"
-            view.append(StatusRow(label(icon, title, self.app.nerd_font), kind=kind))
-        if not self.entries:
-            view.append(StatusRow("暂无跨比赛待复核项"))
-        view.call_after_refresh(setattr, view, "index", 0)
-
     def open_index(self, index: int) -> None:
-        if not 0 <= index < len(self.entries):
+        entry = self.selected_row(index)
+        if entry is None:
             return
-        entry = self.entries[index]
         data = ReviewData(self.app.contests, entry.contest)
         path = f"首页 › 待复核 › {entry.contest.name}"
         if entry.kind == "finding":

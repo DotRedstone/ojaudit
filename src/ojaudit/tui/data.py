@@ -57,6 +57,9 @@ class LocalContests:
                 "SELECT platform, contest_id, name, start_time, end_time "
                 "FROM contests ORDER BY name, platform, contest_id"
             ).fetchall()
+        except sqlite3.OperationalError:
+            # 后台任务刚创建数据库、尚未完成迁移时，按空库处理。
+            return []
         finally:
             connection.close()
         rules = self.contest_filter
@@ -75,36 +78,42 @@ class LocalContests:
         if connection is None:
             return ContestStats(0, 0, 0, 0)
         try:
-            key = (contest.platform, contest.contest_id)
-
-            def count(table: str) -> int:
-                return int(
-                    connection.execute(
-                        f"SELECT count(*) FROM {table} WHERE platform=? AND contest_id=?", key
-                    ).fetchone()[0]
-                )
-
-            findings = int(
-                connection.execute(
-                    "SELECT count(*) FROM findings WHERE run_id = "
-                    "(SELECT run_id FROM analysis_runs WHERE platform=? AND contest_id=? "
-                    "ORDER BY created_at DESC, run_id DESC LIMIT 1)",
-                    key,
-                ).fetchone()[0]
-            )
-            return ContestStats(
-                findings,
-                count("participants"),
-                int(
-                    connection.execute(
-                        "SELECT COUNT(*) FROM ("
-                        "SELECT problem_index FROM problems WHERE platform=? AND contest_id=? "
-                        "UNION SELECT problem_index FROM submissions "
-                        "WHERE platform=? AND contest_id=?)",
-                        (*key, *key),
-                    ).fetchone()[0]
-                ),
-                count("submissions"),
-            )
+            return self._stats(connection, contest)
+        except sqlite3.OperationalError:
+            return ContestStats(0, 0, 0, 0)
         finally:
             connection.close()
+
+    @staticmethod
+    def _stats(connection: sqlite3.Connection, contest: Contest) -> ContestStats:
+        key = (contest.platform, contest.contest_id)
+
+        def count(table: str) -> int:
+            return int(
+                connection.execute(
+                    f"SELECT count(*) FROM {table} WHERE platform=? AND contest_id=?", key
+                ).fetchone()[0]
+            )
+
+        findings = int(
+            connection.execute(
+                "SELECT count(*) FROM findings WHERE run_id = "
+                "(SELECT run_id FROM analysis_runs WHERE platform=? AND contest_id=? "
+                "ORDER BY created_at DESC, run_id DESC LIMIT 1)",
+                key,
+            ).fetchone()[0]
+        )
+        return ContestStats(
+            findings,
+            count("participants"),
+            int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM ("
+                    "SELECT problem_index FROM problems WHERE platform=? AND contest_id=? "
+                    "UNION SELECT problem_index FROM submissions "
+                    "WHERE platform=? AND contest_id=?)",
+                    (*key, *key),
+                ).fetchone()[0]
+            ),
+            count("submissions"),
+        )

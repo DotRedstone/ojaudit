@@ -10,14 +10,15 @@ from __future__ import annotations
 import asyncio
 from typing import ClassVar
 
+from rich.text import Text
 from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
+from textual.containers import Vertical
 from textual.widgets import Button, Input, Label, Static
 
 from ojaudit.cli_operations import save_cookie
+from ojaudit.tui import ui
 from ojaudit.tui.account_service import (
     current_uid,
     logged_in_locally,
@@ -26,26 +27,22 @@ from ojaudit.tui.account_service import (
     set_uid,
 )
 from ojaudit.tui.icons import label
+from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView
-from ojaudit.tui.screens import ShellScreen
-from ojaudit.tui.ui_components import StatusRow
+from ojaudit.tui.screens import Dialog, ShellScreen, dialog_buttons
 
 
-class UidDialog(ModalScreen[str | None]):
+class UidDialog(Dialog):
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("escape", "cancel", "取消", priority=True),
-        Binding("h", "cancel", "取消"),
     ]
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="uid-dialog", classes="dialog-box"):
-            yield Label("设置牛客 UID（仅接受数字）")
+        with Vertical(id="uid-dialog", classes="dialog"):
+            yield Label(label("person", "设置牛客 UID", self.app.nerd_font), classes="dialog-title")
+            yield Label("仅接受数字，用于列出自己可见的比赛", classes="dialog-hint")
             yield Input(value=current_uid(), placeholder="牛客 UID", id="uid-value")
-            with Horizontal():
-                yield Button(
-                    label("save", "保存", self.app.nerd_font), id="uid-save", variant="primary"
-                )
-                yield Button(label("cancel", "取消", self.app.nerd_font), id="uid-cancel")
+            yield dialog_buttons(("uid-save", "保存"), ("uid-cancel", "取消"), self.app.nerd_font)
 
     def on_mount(self) -> None:
         self.query_one("#uid-value", Input).focus()
@@ -65,17 +62,18 @@ class UidDialog(ModalScreen[str | None]):
 
 
 class AccountScreen(ShellScreen):
-    TITLE = "账户 / 登录"
+    TITLE = "账户与登录"
     PATH = "首页 › 账户"
+    HINTS = (("↵", "执行"), ("esc", "返回"))
     OPTIONS = ("扫码登录（本地终端显示二维码）", "设置牛客 UID", "粘贴 Cookie（备选）", "退出登录")
     ICON_KEYS = ("login", "settings", "save", "cancel")
 
     def compose(self) -> ComposeResult:
         rows = [
-            Static("", id="account-state"),
+            Static("", id="account-state", classes="panel"),
             NavigateListView(
                 *(
-                    StatusRow(label(key, name, self.app.nerd_font))
+                    ListItem(Label(label(key, name, self.app.nerd_font)))
                     for key, name in zip(self.ICON_KEYS, self.OPTIONS)
                 ),
                 id="account-options",
@@ -84,16 +82,26 @@ class AccountScreen(ShellScreen):
         yield from self.shell(rows)
 
     def on_mount(self) -> None:
+        self.query_one("#account-state").border_title = "当前状态"
         super().on_mount()
         self.refresh_account()
 
     def refresh_account(self) -> None:
-        status = "本机已存 Cookie" if logged_in_locally() else "本机未保存 Cookie"
-        uid = current_uid() or "尚未设置"
-        self.query_one("#account-state", Static).update(
-            f"牛客 UID：{uid} · {status}\n"
-            "扫码仅在本地终端进行，登录凭据不会出现在 TUI、截图或日志中。"
+        colors = ui.palette(self.app)
+        logged_in = logged_in_locally()
+        uid = current_uid()
+        text = Text()
+        text.append_text(ui.fit(Text("牛客登录", style=colors.muted), 10))
+        text.append_text(
+            ui.dot("本机已保存 Cookie", colors.ok) if logged_in else ui.dot("未登录", colors.muted)
         )
+        text.append("\n")
+        text.append_text(ui.fit(Text("牛客 UID", style=colors.muted), 10))
+        text.append(uid or "尚未设置", style=colors.fg if uid else colors.muted)
+        text.append(
+            "\n\n扫码只在本地终端进行；凭据不会出现在界面、截图或日志中。", style=colors.muted
+        )
+        self.query_one("#account-state", Static).update(text)
 
     def open_index(self, index: int) -> None:
         if index == 0:

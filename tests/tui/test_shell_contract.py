@@ -16,7 +16,7 @@ from ojaudit.tui.app import AuditApp
 from ojaudit.tui.data import LocalContests
 from ojaudit.tui.ranking_screen import RankingScreen
 from ojaudit.tui.review_data import ReviewData
-from ojaudit.tui.review_screens import ChoiceDialog, FindingsScreen, PeopleScreen, ProblemsScreen
+from ojaudit.tui.review_screens import FindingsScreen, PeopleScreen, ProblemsScreen, ReviewPopup
 from ojaudit.tui.screens import (
     ContestListScreen,
     ContestOverviewScreen,
@@ -59,9 +59,9 @@ def test_every_page_has_shell_and_no_footer(tmp_path, monkeypatch):
                 if screen is not None:
                     app.push_screen(screen)
                     await pilot.pause()
-                top = str(app.screen.query_one("#breadcrumb", Static).render())
+                edges = app.screen.query_one("#pages")
                 bottom = str(app.screen.query_one("#status", Static).render())
-                assert "ojaudit" in top
+                assert edges.display == (screen is not None), "首页之外都有书脊"
                 assert "帮助" in bottom
                 assert not list(app.screen.query(Footer))
                 assert "palette" not in app.export_screenshot()
@@ -89,7 +89,7 @@ def test_dialogs_are_compact_and_escape_cancels(tmp_path, monkeypatch):
             EntryDialog(),
             EditValue(option, model.values[option.key]),
             ConfirmLeave(),
-            ChoiceDialog("合成标记", (("正常", "normal"),)),
+            ReviewPopup("合成标记", (("正常", "normal"),)),
             StyleHelpScreen(),
         )
         async with app.run_test(size=(100, 35)) as pilot:

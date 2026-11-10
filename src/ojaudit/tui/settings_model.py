@@ -134,15 +134,15 @@ STATIC_OPTIONS = (
         "处理后自动跳到下一条",
         "bool",
         True,
-        description="写下复核结论或标记选手后，自动打开下一条待复核线索",
+        description="复核一条线索后，自动打开下一条待复核线索",
     ),
     Option(
         "复核",
         "review.quick_mark",
-        "快速标记",
+        "快速复核",
         "bool",
         True,
-        description="把选手标为作弊者时，此人其余待复核线索一并标为「已核查」"
+        description="认定某人作弊时，此人其余待复核线索一并处理，撤销结论时自动恢复"
         "（只需判断是否作弊，作弊几道题对结论没有区别）",
     ),
     Option(

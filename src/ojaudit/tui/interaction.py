@@ -1,30 +1,31 @@
 """
 Module: TUI / input interaction
-Description: 区分列表单击选中和双击激活，并提供搜索及可点击面包屑。
+Description: 区分列表单击选中、双击打开与回车激活。
 Scope: TUI
 Notes: 不修改任何业务层、采集或检测逻辑。
 """
 
 from __future__ import annotations
 
-from typing import Any
-
 from textual import events
 from textual.message import Message
-from textual.widgets import ListItem, ListView, Static
+from textual.widgets import ListItem, ListView
 
 
 class NavigateListView(ListView):
     """单击只移动高亮；键盘 Enter 和双击才发布独立激活消息。"""
 
     class Activated(Message):
-        def __init__(self, index: int) -> None:
+        """keyboard=True 表示由回车触发（页面可以把回车解释为复核），否则是双击打开。"""
+
+        def __init__(self, index: int, keyboard: bool = False) -> None:
             super().__init__()
             self.index = index
+            self.keyboard = keyboard
 
     def action_select_cursor(self) -> None:
         if self.index is not None and self.highlighted_child is not None:
-            self.post_message(self.Activated(self.index))
+            self.post_message(self.Activated(self.index, keyboard=True))
 
     def _on_list_item__child_clicked(self, event: ListItem._ChildClicked) -> None:
         event.stop()
@@ -44,28 +45,6 @@ class NavigateListItem(ListItem):
         if event.chain >= 2:
             view.post_message(NavigateListView.Activated(view.index))
         event.stop()
-
-
-class Breadcrumb(Static):
-    """顶栏：点击左侧路径返回上一级；后台任务运行时点击右侧状态可取消任务。"""
-
-    job_x = 10**6
-
-    def on_click(self, event: events.Click) -> None:
-        event.stop()
-        app: Any = self.app
-        if event.x >= self.job_x:
-            if getattr(app, "job_running", False):
-                from ojaudit.tui.popup import ConfirmPopup
-
-                app.push_screen(
-                    ConfirmPopup("后台任务", f"{app.job_status}\n取消这个任务？"),
-                    lambda ok: ok and app.cancel_workflow(),
-                )
-            return
-        back = getattr(self.screen, "action_back", None)
-        if callable(back):
-            back()
 
 
 def __getattr__(name: str):

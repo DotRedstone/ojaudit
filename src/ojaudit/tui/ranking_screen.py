@@ -39,18 +39,19 @@ PREVIEW_COLUMNS = (
 
 
 class RankingScreen(ShellScreen):
+    PAGE_ICON = "ranking"
     TITLE = "排行榜"
     HINTS = (
-        ("←→", "切换取值"),
+        ("↵", "切换取值"),
         ("tab", "策略/预览"),
         ("a", "设为/取消管理者"),
         ("e", "导出"),
-        ("esc", "返回"),
+        ("←", "返回"),
     )
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        ("escape,h", "back", "返回"),
-        ("right,l,enter,space", "next", "下一个取值"),
-        ("left,shift+left", "previous", "上一个取值"),
+        ("escape,h,left", "back", "返回"),
+        ("enter,space,right,l", "next", "下一个取值"),
+        ("shift+enter,backspace", "previous", "上一个取值"),
         ("j,down", "down", "下移"),
         ("k,up", "up", "上移"),
         ("g", "first", "首项"),

@@ -100,6 +100,13 @@ class Palette:
     caution: str
     ok: str
 
+    @property
+    def line(self) -> str:
+        """分隔线颜色：比弱化文字更淡，只用来勾出轮廓。"""
+        if self.fg.startswith("#") and self.bg.startswith("#"):
+            return _mix(self.fg, self.bg, 0.28)
+        return "bright_black"
+
     def level(self, level: object) -> str:
         return (self.danger, self.warn, self.caution, self.muted)[min(level_rank(level), 3)]
 

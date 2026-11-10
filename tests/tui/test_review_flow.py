@@ -1,6 +1,6 @@
 """
 Module: Test / TUI review flow
-Description: 证据页视图开关与持久化、快速标记与自动下一条、线索按人物对嫌疑度排序与表头点击排序、
+Description: 证据页视图开关与持久化、快速复核、撤销与自动下一条、线索按人物对嫌疑度排序与表头点击排序、
     复核面板分组、拖动面板边框调整宽度、牛客官网链接。
 Scope: Test
 Notes: 只使用合成比赛、选手与代码。
@@ -151,9 +151,9 @@ def test_quick_mark_resolves_other_findings_and_advances(tmp_path, monkeypatch):
             screen = app.screen
             assert isinstance(screen, EvidenceScreen)
             assert (screen.finding["uid_a"], screen.finding["uid_b"]) == ("a", "c")
-            await pilot.press("m")
+            await pilot.press("enter")
             await pilot.pause()
-            app.screen.select("cheater")
+            app.screen.select("cheater:a")
             app.screen.save()
             await pilot.pause()
             statuses = {
@@ -166,6 +166,7 @@ def test_quick_mark_resolves_other_findings_and_advances(tmp_path, monkeypatch):
                 "自动跳到下一条"
             )
             assert data.person("a")["mark"] == "cheater"
+            assert data.person("c")["mark"] == "", "只认定甲作弊时不牵连丙"
 
     asyncio.run(scenario())
 
@@ -283,3 +284,26 @@ def test_people_page_quick_manager(tmp_path, monkeypatch):
             assert data.person("c")["hidden"]
 
     asyncio.run(scenario())
+
+
+def test_undo_review_restores_quick_resolved_findings(tmp_path):
+    _local, data = _fixture(tmp_path)
+
+    def finding(a, b, problem):
+        return next(
+            f
+            for f in data.findings()
+            if (f["uid_a"], f["uid_b"], f["problem_index"]) == (a, b, problem)
+        )
+
+    assert data.judge_finding(finding("a", "c", 2), "cheater", quick=True) == 3
+    assert {data.person(uid)["mark"] for uid in "ac"} == {"cheater"}
+    assert finding("b", "c", 0)["status"] == "已核查"
+    # 改判为存疑：两人降为存疑，当初随他们一并处理的线索回到待复核。
+    data.judge_finding(finding("a", "c", 2), "suspect")
+    assert data.person("a")["mark"] == "suspect"
+    assert finding("a", "b", 0)["status"] == "待复核"
+    assert finding("b", "c", 0)["status"] == "待复核"
+    data.judge_finding(finding("a", "c", 2), "")
+    assert finding("a", "c", 2)["status"] == "待复核"
+    assert data.person("a")["mark"] == "" and data.person("c")["mark"] == ""

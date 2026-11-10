@@ -74,9 +74,7 @@ def qr_terminal_text(url: str) -> str:
     qr = qrcode.QRCode(border=2, box_size=1)
     qr.add_data(url)
     qr.make(fit=True)
-    return "\n".join(
-        "".join("██" if pixel else "  " for pixel in row) for row in qr.get_matrix()
-    )
+    return "\n".join("".join("██" if pixel else "  " for pixel in row) for row in qr.get_matrix())
 
 
 def _cookie_value(jar: http.cookiejar.CookieJar) -> str:
@@ -90,7 +88,8 @@ def _cookie_value(jar: http.cookiejar.CookieJar) -> str:
 
 def _valid_token(jar: http.cookiejar.CookieJar) -> bool:
     return any(
-        cookie.name in {"t", "NOWCODERCLOUDTOKEN"} and bool(cookie.value)
+        cookie.name in {"t", "NOWCODERCLOUDTOKEN"}
+        and bool(cookie.value)
         and (cookie.domain == "nowcoder.com" or cookie.domain.endswith(".nowcoder.com"))
         for cookie in jar
     )

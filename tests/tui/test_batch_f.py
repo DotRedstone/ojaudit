@@ -83,8 +83,11 @@ def test_qr_login_offline_does_not_expose_cookie(tmp_path, monkeypatch):
 
     messages = []
     login_with_qr(
-        messages.append, opener=FakeClient(), cookie_jar=FakeJar(),
-        pause=lambda _seconds: None, clock=lambda: 0,
+        messages.append,
+        opener=FakeClient(),
+        cookie_jar=FakeJar(),
+        pause=lambda _seconds: None,
+        clock=lambda: 0,
     )
     assert logged_in_locally()
     assert cookie_file().read_text(encoding="utf-8") == "t=synthetic-secret"
@@ -110,8 +113,19 @@ def _local_contest(tmp_path):
                 "INSERT INTO submissions(platform,contest_id,submission_id,uid,"
                 "problem_index,language,verdict,score,submit_time,phase,code) "
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                ("synthetic", "42", "s-1", "student-1", 0, "python", "AC", 100, 10,
-                 "contest", "print(1)"),
+                (
+                    "synthetic",
+                    "42",
+                    "s-1",
+                    "student-1",
+                    0,
+                    "python",
+                    "AC",
+                    100,
+                    10,
+                    "contest",
+                    "print(1)",
+                ),
             )
             store.execute(
                 "INSERT INTO analysis_runs(run_id,platform,contest_id,plugin_set,"
@@ -158,11 +172,13 @@ def test_contest_list_description_and_ui(tmp_path, monkeypatch):
 
 
 def test_findings_filter_all_high_pending_reviewed():
-    data = SimpleNamespace(findings=lambda: [
-        {"is_stale": False, "verdict_level": "high", "status": "待复核"},
-        {"is_stale": False, "verdict_level": "low", "status": "已核查"},
-        {"is_stale": True, "verdict_level": "high", "status": "已核查"},
-    ])
+    data = SimpleNamespace(
+        findings=lambda: [
+            {"is_stale": False, "verdict_level": "high", "status": "待复核"},
+            {"is_stale": False, "verdict_level": "low", "status": "已核查"},
+            {"is_stale": True, "verdict_level": "high", "status": "已核查"},
+        ]
+    )
     screen = FindingsScreen(data, "首页 › 虚构比赛")
     assert len(screen.items()) == 3
     screen.filter_index = 1

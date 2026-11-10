@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
-from threading import Event
 from pathlib import Path
+from threading import Event
 from typing import ClassVar
 
 from textual.app import App

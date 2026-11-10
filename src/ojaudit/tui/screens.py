@@ -29,6 +29,7 @@ from ojaudit.tui.data import LocalContests
 from ojaudit.tui.icons import glyph, label
 from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView as NavigationListView
+from ojaudit.tui.interaction import restore_index
 from ojaudit.tui.popup import ConfirmPopup, InputPopup, SearchLine
 from ojaudit.tui.splitter import start_drag
 
@@ -494,7 +495,7 @@ class TableScreen(ShellScreen):
             view.append(ListItem(Label(ui.table_row(self.cells(row), self.COLUMNS, width))))
         if not self.rows:
             view.append(ListItem(Label(Text(self.EMPTY, style=colors.muted))))
-        view.call_after_refresh(setattr, view, "index", max(0, min(previous, len(self.rows) - 1)))
+        restore_index(view, max(0, min(previous, len(self.rows) - 1)))
         self.refresh_chrome()
 
     def selected_row(self, index: int) -> Any:
@@ -849,7 +850,7 @@ def _fill(view: ListView, rows: Sequence[Text], empty: Text) -> None:
     view.clear()
     for row in rows or [empty]:
         view.append(ListItem(Label(row)))
-    view.call_after_refresh(setattr, view, "index", max(0, min(previous, len(rows) - 1)))
+    restore_index(view, max(0, min(previous, len(rows) - 1)))
 
 
 def level_counts(summary: ContestSummary, colors: ui.Palette) -> Text:

@@ -23,7 +23,7 @@ from textual.widgets import Label, ListView, Static
 from ojaudit.tui import ui
 from ojaudit.tui.icons import label
 from ojaudit.tui.interaction import NavigateListItem as ListItem
-from ojaudit.tui.interaction import NavigateListView
+from ojaudit.tui.interaction import NavigateListView, restore_index
 from ojaudit.tui.popup import ConfirmPopup, InputPopup, MenuPopup
 from ojaudit.tui.screens import Chrome
 from ojaudit.tui.settings_model import CATEGORIES, Option, SettingsModel
@@ -230,7 +230,7 @@ class SettingsScreen(Chrome, Screen):
         if select is not None:
             keys = [option.key for option in self.rows]
             previous = keys.index(select) if select in keys else previous
-        view.call_after_refresh(setattr, view, "index", max(0, min(previous, len(self.rows) - 1)))
+        restore_index(view, max(0, min(previous, len(self.rows) - 1)))
         self.detail()
         self.status()
 

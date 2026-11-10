@@ -33,6 +33,21 @@ class NavigateListView(ListView):
         self.index = list(self.children).index(event.item)
 
 
+def restore_index(view: ListView, index: int) -> None:
+    """重填列表后恢复选中位置。
+
+    立即设置一次；新条目尚未挂载导致设置无效时，下一帧再补一次——只在那时仍未选中时补，
+    不会覆盖用户（或程序）在这之间移动过的选中位置。
+    """
+    view.index = index
+
+    def later() -> None:
+        if view.index is None and view.children:
+            view.index = min(index, len(view.children) - 1)
+
+    view.call_after_refresh(later)
+
+
 class NavigateListItem(ListItem):
     """单击仅更改高亮；双击才发出 ListView.Selected。"""
 

@@ -25,12 +25,19 @@ def by_key(model, key):
 
 def test_multi_rules_add_remove_disable_and_reload(tmp_path):
     config = tmp_path / "config.toml"
-    save_config({"contest_filter": {
-        "whitelist": [{"pattern": "练习", "enabled": True},
-                      {"pattern": "模拟", "enabled": False}],
-        "blacklist": [{"pattern": "禁止", "enabled": True}],
-        "match_field": "name",
-    }}, config)
+    save_config(
+        {
+            "contest_filter": {
+                "whitelist": [
+                    {"pattern": "练习", "enabled": True},
+                    {"pattern": "模拟", "enabled": False},
+                ],
+                "blacklist": [{"pattern": "禁止", "enabled": True}],
+                "match_field": "name",
+            }
+        },
+        config,
+    )
     model = SettingsModel(config, [], db_path=tmp_path / "absent.sqlite")
     assert len(model.lists.rules["whitelist"]) == 2
     model.add_list_item("比赛筛选", "blacklist")
@@ -85,14 +92,18 @@ def test_manager_name_enabled_round_trip(tmp_path):
 
 def test_collect_settings_are_consumed(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    save_config({"collect": {
-        "phase": "contest",
-        "include_after": True,
-        "threads": 3,
-        "retry_count": 1,
-        "readonly": True,
-        "auto_analyze": False,
-    }})
+    save_config(
+        {
+            "collect": {
+                "phase": "contest",
+                "include_after": True,
+                "threads": 3,
+                "retry_count": 1,
+                "readonly": True,
+                "auto_analyze": False,
+            }
+        }
+    )
     source = nowcoder_source()
     assert source.config["phase"] == "all"
     assert source.config["threads"] == 3

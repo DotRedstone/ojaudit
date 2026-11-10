@@ -304,9 +304,7 @@ class SettingsModel:
             sorted(self._original_managers)
         )
         platform = self.values["people.platform"]
-        list_managers_changed = (
-            self.lists.signature()[1] != self.lists.baseline[1]
-        )
+        list_managers_changed = self.lists.signature()[1] != self.lists.baseline[1]
         if (manager_changed or list_managers_changed) and platform != self._original_platform:
             raise ValueError("切换人员平台后请先保存平台，再单独编辑管理者名单")
         incoming = {

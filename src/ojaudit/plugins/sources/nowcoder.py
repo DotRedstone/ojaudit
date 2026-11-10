@@ -160,9 +160,9 @@ class NowcoderSource:
         del session  # 网络会话由本插件的只读 opener 管理。
         if not str(contest_id).isdigit():
             raise ValueError("牛客比赛 ID 必须为数字字符串")
-        cookie = self._cookie()
         if self.config.get("readonly", True) is not True:
             raise ValueError("牛客数据源仅支持只读采集，请启用 collect.readonly")
+        cookie = self._cookie()
         threads = self.config.get("threads", 1)
         if isinstance(threads, bool) or not isinstance(threads, int) or not 1 <= threads <= 16:
             raise ValueError("threads 必须为 1–16 的整数")

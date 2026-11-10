@@ -61,7 +61,11 @@ class RankingScreen(Screen):
         )
         with Vertical(id="pane"):
             yield Static(
-                label_icon("ranking", "本地提交成绩推导，非官方排名", self.app.nerd_font),
+                label_icon(
+                    "ranking",
+                    "无官方 submit-list 快照：本地提交成绩推算（非官方排名）",
+                    self.app.nerd_font,
+                ),
                 id="ranking-note",
             )
             yield ListView(id="ranking-options")

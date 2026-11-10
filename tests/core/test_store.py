@@ -7,6 +7,7 @@ Scope: Test
 import pytest
 
 from ojaudit.core.schema import (
+    SCHEMA_VERSION,
     Contest,
     Participant,
     Problem,
@@ -26,7 +27,7 @@ def test_store_migrates_and_persists_contest(tmp_path):
             ("demo", "c1"),
         ).fetchone()
         assert row["name"] == "合成训练赛"
-        assert store.execute("SELECT version FROM schema_version").fetchone()[0] == 2
+        assert store.execute("SELECT version FROM schema_version").fetchone()[0] == SCHEMA_VERSION
 
 
 def _submission(sid, uid="u1", contest="c1", index=0):

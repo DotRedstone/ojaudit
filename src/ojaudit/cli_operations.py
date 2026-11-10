@@ -116,11 +116,16 @@ def migrate_nowcoder(store, source: Path, reviews: Path | None = None) -> int:
     # 在写库之前验证所有数据，避免部分导入。
     prepared = []
     names = {}
+    problem_titles = {}
     for row in submissions:
         cid = str(row["contest_id"])
         uid = str(row["student_id"] if row["student_id"] is not None else row["student"])
         problem = str(row["problem_index"]).strip().upper()
         index = int(problem) if problem.isdigit() else ord(problem) - ord("A")
+        title = str(row.get("problem_title") or "").strip()
+        problem_titles.setdefault((cid, index), title or f"题 {index}")
+        if title:
+            problem_titles[(cid, index)] = title
         lang = str(row["language"] or "").lower()
         language = (
             "cpp"
@@ -178,6 +183,15 @@ def migrate_nowcoder(store, source: Path, reviews: Path | None = None) -> int:
                    VALUES (?,?,?,?) ON CONFLICT(platform,contest_id,uid)
                    DO UPDATE SET name=excluded.name""",
                 ("nowcoder", cid, uid, name),
+            )
+        for (cid, index), title in sorted(problem_titles.items()):
+            store.execute(
+                """INSERT INTO problems(platform,contest_id,problem_index,problem_id,title,full_score)
+                   VALUES (?,?,?,?,?,NULL)
+                   ON CONFLICT(platform,contest_id,problem_index) DO UPDATE SET
+                   title=CASE WHEN problems.title='' OR problems.title=('题 ' || problems.problem_index)
+                              THEN excluded.title ELSE problems.title END""",
+                ("nowcoder", cid, index, str(index), title),
             )
         for item in prepared:
             store.execute(

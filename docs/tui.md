@@ -60,6 +60,13 @@
 
 本阶段新增合成数据测试 `tests/tui/test_settings_ranking.py`；阶段/PR 的唯一进度来源仍为 [roadmap](roadmap.md)。
 
+
+## r19 批次 B：数据库路径
+
+数据库路径的优先级为：命令行 `--db PATH` > 配置文件 `[storage] sqlite_path = "..."` > `$XDG_DATA_HOME/ojaudit/ojaudit.sqlite`（未设置 XDG 变量时为 `~/.local/share/ojaudit/ojaudit.sqlite`）。
+
+不带子命令启动 `ojaudit --db PATH` 时，TUI 会打开同一 SQLite 数据库，设置中的管理者名单也对应当前数据库。可在「账户 → SQLite 路径」保存下次启动使用的数据库位置；本次启动若指定了 `--db`，始终以命令行选项为准。数据库不存在时，可先 `ojaudit login`，再 `ojaudit collect 比赛ID`。
+
 ## 壁纸主题与视觉风格（r18）
 
 默认主题为 `auto`，优先读取 `OJAUDIT_THEME_FILE` 指定的本地 JSON；未指定时依次查找 `~/.cache/wal/colors.json`、`~/.cache/matugen/colors.json`、`~/.config/matugen/colors.json`。支持 pywal 的 special/colors 和常见 matugen dark/default/color JSON。只读取经过十六进制校验的颜色，不执行 pywal/matugen 命令，不注入 JSON 内的 CSS；无效、过大（超过 256 KiB）和不可读文件自动忽略。

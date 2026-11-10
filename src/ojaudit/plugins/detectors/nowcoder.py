@@ -341,14 +341,22 @@ def analyze(
                     "score": round(rare_score, 4),
                     "samples": [" ".join(gram) for gram in sorted(shared)[:8]],
                 }
-                timeline = _timeline(students[uid_a], students[uid_b])
-                crowd_count = crowd[normalized_hashes[uid_a]] if equal else 1
+                timeline = (
+                    _timeline(students[uid_a], students[uid_b])
+                    if config.get("enable_timeline", True)
+                    else {}
+                )
+                crowd_count = (
+                    crowd[normalized_hashes[uid_a]]
+                    if equal and config.get("enable_template", True)
+                    else 1
+                )
                 verdict = "排除"
                 if not (equal and crowd_count >= thresholds["crowd_threshold"]):
                     if equal or scores["L2"] >= thresholds["solid_l2"]:
                         if (
-                            timeline["direction_valid"]
-                            and timeline["delta_seconds"] is not None
+                            timeline.get("direction_valid", False)
+                            and timeline.get("delta_seconds") is not None
                             and timeline["delta_seconds"] < thresholds["solid_delta_seconds"]
                         ):
                             verdict = "实锤"

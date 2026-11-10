@@ -42,6 +42,12 @@
 
 空库首页提示 `ojaudit login → ojaudit collect <比赛ID> → ojaudit analyze <比赛ID> → ojaudit`，比赛列表在没有记录时也提示下一步命令；所有菜单仍可操作。
 
+## Nerd Font 图标
+
+在「设置 → 外观 → 使用 Nerd Font 图标」中切换并按 Ctrl+S 保存。开启后首页、比赛导航、证据与代码、人员标记、排行榜、设置及模态框的标题、列表、面包屑和状态栏使用 Nerd Font 私有区图标；需终端安装并选用兼容 Nerd Font 的字体。关闭后统一回退到文字标签，不输出 U+E000–U+F8FF 的图标字符，避免缺字方框。
+
+图标码位只在 `src/ojaudit/tui/icons.py` 定义；界面调用 `label()` / `breadcrumb()`，不得在各屏硬编码私有区字符。设置保存后当前 App 的图标模式立即更新；已打开的其他界面重新进入时按当前模式渲染。Pilot 测试 `tests/tui/test_nerd_font_icons.py` 使用合成数据库验证开关两态及关闭时截图无私有区字符。
+
 ## 本地数据与验证
 
 默认只读 `~/.local/share/ojaudit/ojaudit.sqlite`（可通过 `XDG_DATA_HOME` 更改根目录）；数据库不存在时显示空列表，不创建库。可通过 `AuditApp(LocalContests(db_path, contest_filter))` 注入数据源用于测试。用户筛选规则从 `~/.config/ojaudit/config.toml` 加载；无规则时显示全部。

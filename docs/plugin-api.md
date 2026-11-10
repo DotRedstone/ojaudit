@@ -38,7 +38,15 @@ label = "n-gram 窗口"
 
 ## 当前实现
 
-`core.plugins` 实现了 plugin.toml 解析、API 版本校验、目录清单发现、entry point 元信息发现和参数默认值/类型/范围校验。`ojaudit plugins install` 只登记第三方插件的清单，**不会加载或执行第三方代码**；目前没有第三方插件的执行入口。
+`core.plugins` 实现了 plugin.toml 解析、API 版本校验、目录清单发现、entry point 元信息发现和参数默认值/类型/范围校验。目前没有第三方插件的执行入口，`enable/disable` 只改变登记状态。
+
+`ojaudit plugins install <地址>@<commit>`：
+
+- 地址只接受 `https://`、`ssh://`、`git@host:`、`file://` 或本地路径；拒绝 `ext::` 等能执行命令的 git 传输。
+- 在临时目录 `clone --no-checkout` 后检出指定 commit，并核对 `HEAD` 确为该 SHA（分支名、标签不被接受）；登记中记录完整 SHA。
+- git 运行时禁用交互凭据提示与 hooks；不运行仓库中的脚本、不安装依赖、不初始化子模块。
+- 登记来源会去掉 URL 中的 `user:token@` 凭据；登记文件权限 0600。
+- 任一步失败（超时、地址无效、commit 不存在、清单无效）都不会改动已有登记。
 
 内置能力：
 

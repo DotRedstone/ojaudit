@@ -141,31 +141,73 @@ def test_contests_all_and_plugins_list(tmp_path, monkeypatch, capsys):
     assert capsys.readouterr().out == ""
 
 
-def test_plugins_install_and_toggle_without_loading_code(tmp_path, monkeypatch, capsys):
-    from ojaudit import cli_operations
+def _plugin_repo(tmp_path, manifest):
+    """本地 git 仓库：真实 clone/checkout，不联网。"""
+    import subprocess
 
+    repo = tmp_path / "plugin-repo"
+    (repo / "demo").mkdir(parents=True)
+    (repo / "demo" / "plugin.toml").write_text(manifest, encoding="utf-8")
+    # 仓库里放一个会留下痕迹的脚本与 hook，验证安装不会执行它们。
+    (repo / "setup.py").write_text("open('EXECUTED', 'w').write('x')\n", encoding="utf-8")
+
+    def git(*argv):
+        return subprocess.run(
+            ["git", "-C", str(repo), *argv], check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    git("init", "-q")
+    git("add", ".")
+    git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "init")
+    return repo, git("rev-parse", "HEAD")
+
+
+GOOD_MANIFEST = (
+    'name = "demo"\nkind = "exporter"\nversion = "1.0.0"\n'
+    'api_version = 1\ndescription = "Synthetic plugin"\n'
+)
+
+
+def test_plugins_install_real_git_and_toggle(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    calls = []
-
-    def fake_git(argv, **kwargs):
-        calls.append(argv)
-        if "clone" in argv:
-            destination = argv[-1]
-            root = __import__("pathlib").Path(destination)
-            (root / "demo").mkdir(parents=True)
-            (root / "demo" / "plugin.toml").write_text(
-                'name = "demo"\nkind = "exporter"\nversion = "1.0.0"\n'
-                'api_version = 1\ndescription = "Synthetic plugin"\n',
-                encoding="utf-8",
-            )
-        return SimpleNamespace(returncode=0)
-
-    monkeypatch.setattr(cli_operations.subprocess, "run", fake_git)
-    cli.main(["plugins", "install", "https://example.invalid/demo.git@abcdef1234567"])
+    monkeypatch.chdir(tmp_path)
+    repo, sha = _plugin_repo(tmp_path, GOOD_MANIFEST)
+    cli.main(["plugins", "install", f"file://{repo}@{sha[:10]}"])
     cli.main(["plugins", "enable", "demo"])
     cli.main(["plugins", "list"])
-    assert "demo" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "demo\t1.0.0\tenabled" in out and sha in out
     cli.main(["plugins", "disable", "demo"])
-    assert len(calls) == 2
-    registry = json.loads((tmp_path / "config/ojaudit/plugins.json").read_text())
+    registry_path = tmp_path / "config/ojaudit/plugins.json"
+    registry = json.loads(registry_path.read_text())
     assert registry["demo"]["enabled"] is False
+    assert registry_path.stat().st_mode & 0o777 == 0o600
+    assert not (tmp_path / "EXECUTED").exists()
+
+    # 各种失败都不改动已有登记。
+    before = registry_path.read_bytes()
+    for spec in (
+        f"file://{repo}@{'0' * 40}",
+        f"ext::sh -c touch% EXECUTED@{sha}",
+        f"file://{repo}@main",
+        f"file://{tmp_path / 'missing'}@{sha}",
+    ):
+        with pytest.raises(SystemExit):
+            cli.main(["plugins", "install", spec])
+        assert registry_path.read_bytes() == before
+    assert not (tmp_path / "EXECUTED").exists()
+
+
+def test_plugins_install_rejects_invalid_manifest(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    repo, sha = _plugin_repo(tmp_path, 'name = "Bad Name"\n')
+    with pytest.raises(SystemExit):
+        cli.main(["plugins", "install", f"file://{repo}@{sha}"])
+    assert not (tmp_path / "config/ojaudit/plugins.json").exists()
+
+
+def test_registry_origin_has_no_credentials():
+    from ojaudit.cli_operations import _redact
+
+    assert _redact("https://user:token@example.invalid/x.git") == "https://example.invalid/x.git"
+    assert _redact("git@example.invalid:x.git") == "git@example.invalid:x.git"

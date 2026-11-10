@@ -97,6 +97,11 @@ def test_problem_index_and_language_normalization():
     assert language_bucket("PyPy3") == "python"
     assert language_bucket("JavaScript") == "other"
     assert language_bucket("Java 21") == "java"
+    for name in ("C", "C(gcc 10)", "C++（clang++18）", "C++(g++ 13)"):
+        assert language_bucket(name) == "cpp", name
+    for name in ("C#", "PHP", "Clojure"):
+        assert language_bucket(name) == "other", name
+    assert language_bucket("Python2") == language_bucket("pypy3") == "python"
 
 
 def test_accepted_verdicts():

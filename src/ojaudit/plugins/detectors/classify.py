@@ -35,7 +35,9 @@ def classify(
     timeline = timeline or {}
     if md5_equal and crowd_count >= thresholds.get("crowd_threshold", 3):
         return "排除"
-    if md5_equal or l2 >= thresholds["solid_l2"]:
+    # 去空白后不完全相同时，高 L2 还必须伴随至少一个共享的稀有片段：
+    # 简单题的常见写法彼此 L2 也很高，但所有片段都被许多人使用，不构成证据。
+    if md5_equal or (l2 >= thresholds["solid_l2"] and rare_score > 0):
         if (
             timeline.get("direction_valid")
             and timeline.get("delta_seconds") is not None
@@ -49,3 +51,27 @@ def classify(
     if l3 >= thresholds["suspicious_l3"] and rare_score >= thresholds["suspicious_rare"]:
         return "存疑"
     return "排除"
+
+
+def could_flag(
+    identical: bool,
+    rare: dict[str, Any],
+    timeline: dict[str, Any] | None,
+    thresholds: dict[str, Any],
+) -> bool:
+    """不计算 L1/L2/L3 时，判断该对是否仍可能得到非「排除」的等级。
+
+    返回 False 时 classify() 必然返回「排除」，可以跳过昂贵的逐字比对。
+    """
+    rare_score = rare.get("score", 0.0)
+    timeline = timeline or {}
+    if identical:
+        return True
+    if rare_score >= min(thresholds["mid_strong_rare"], thresholds["suspicious_rare"]):
+        return True
+    return (
+        rare_score > 0
+        and bool(timeline.get("direction_valid"))
+        and timeline.get("delta_seconds") is not None
+        and timeline["delta_seconds"] < thresholds["solid_delta_seconds"]
+    )

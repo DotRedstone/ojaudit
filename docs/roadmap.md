@@ -11,6 +11,6 @@
 - [x] 7. TUI 证据审查与代码浏览 — PR：https://github.com/DotRedstone/ojaudit/pull/13
 - [x] 8. TUI 设置与排行榜 — PR：https://github.com/DotRedstone/ojaudit/pull/14
 - [x] 9. 视觉、文档与发布打磨 — PR：https://github.com/DotRedstone/ojaudit/pull/16
-- [ ] 10. 重构与打磨：界面重设计（#27）、写库事务与 ingest（#28）、单一检测流水线（#29）、榜单下沉核心层（#30）、整理与收尾（#31）、旧库复核归属（#32）、插件安装加固（#33）
+- [ ] 10. 重构与打磨：界面重设计（#27）、写库事务与 ingest（#28）、单一检测流水线（#29）、榜单下沉核心层（#30）、整理与收尾（#31）、旧库复核归属（#32）、插件安装加固（#33）、真实数据校准（#34）
 
 跨 PR 遗留问题使用 GitHub Issues；PR 内临时任务清单不复制到这里。

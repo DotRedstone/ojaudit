@@ -10,6 +10,7 @@ Notes:
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import UTC, datetime
 from typing import Any
 
@@ -17,6 +18,7 @@ from ojaudit.core.reviews import DEFAULT_REVIEW_STATUS, finding_key
 from ojaudit.core.schema import Contest
 from ojaudit.core.store import Store
 from ojaudit.tui.data import LocalContests
+from ojaudit.tui.ui import level_rank
 
 
 def _items(rows: Any) -> list[dict[str, Any]]:
@@ -35,6 +37,9 @@ class ReviewData:
             return []
         try:
             return _items(connection.execute(statement, args).fetchall())
+        except sqlite3.OperationalError:
+            # 数据库正在被后台任务创建或迁移时按无数据处理。
+            return []
         finally:
             connection.close()
 
@@ -192,6 +197,8 @@ class ReviewData:
             item["is_stale"] = False
             item["scores"] = _decode(item["scores"])
             item["reasons"] = _decode(item["reasons"])
+        # 高等级优先复核；同等级保持题号与选手顺序，列表和证据翻页共用同一顺序。
+        current.sort(key=lambda item: level_rank(item["verdict_level"]))
         # 历史人工结论仅作只读失效提示，不把其他轮次的复核误判为当前复核。
         stale: list[dict[str, Any]] = []
         seen: set[tuple[str, str, int, str]] = set()

@@ -24,8 +24,11 @@ from ojaudit.tui.review_screens import (
     EvidenceScreen,
     FindingsScreen,
     PeopleScreen,
+    PersonScreen,
+    ProblemScreen,
     ProblemsScreen,
     ReviewListScreen,
+    SubmissionScreen,
 )
 from ojaudit.tui.screens import (
     ContestListScreen,
@@ -53,7 +56,10 @@ def test_page_inheritance_and_theme_contract():
         ReviewListScreen,
         FindingsScreen,
         PeopleScreen,
+        PersonScreen,
         ProblemsScreen,
+        ProblemScreen,
+        SubmissionScreen,
         EvidenceScreen,
         CodeScreen,
         SettingsScreen,
@@ -68,6 +74,11 @@ def test_page_inheritance_and_theme_contract():
     assert ".dialog-box {" in rules and "max-height: 20;" in rules
     assert "$accent 20%" in rules and ".status-row" in rules
     assert "Footer {" not in rules
+    for module in ("review_screens.py", "ranking_screen.py", "pending_screen.py"):
+        path = css.parent.parent / module
+        source = path.read_text(encoding="utf-8")
+        assert ".styles.color = palette." not in source
+        assert ".styles.border_left = (" not in source
     assert row_kind({"mark": "cheater"}) == "mark-cheater"
     assert row_kind({"verdict_level": "high"}) == "level-high"
 

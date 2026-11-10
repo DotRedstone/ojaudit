@@ -180,10 +180,9 @@ class ReviewData:
             else []
         )
         reviews = self._read(
-            "SELECT r.run_id, r.uid_a, r.uid_b, r.problem_index, r.language, "
-            "r.status, r.note FROM finding_reviews r JOIN analysis_runs a "
-            "ON a.run_id=r.run_id WHERE a.platform=? AND a.contest_id=? "
-            "ORDER BY a.created_at DESC, r.run_id DESC",
+            "SELECT run_id, uid_a, uid_b, problem_index, language, status, note "
+            "FROM finding_reviews WHERE platform=? AND contest_id=? "
+            "ORDER BY updated_at DESC, run_id DESC",
             *self.key,
         )
         current_keys = {finding_key(item) for item in current}
@@ -237,6 +236,8 @@ class ReviewData:
                 status,
                 note,
                 datetime.now(UTC).isoformat(),
+                platform=self.contest.platform,
+                contest_id=self.contest.contest_id,
             )
 
 

@@ -24,6 +24,8 @@ def test_hidden_people_and_manual_records_persist_independently(tmp_path):
             "需进一步核实",
             "线索备注",
             "2026-01-02T00:00:00Z",
+            platform="synthetic",
+            contest_id="demo",
         )
     with Store(path) as store:
         assert store.list_hidden_people() == [
@@ -38,6 +40,9 @@ def test_hidden_people_and_manual_records_persist_independently(tmp_path):
         assert stale[0]["is_stale"] is True
         assert annotate_review_staleness(reviews, [reviews[0]])[0]["is_stale"] is False
         assert review_status(None) == "待复核"
+        assert store.list_contest_reviews("synthetic", "demo")[0]["note"] == "线索备注"
+        with pytest.raises(ValueError, match="分析轮次不存在"):
+            store.put_finding_review("ghost", "u1", "u2", 0, "cpp", "已核查", "", "now")
 
 
 def test_invalid_marks_and_review_statuses_are_rejected(tmp_path):

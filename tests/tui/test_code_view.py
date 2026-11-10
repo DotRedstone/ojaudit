@@ -107,3 +107,18 @@ def test_dangling_else_switch_and_inline_braces():
         "    vector<vector<int>> g;",
         "}",
     ]
+
+
+def test_line_continuation_backslash_is_joined():
+    code = "int main(){\n  if(n>9) m(n); \\\n  else cout<<n;\n}"
+    assert format_lines(code, "cpp") == [
+        "int main() {",
+        "    if (n > 9)",
+        "        m(n);",
+        "    else",
+        "        cout << n;",
+        "}",
+    ]
+    macro = "#define MAX(a,b) \\\n  ((a)>(b)?(a):(b))\nint x;"
+    assert format_lines(macro, "cpp")[0].startswith("#define MAX(a,b)")
+    assert format_lines(macro, "cpp")[-1] == "int x;"

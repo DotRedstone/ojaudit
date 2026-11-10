@@ -187,6 +187,8 @@ def _reflow_c(lines: list[str], language: str) -> list[str]:
             flush()
             out.append(token[1:])
             continue
+        if token == "\\":
+            continue  # 续行以外单独出现的反斜杠不影响代码含义
         if token.startswith("//"):
             current.append(token)
             flush()
@@ -295,7 +297,9 @@ def prepare_lines(code: str, language: str, options: ViewOptions | None = None) 
     if not options.normalize:
         return raw_lines
     if language != "python":
-        result = _reflow_c(raw_lines, language)
+        # 行尾的 \ 是 C 的续行符：先把被它连接的两行接成一行。
+        joined = re.sub(r"\\[ \t]*\n", " ", "\n".join(raw_lines)).splitlines()
+        result = _reflow_c(joined, language)
         if options.boilerplate and language == "cpp":
             result = _drop_main_return(result)
         return result

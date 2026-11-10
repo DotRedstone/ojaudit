@@ -1,17 +1,16 @@
-/* Wallpaper-first, single-screen review styling based on nowcoder-collect.
-   Keep all navigation and key bindings in Python unchanged. */
+/* 唯一的 TUI 视觉来源；业务状态通过语义 class 与当前主题变量渲染。 */
 Screen {
     layout: vertical;
     background: $background;
     color: $foreground;
 }
 #breadcrumb {
-    /* Single text line with a two-cell click target for mouse accessibility. */
-    height: 2;
-    padding: 0 2;
+    height: 1;
+    padding: 0 1;
     background: $background;
     color: $text-muted;
 }
+#breadcrumb:hover { background: $accent 15%; text-style: underline; }
 #pane {
     height: 1fr;
     margin: 0 1;
@@ -22,36 +21,45 @@ Screen {
     border-subtitle-color: $text-muted;
 }
 #pane:focus-within { border: round $accent; }
-#breadcrumb:hover { background: $accent 20%; text-style: underline; }
-Footer { background: $panel; }
-#empty-guide { height: 4; padding: 1 2; color: $warning; }
-.pane-title { height: 2; padding: 0 1; text-style: bold; color: $accent; }
-#summary { height: 6; padding: 1 1; color: $foreground; }
-#home-overview {
+#status {
+    dock: bottom;
+    height: 1;
+    background: $surface;
+    color: $foreground;
+}
+#home-overview, #account-state {
     height: 5;
     padding: 1 1;
     color: $foreground;
     background: $background;
     border-left: thick $accent;
 }
+#empty-guide { height: 4; padding: 1 2; color: $warning; }
+#summary { height: 6; padding: 1 1; color: $foreground; }
 ListView {
     height: 1fr;
     border: none;
     background: $background;
     scrollbar-size: 1 1;
 }
-ListItem { padding: 0 2; color: $foreground; }
-ListItem.-highlight { background: $accent 20%; color: $foreground; text-style: none; }
+ListItem { padding: 0 1; color: $foreground; }
+ListItem.-highlight {
+    background: $accent 20%;
+    color: $foreground;
+    text-style: none;
+}
 ListItem.-hovered { background: $accent 13%; }
+.status-row { border-left: solid $accent; }
+.status-row.mark-cheater, .status-row.level-high { color: $error; border-left: solid $error; }
+.status-row.mark-suspect, .status-row.level-medium { color: $warning; border-left: solid $warning; }
+.status-row.mark-normal, .status-row.level-low { color: $success; border-left: solid $success; }
+.status-row.mark-manager { color: $text-muted; border-left: solid $text-muted; }
 DataTable > .datatable--cursor { background: $accent 20%; text-style: none; }
 Input { height: 3; background: $surface; }
-#status {
-    height: 1;
-    dock: bottom;
-    background: $surface;
-    color: $foreground;
-}
 #evidence-meta { height: 6; padding: 0 1; border-left: thick $accent; }
+#evidence-meta.level-high { border-left: thick $error; }
+#evidence-meta.level-medium { border-left: thick $warning; }
+#evidence-meta.level-low { border-left: thick $success; }
 #code-pair { height: 1fr; }
 .source-pane {
     width: 1fr;
@@ -64,31 +72,51 @@ Input { height: 3; background: $surface; }
     overflow: auto;
 }
 .source-pane:focus { border: round $accent; }
-#code-meta { height: 3; padding: 0 1; }
+#code-meta { height: 3; padding: 0 1; color: $foreground; }
 #code-body { height: 1fr; overflow: auto; padding: 0 1; background: $background; }
-#settings-columns { min-height: 12; }
-#ranking-note { height: 2; padding: 0 1; color: $warning; }
-#categories, #options-pane, #ranking-options, #ranking-preview {
-    background: $background;
-    border: round $panel;
-}
+#settings-columns { height: 1fr; width: 1fr; }
+#categories { width: 23; height: 1fr; border-right: solid $panel; }
+#options-pane { width: 1fr; height: 1fr; }
+#settings-values { height: 1fr; }
+#settings-detail { height: 5; padding: 0 1; color: $text-muted; }
+#ranking-note { height: 2; padding: 0 1; color: $text-muted; }
+#ranking-options { height: 7; }
+#ranking-preview { height: 1fr; border-top: solid $panel; }
+#ranking-warning { height: 3; padding: 0 1; color: $warning; }
 #categories:focus-within, #options-pane:focus-within,
 #ranking-options:focus-within, #ranking-preview:focus-within {
-    border: round $accent;
+    border-left: solid $accent;
 }
-#entry-dialog, #dialog, #edit-dialog, #confirm {
+#collect-contest, #analyze-contest, #cancel-task, #cancel-overview-job {
+    height: 3;
     background: $surface;
-    border: round $accent;
+    color: $foreground;
+    border: none;
+    min-width: 14;
 }
-#style-help {
-    width: 86;
+#task-actions { height: auto; }
+SearchDialog, UidDialog, EntryDialog, EditValue,
+ConfirmLeave, ChoiceDialog, StyleHelpScreen {
+    align: center middle;
+    background: $background 70%;
+}
+.dialog-box {
+    width: 68;
     max-width: 95%;
     height: auto;
+    max-height: 20;
     padding: 1 2;
     border: round $accent;
     background: $surface;
 }
-StyleHelpScreen {
-    align: center middle;
-    background: $background 70%;
+#confirm { border: round $warning; }
+#dialog Select, #dialog Input { margin-bottom: 1; }
+#style-help {
+    width: 86;
+    max-width: 95%;
+    height: auto;
+    max-height: 20;
+    padding: 1 2;
+    border: round $accent;
+    background: $surface;
 }

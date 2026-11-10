@@ -9,6 +9,7 @@ Notes: 只使用合成数据与假登录、假数据源，不访问网络。
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 
 from textual.widgets import ListView, Static
@@ -40,10 +41,13 @@ def test_qr_popup_shows_code_and_saves_uid(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.setattr(account_screen, "detect_and_save_uid", lambda: "1234")
 
+    scanned = threading.Event()
+
     def fake_login(status, on_qr, cancelled):
         on_qr("https://weixin.qq.com/q/synthetic")
         status("等待手机确认…")
-        time.sleep(0.2)
+        # 等测试确认二维码已显示再「扫码成功」，避免机器繁忙时弹窗先关掉。
+        assert scanned.wait(5)
 
     async def scenario():
         app = AuditApp(LocalContests(tmp_path / "none.sqlite"))
@@ -58,6 +62,7 @@ def test_qr_popup_shows_code_and_saves_uid(tmp_path, monkeypatch):
                         break
             else:
                 raise AssertionError("二维码没有显示在程序内")
+            scanned.set()
             for _ in range(40):
                 await pilot.pause(0.05)
                 if results:

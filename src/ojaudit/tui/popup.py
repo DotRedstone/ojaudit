@@ -5,6 +5,7 @@ Description: lazygit 风格的弹窗：标题写在边框上、操作提示写�
 Scope: TUI
 Notes:
 - 所有弹窗 Esc 取消、Enter 确认；输入类弹窗可带实时校验，校验不通过时 Enter 不会关闭。
+- 是 / 否确认可以用 ←/→（h/l、Tab）选择、Enter 确定，也可以直接按 y / n 或点击。
 - 密码输入框只把值交给调用方，不显示、不记录。
 """
 
@@ -37,22 +38,32 @@ class HintRow(Static):
     def __init__(self, hints: Sequence[Hint]) -> None:
         super().__init__("", classes="popup-hints")
         self.hints = list(hints)
+        self.selected: int | None = None
         self.spans: list[tuple[int, int, str]] = []
 
     def on_mount(self) -> None:
-        self.show(self.hints)
+        self.show(self.hints, self.selected)
 
-    def show(self, hints: Sequence[Hint]) -> None:
+    def show(self, hints: Sequence[Hint], selected: int | None = None) -> None:
+        """selected 为当前选中项的序号：整项反色显示，Enter 执行它。"""
         colors = ui.palette(self.app)
         self.hints = list(hints)
+        self.selected = selected
         text = Text(no_wrap=True)
         self.spans = []
         for index, (key, name, action) in enumerate(self.hints):
             if index:
-                text.append("   ")
+                text.append("  " if selected is not None else "   ")
             start = text.cell_len
-            text.append(key, style=f"bold {colors.accent}")
-            text.append(" " + name, style=colors.fg if index == 0 else colors.muted)
+            if index == selected:
+                text.append(f" {key} {name} ", style=f"bold {colors.bg} on {colors.accent}")
+            elif selected is not None:
+                text.append(" ")
+                text.append(key, style=f"bold {colors.accent}")
+                text.append(f" {name} ", style=colors.muted)
+            else:
+                text.append(key, style=f"bold {colors.accent}")
+                text.append(" " + name, style=colors.fg if index == 0 else colors.muted)
             self.spans.append((start, text.cell_len, action))
         self.update(text)
 
@@ -303,30 +314,49 @@ class ChoiceNotePopup(MenuPopup):
 
 
 class ConfirmPopup(Popup):
-    """是 / 否确认。默认（enter）为 safe 一侧；y 选是，n / esc 选否。"""
+    """是 / 否确认：「是」在左、「否」在右，←/→（h/l、Tab）移动选中项，Enter 确定；
+    y / n 直接回答，Esc 等同于否。初始选中 default 一侧（默认是安全的「否」）。"""
 
     ICON = "warning"
 
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("escape,n", "answer(False)", "否", priority=True),
         Binding("y", "answer(True)", "是", priority=True),
-        Binding("enter", "answer_default", "默认", priority=True),
+        Binding("left,h", "choose(True)", "选「是」", priority=True),
+        Binding("right,l", "choose(False)", "选「否」", priority=True),
+        Binding("tab,shift+tab", "toggle_choice", "切换", priority=True),
+        Binding("enter,space", "answer_default", "确定", priority=True),
     ]
 
     def __init__(self, title: str, message: str, *, default: bool = False) -> None:
-        hints = [("y", "是", "answer(True)"), ("n", "否", "answer(False)")]
-        super().__init__(title, hints if default else list(reversed(hints)))
+        super().__init__(title, [("y", "是", "answer(True)"), ("n", "否", "answer(False)")])
         self.message = message
         self.default = default
+        self.choice = default
 
     def compose(self) -> ComposeResult:
         yield self.frame(Static(self.message, classes="popup-message"))
+
+    def on_mount(self) -> None:
+        super().on_mount()
+        self._show_choice()
+
+    def _show_choice(self) -> None:
+        self.query_one(HintRow).show(self.hints, 0 if self.choice else 1)
+
+    def action_choose(self, value: bool) -> None:
+        self.choice = value
+        self._show_choice()
+
+    def action_toggle_choice(self) -> None:
+        self.action_choose(not self.choice)
 
     def action_answer(self, value: bool) -> None:
         self.dismiss(value)
 
     def action_answer_default(self) -> None:
-        self.dismiss(self.default)
+        """Enter：确定当前选中项（未移动时即 default）。"""
+        self.dismiss(self.choice)
 
     def action_cancel(self) -> None:
         self.dismiss(False)

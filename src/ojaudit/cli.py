@@ -281,6 +281,12 @@ def _rank_rows(store: Store, platform: str, cid: str) -> list[dict]:
 
 
 def _export(store: Store, args: argparse.Namespace) -> Path:
+    exists = store.execute(
+        "SELECT 1 FROM contests WHERE platform=? AND contest_id=?",
+        (args.platform, args.contest),
+    ).fetchone()
+    if exists is None:
+        raise ValueError(f"比赛不存在：{args.platform}/{args.contest}；请先 collect 或 migrate")
     marks = {
         row["uid"]: row["mark"] for row in store.list_person_marks(args.platform, args.contest)
     }
@@ -458,9 +464,13 @@ def main(argv: list[str] | None = None) -> None:
         elif args.command in {"export", "rank"}:
             _export(store, args)
         elif args.command == "collect":
+            collect_settings = load_config().get("collect", {})
+            collect_settings = collect_settings if isinstance(collect_settings, dict) else {}
             bundle = nowcoder_source().fetch_contest(None, args.contest)
             import_bundle(store, bundle)
             print(f"collected={bundle.contest.contest_id} submissions={len(bundle.submissions)}")
+            if collect_settings.get("auto_analyze", False):
+                _analyze(store, bundle.contest.platform, bundle.contest.contest_id, 0.5)
 
 
 if __name__ == "__main__":

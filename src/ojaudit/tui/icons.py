@@ -1,4 +1,9 @@
-"""TUI 图标的唯一映射；关闭 Nerd Font 时不输出私有区字符。"""
+"""
+Module: TUI / icons
+Description: Nerd Font 图标的唯一映射；关闭时退回纯文字。
+Scope: TUI
+Notes: 关闭图标时绝不输出 U+E000–U+F8FF 私有区字符。
+"""
 
 from __future__ import annotations
 

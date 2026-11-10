@@ -1,4 +1,9 @@
-"""第九阶段 CLI/TUI 共用路径与榜单一致性回归。"""
+"""
+Module: Test / CLI and TUI consistency
+Description: 默认数据库路径、检测参数保存，以及 CLI 与 TUI 导出的榜单逐字节一致。
+Scope: Test
+Notes: 只使用合成数据，不访问网络。
+"""
 
 from types import SimpleNamespace
 

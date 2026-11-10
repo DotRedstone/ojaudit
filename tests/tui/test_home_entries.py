@@ -1,4 +1,9 @@
-"""第十五轮：首页入口 Pilot 冒烟，不访问网络。"""
+"""
+Module: Test / TUI home entries
+Description: 首页打开比赛 ID、账户入口与未采集比赛引导。
+Scope: Test
+Notes: 只使用合成数据。
+"""
 
 import asyncio
 import stat

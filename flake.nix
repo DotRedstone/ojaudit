@@ -8,13 +8,16 @@
         (system: f system (import nixpkgs { inherit system; }));
     in {
       packages = forAllSystems (system: pkgs: {
-        default = pkgs.python311Packages.buildPythonApplication {
+        default = pkgs.python312Packages.buildPythonApplication {
           pname = "ojaudit";
           version = "0.1.0-dev0";
           pyproject = true;
           src = self;
-          build-system = [ pkgs.python311Packages.hatchling ];
-          dependencies = [ pkgs.python311Packages.tomli-w ];
+          build-system = [ pkgs.python312Packages.hatchling ];
+          dependencies = [
+            pkgs.python312Packages.tomli-w
+            pkgs.python312Packages.textual
+          ];
           doCheck = false;
         };
       });
@@ -27,9 +30,10 @@
       devShells = forAllSystems (system: pkgs: {
         default = pkgs.mkShell {
           packages = [
-            pkgs.python311
-            pkgs.python311Packages.pytest
-            pkgs.python311Packages.tomli-w
+            pkgs.python312
+            pkgs.python312Packages.pytest
+            pkgs.python312Packages.tomli-w
+            pkgs.python312Packages.textual
             pkgs.ruff
             pkgs.uv
           ];
@@ -38,7 +42,7 @@
       checks = forAllSystems (system: pkgs: {
         default = pkgs.runCommand "ojaudit-check" {
           nativeBuildInputs = [
-            (pkgs.python311.withPackages (ps: [ ps.pytest ps.tomli-w ]))
+            (pkgs.python312.withPackages (ps: [ ps.pytest ps.tomli-w ps.textual ]))
             pkgs.ruff
           ];
         } ''

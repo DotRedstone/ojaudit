@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ojaudit.core.reviews import DEFAULT_REVIEW_STATUS, finding_key
-from ojaudit.core.schema import Contest
+from ojaudit.core.schema import Contest, is_accepted
 from ojaudit.core.store import Store
 from ojaudit.tui.data import LocalContests
 from ojaudit.tui.ui import level_rank
@@ -152,7 +152,7 @@ class ReviewData:
         return sorted(
             entries,
             key=lambda row: (
-                0 if str(row["verdict"]).upper() in ("AC", "ACCEPTED") else 1,
+                0 if is_accepted(row["verdict"]) else 1,
                 int(row["submit_time"]),
                 row["uid"],
             ),

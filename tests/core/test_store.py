@@ -96,3 +96,12 @@ def test_problem_index_and_language_normalization():
     assert language_bucket("PyPy3") == "python"
     assert language_bucket("JavaScript") == "other"
     assert language_bucket("Java 21") == "java"
+
+
+def test_accepted_verdicts():
+    from ojaudit.core.schema import is_accepted
+
+    for verdict in ("AC", "Accepted", "accepted", "答案正确", "通过"):
+        assert is_accepted(verdict), verdict
+    for verdict in ("WA", "未通过", "部分通过", "答案错误", "", "Wrong Answer"):
+        assert not is_accepted(verdict), verdict

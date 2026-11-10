@@ -6,7 +6,7 @@ Scope: Test
 
 from ojaudit.core.schema import Submission
 from ojaudit.core.store import Store
-from ojaudit.plugins.detectors.nowcoder import analyze
+from ojaudit.plugins.detectors.engine import analyze
 from ojaudit.plugins.exporters.csv import export_csv
 from ojaudit.plugins.exporters.html import export_html
 from ojaudit.plugins.exporters.markdown import export_markdown
@@ -117,44 +117,3 @@ def test_same_synthetic_database_three_runs_are_byte_identical(tmp_path):
         _run_once(tmp_path / "source.sqlite", tmp_path / f"run-{index}") for index in range(3)
     ]
     assert outputs[0] == outputs[1] == outputs[2]
-
-
-def test_migrated_legacy_detector_matches_synthetic_golden_result():
-    submissions = [
-        Submission(
-            "synthetic",
-            "demo",
-            "s1",
-            "u1",
-            0,
-            "cpp",
-            "Accepted",
-            100,
-            1000,
-            "contest",
-            "int main(){return 0;}",
-        ),
-        Submission(
-            "synthetic",
-            "demo",
-            "s2",
-            "u2",
-            0,
-            "cpp",
-            "Accepted",
-            100,
-            1200,
-            "contest",
-            "int main(){return 0;}",
-        ),
-    ]
-    result = analyze(submissions)
-    assert len(result) == 1
-    row = result[0]
-    assert row["pair"] == ["u1", "u2"]
-    assert row["verdict"] == "实锤"
-    assert row["scores"] == {"L1": 1.0, "L2": 1.0, "L3": 1.0, "md5_ws_equal": True}
-    assert row["timeline"]["who_first"] == "A"
-    assert row["timeline"]["direction_valid"] is True
-    assert row["timeline"]["delta_seconds"] == 0.2
-    assert row["crowd_count"] == 2

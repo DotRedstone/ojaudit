@@ -38,26 +38,12 @@ label = "n-gram 窗口"
 
 ## 当前实现
 
-`core.plugins` 已实现 plugin.toml 解析、API 版本校验、目录清单发现、entry point 元信息发现和参数默认值/类型/范围校验。实际插件执行入口将在后续阶段实现，不能把“发现”视为“已启用”。
+`core.plugins` 实现了 plugin.toml 解析、API 版本校验、目录清单发现、entry point 元信息发现和参数默认值/类型/范围校验。`ojaudit plugins install` 只登记第三方插件的清单，**不会加载或执行第三方代码**；目前没有第三方插件的执行入口。
 
-## 内置插件实现
+内置能力：
 
-- Source：`plugins.sources.nowcoder.NowcoderSource`，Cookie 通过 `NOWCODER_COOKIE` 或配置指定的环境变量读取；支持最近比赛、比赛信息、榜单主源、代码页和赛后补题列表。默认只采比赛期间数据；配置 `phase` 可选 `contest`、`after` 或 `all`。Cookie 不写入标准对象、数据库或日志。
-- Pair detector：`plugins.detectors.pair.analyze_pair`，Winnowing/Jaccard。
-- Single detector：`plugins.detectors.single.analyze_single`，代码规模与注释比例信号。
-- Classifier：`plugins.detectors.classifier.classify`，按显式阈值生成解释等级。
-- Exporter：`plugins.exporters.markdown.export_markdown` 与 `plugins.exporters.csv.export_csv`，输出排序稳定；CSV 对公式前缀做转义。
+- Source：`plugins.sources.nowcoder.NowcoderSource`，只读采集；Cookie 来自本机 0600 文件或配置指定的环境变量，不写入标准对象、数据库或日志。默认只采比赛期间数据，`phase` 可选 `contest`、`after`、`all`。
+- 检测：`plugins.detectors.engine`，由指纹、相似度、模板、时间线、分级五个阶段组成，每个阶段一个 `plugin.toml` 声明参数，由 `core.analysis` 校验后传入。详见 [检测](detection.md)。
+- Exporter：`plugins.exporters` 下的 Markdown / CSV / HTML，输出排序稳定；CSV 对公式前缀转义，HTML 对外部字段转义且不加载远程资源。
 
-上述检测与导出阶段不联网；牛客 Source 是唯一需要网络的阶段。所有结果仅为人工复核线索。
-
-### 五个牛客算法模块清单
-
-原始检测流水线中的预处理由核心标准对象承担；五个算法模块均有独立文件和 plugin.toml：
-
-- 归一化：plugins/detectors/normalize.py + plugins/detectors/normalize/plugin.toml
-- 相似度：plugins/detectors/similarity.py + plugins/detectors/similarity/plugin.toml
-- 模板统计：plugins/detectors/template.py + plugins/detectors/template/plugin.toml
-- 时间线：plugins/detectors/timeline.py + plugins/detectors/timeline/plugin.toml
-- 分级：plugins/detectors/classify.py + plugins/detectors/classify/plugin.toml
-
-这些模块按 API v1 的 pair/classifier 类型声明清单；它们是算法流水线组件，不代表五个都直接接收独立的最终用户任务。
+检测与导出阶段不联网；牛客 Source 是唯一需要网络的阶段。

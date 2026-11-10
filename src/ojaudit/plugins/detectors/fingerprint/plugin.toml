@@ -1,0 +1,31 @@
+name = "builtin_pair"
+kind = "detector.pair"
+version = "2.0.0"
+api_version = 1
+description = "Winnowing 指纹初筛：只有指纹相似度达到阈值的选手对才会进入精细比对"
+languages = ["cpp", "python", "java", "other"]
+module = "ojaudit.plugins.detectors.fingerprint"
+
+[params]
+
+[params.threshold]
+type = "float"
+label = "指纹相似度阈值"
+description = "Jaccard 相似度低于该值的选手对不产生线索；命令行 --threshold 优先"
+default = 0.5
+min = 0
+max = 1
+
+[params.k]
+type = "int"
+label = "指纹 k-gram 长度"
+description = "去空白去注释后按字符切片的长度"
+default = 5
+min = 1
+
+[params.window]
+type = "int"
+label = "Winnowing 窗口大小"
+description = "每个窗口取最小哈希作为指纹"
+default = 4
+min = 1

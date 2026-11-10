@@ -19,11 +19,10 @@ from textual.widgets import Button, Input, Label, ListView, Static
 from ojaudit.core.schema import Contest
 from ojaudit.tui.contest_list_data import contest_list_description
 from ojaudit.tui.data import LocalContests
-from ojaudit.tui.icons import breadcrumb, label
+from ojaudit.tui.icons import label
 from ojaudit.tui.interaction import Breadcrumb, SearchDialog
-from ojaudit.tui.interaction import NavigateListItem as ListItem
-from ojaudit.tui.ui_components import StatusRow
 from ojaudit.tui.interaction import NavigateListView as NavigationListView
+from ojaudit.tui.ui_components import StatusRow
 
 
 class ShellScreen(Screen):

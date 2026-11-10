@@ -16,4 +16,5 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: python scripts/check_todos.py
+      - run: python scripts/check_headers.py
       - run: pytest -q

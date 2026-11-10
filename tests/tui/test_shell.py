@@ -52,7 +52,7 @@ def test_navigation_and_page_edges(tmp_path):
             await pilot.pause()
             assert isinstance(app.screen, HomeScreen)
             assert str(app.screen.query_one("#frame-top").render()).count("╭") == 1
-            await pilot.press("enter")
+            await pilot.press("1")
             await pilot.pause()
             assert isinstance(app.screen, ContestListScreen)
             assert len(app.screen.entries) == 1

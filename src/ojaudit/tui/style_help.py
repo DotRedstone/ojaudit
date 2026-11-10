@@ -59,10 +59,10 @@ class StyleHelpScreen(Popup):
     ]
     WIDTH = 72
     ICON = "help"
-    ACTIONS = (("关闭", "close"),)
+    HINTS = (("esc", "关闭", "close"),)
 
     def __init__(self) -> None:
-        super().__init__("按键", "esc 关闭")
+        super().__init__("按键")
 
     def compose(self) -> ComposeResult:
         yield self.frame(Static("", id="style-help"))

@@ -29,7 +29,7 @@ from ojaudit.core.plugins import PluginManifest, discover_manifests, validate_pa
 from ojaudit.core.schema import Contest
 from ojaudit.core.store import Store
 
-CATEGORIES = ("账户", "过滤规则", "采集", "检测", "外观", "插件", "关于")
+CATEGORIES = ("账户", "过滤规则", "采集", "检测", "复核", "外观", "插件", "关于")
 MANAGER_PLATFORM = "nowcoder"
 
 
@@ -128,6 +128,23 @@ STATIC_OPTIONS = (
     Option("采集", "collect.retry_count", "失败重试次数", "int", 2, minimum=0, maximum=10),
     Option("采集", "collect.auto_analyze", "采集后自动检测", "bool", True),
     Option("检测", "detector.enabled", "启用检测", "bool", True),
+    Option(
+        "复核",
+        "review.auto_advance",
+        "处理后自动跳到下一条",
+        "bool",
+        True,
+        description="写下复核结论或标记选手后，自动打开下一条待复核线索",
+    ),
+    Option(
+        "复核",
+        "review.quick_mark",
+        "快速标记",
+        "bool",
+        True,
+        description="把选手标为作弊者时，此人其余待复核线索一并标为「已核查」"
+        "（只需判断是否作弊，作弊几道题对结论没有区别）",
+    ),
     Option(
         "外观",
         "appearance.theme",

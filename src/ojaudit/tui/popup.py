@@ -13,7 +13,6 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any, ClassVar
 
-from rich.cells import cell_len
 from rich.text import Text
 from textual import events, on
 from textual.app import ComposeResult
@@ -25,50 +24,54 @@ from textual.widgets import Input, Label, ListItem, ListView, Static
 from ojaudit.tui import ui
 from ojaudit.tui.icons import label
 
-
-def hint(*pairs: tuple[str, str]) -> str:
-    return "  ".join(f"{key} {action}" for key, action in pairs)
+Hint = tuple[str, str, str]  # (按键显示, 说明, 动作)
 
 
-class ActionRow(Static):
-    """弹窗底部的文字操作（不是按钮）：点击等同于对应按键，便于纯鼠标操作。"""
+class HintRow(Static):
+    """弹窗底部唯一的一行提示：显示「按键 说明」，每一项也可以直接点击执行。"""
 
     DEFAULT_CSS = """
-    ActionRow { height: 1; width: 100%; text-align: right; margin-top: 1; }
+    HintRow { height: 1; width: 100%; text-align: right; margin-top: 1; }
     """
 
-    def __init__(self, actions: Sequence[tuple[str, str]]) -> None:
-        super().__init__("", classes="popup-actions")
-        self.actions = list(actions)
+    def __init__(self, hints: Sequence[Hint]) -> None:
+        super().__init__("", classes="popup-hints")
+        self.hints = list(hints)
         self.spans: list[tuple[int, int, str]] = []
 
     def on_mount(self) -> None:
+        self.show(self.hints)
+
+    def show(self, hints: Sequence[Hint]) -> None:
         colors = ui.palette(self.app)
+        self.hints = list(hints)
         text = Text(no_wrap=True)
-        for index, (name, _action) in enumerate(self.actions):
+        self.spans = []
+        for index, (key, name, action) in enumerate(self.hints):
             if index:
                 text.append("   ")
-            text.append(name, style=f"bold {colors.accent}" if index == 0 else colors.muted)
+            start = text.cell_len
+            text.append(key, style=f"bold {colors.accent}")
+            text.append(" " + name, style=colors.fg if index == 0 else colors.muted)
+            self.spans.append((start, text.cell_len, action))
         self.update(text)
 
     def on_click(self, event: events.Click) -> None:
-        # 文字右对齐：按单元格宽度（中文占两格）定位被点击的操作。
-        widths = [cell_len(name) for name, _ in self.actions]
-        x = event.x - (self.size.width - (sum(widths) + 3 * (len(widths) - 1)))
-        position = 0
-        for (_name, action), width in zip(self.actions, widths):
-            if position <= x < position + width:
+        # 右对齐：先换算成文字内的列，再找被点中的那一项。
+        total = self.spans[-1][1] if self.spans else 0
+        x = event.x - (self.size.width - total)
+        for start, end, action in self.spans:
+            if start <= x < end:
                 event.stop()
                 self.screen.call_later(self.screen.run_action, action)
                 return
-            position += width + 3
 
 
 class Popup(ModalScreen[Any]):
-    """弹窗基类：居中、透明背景、单层圆角边框；点击弹窗外部等同于取消。"""
+    """弹窗基类：居中、透明背景、单层边框；标题在上边框，底部一行可点击的按键提示；
+    点击弹窗外部等同于取消。"""
 
-    ACTIONS: ClassVar[Sequence[tuple[str, str]]] = ()
-
+    HINTS: ClassVar[Sequence[Hint]] = (("esc", "取消", "cancel"),)
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("escape", "cancel", "取消", priority=True),
     ]
@@ -78,22 +81,23 @@ class Popup(ModalScreen[Any]):
     WIDTH = 64
     ICON = "open"
 
-    def __init__(self, title: str, footer: str = "") -> None:
+    def __init__(self, title: str, hints: Sequence[Hint] | None = None) -> None:
         super().__init__()
         self.popup_title = title
-        self.popup_footer = footer
+        self.hints = list(hints if hints is not None else self.HINTS)
 
     def frame(self, *children: Any, id: str | None = None) -> Vertical:
-        if self.ACTIONS:
-            children = (*children, ActionRow(self.ACTIONS))
-        box = Vertical(*children, id=id, classes="popup dialog")
+        box = Vertical(*children, HintRow(self.hints), id=id, classes="popup dialog")
         box.styles.width = self.WIDTH
         return box
+
+    def set_hints(self, hints: Sequence[Hint]) -> None:
+        self.hints = list(hints)
+        self.query_one(HintRow).show(self.hints)
 
     def on_mount(self) -> None:
         box = self.query_one(".popup")
         box.border_title = f" {label(self.ICON, self.popup_title, self.app.nerd_font)} "
-        box.border_subtitle = f" {self.popup_footer} " if self.popup_footer else ""
 
     def action_cancel(self) -> None:
         self.dismiss(None)
@@ -106,9 +110,9 @@ class Popup(ModalScreen[Any]):
 
 
 class InputPopup(Popup):
-    """单行输入。validate 返回错误文字或 None；note 显示在输入框下方的说明。"""
+    """单行输入。validate 返回错误文字或 None；info 根据输入实时给出说明（如命中数）。"""
 
-    ACTIONS: ClassVar[Sequence[tuple[str, str]]] = (("确定", "submit"), ("取消", "cancel"))
+    HINTS: ClassVar[Sequence[Hint]] = (("enter", "确定", "submit"), ("esc", "取消", "cancel"))
 
     def __init__(
         self,
@@ -119,9 +123,11 @@ class InputPopup(Popup):
         password: bool = False,
         note: str = "",
         validate: Callable[[str], str | None] | None = None,
+        info: Callable[[str], str] | None = None,
         input_id: str = "popup-input",
     ) -> None:
-        super().__init__(title, hint(("enter", "确定"), ("esc", "取消")))
+        super().__init__(title)
+        self.info = info
         self.value = value
         self.placeholder = placeholder
         self.password = password
@@ -150,11 +156,12 @@ class InputPopup(Popup):
         error = self.validate(value) if self.validate else None
         colors = ui.palette(self.app)
         note = self.query_one("#popup-note", Static)
+        message = self.info(value) if self.info and not error else self.note
         if error:
             note.update(Text(error, style=colors.danger))
         else:
-            note.update(Text(self.note, style=colors.muted))
-        note.display = bool(error or self.note)
+            note.update(Text(message, style=colors.muted))
+        note.display = bool(error or message)
         return error
 
     @on(Input.Changed)
@@ -173,7 +180,9 @@ class InputPopup(Popup):
 
 
 class MenuPopup(Popup):
-    """从若干选项中选一个；当前值前显示 ●。"""
+    """从若干选项中选一个（单击即选）；当前值前显示 ●。"""
+
+    HINTS: ClassVar[Sequence[Hint]] = (("enter", "确定", "choose"), ("esc", "取消", "cancel"))
 
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("escape", "cancel", "取消", priority=True),
@@ -184,7 +193,7 @@ class MenuPopup(Popup):
     def __init__(
         self, title: str, options: Sequence[tuple[str, str]], current: str = "", note: str = ""
     ) -> None:
-        super().__init__(title, hint(("j/k", "选择"), ("enter", "确定"), ("esc", "取消")))
+        super().__init__(title)
         self.options = list(options)
         self.current = current
         self.note = note
@@ -224,12 +233,19 @@ class MenuPopup(Popup):
         values = [item for _, item in self.options]
         self.query_one("#popup-menu", ListView).index = values.index(value)
 
+    def action_choose(self) -> None:
+        self.dismiss(self.options[self.query_one("#popup-menu", ListView).index or 0][1])
+
 
 class ChoiceNotePopup(MenuPopup):
     """选项 + 备注：j/k 选择，tab 切到备注，enter 保存。返回 (值, 备注)。"""
 
     ICON = "mark"
-    ACTIONS: ClassVar[Sequence[tuple[str, str]]] = (("保存", "save"), ("取消", "cancel"))
+    HINTS: ClassVar[Sequence[Hint]] = (
+        ("enter", "保存", "save"),
+        ("tab", "备注", "toggle_focus"),
+        ("esc", "取消", "cancel"),
+    )
 
     BINDINGS: ClassVar[list[Binding]] = [
         *MenuPopup.BINDINGS,
@@ -240,9 +256,6 @@ class ChoiceNotePopup(MenuPopup):
         self, title: str, options: Sequence[tuple[str, str]], current: str = "", note: str = ""
     ) -> None:
         super().__init__(title, options, current)
-        self.popup_footer = hint(
-            ("j/k", "选择"), ("tab", "备注"), ("enter", "保存"), ("esc", "取消")
-        )
         self.initial_note = note
 
     def compose(self) -> ComposeResult:
@@ -289,7 +302,6 @@ class ConfirmPopup(Popup):
     """是 / 否确认。默认（enter）为 safe 一侧；y 选是，n / esc 选否。"""
 
     ICON = "warning"
-    ACTIONS: ClassVar[Sequence[tuple[str, str]]] = (("是", "answer(True)"), ("否", "answer(False)"))
 
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("escape,n", "answer(False)", "否", priority=True),
@@ -298,8 +310,8 @@ class ConfirmPopup(Popup):
     ]
 
     def __init__(self, title: str, message: str, *, default: bool = False) -> None:
-        footer = hint(("y", "是"), ("n", "否"), ("enter", "是" if default else "否"))
-        super().__init__(title, footer)
+        hints = [("y", "是", "answer(True)"), ("n", "否", "answer(False)")]
+        super().__init__(title, hints if default else list(reversed(hints)))
         self.message = message
         self.default = default
 

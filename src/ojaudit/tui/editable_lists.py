@@ -48,12 +48,12 @@ class EditableLists:
     def signature(self) -> tuple:
         return (
             tuple(
-                tuple((row.get("pattern", ""), row.get("enabled", True)) for row in self.rules[group])
+                tuple(
+                    (row.get("pattern", ""), row.get("enabled", True)) for row in self.rules[group]
+                )
                 for group in ("whitelist", "blacklist")
             ),
-            tuple(
-                (row["uid"], row["nickname"], row["enabled"]) for row in self.managers
-            ),
+            tuple((row["uid"], row["nickname"], row["enabled"]) for row in self.managers),
         )
 
     @property
@@ -65,13 +65,31 @@ class EditableLists:
         for group, name in (("whitelist", "白名单"), ("blacklist", "黑名单")):
             for index, _row in enumerate(self.rules[group]):
                 prefix = f"contest_filter.{group}.{index}"
-                result.append(option_factory("比赛筛选", prefix + ".pattern", f"{name} {index+1} · 正则", "text", ""))
-                result.append(option_factory("比赛筛选", prefix + ".enabled", f"{name} {index+1} · 启用", "bool", True))
+                result.append(
+                    option_factory(
+                        "比赛筛选", prefix + ".pattern", f"{name} {index + 1} · 正则", "text", ""
+                    )
+                )
+                result.append(
+                    option_factory(
+                        "比赛筛选", prefix + ".enabled", f"{name} {index + 1} · 启用", "bool", True
+                    )
+                )
         for index, _row in enumerate(self.managers):
             prefix = f"people.manager_entries.{index}"
-            result.append(option_factory("人员名单", prefix + ".uid", f"管理者 {index+1} · UID", "text", ""))
-            result.append(option_factory("人员名单", prefix + ".nickname", f"管理者 {index+1} · 姓名", "text", ""))
-            result.append(option_factory("人员名单", prefix + ".enabled", f"管理者 {index+1} · 启用", "bool", True))
+            result.append(
+                option_factory("人员名单", prefix + ".uid", f"管理者 {index + 1} · UID", "text", "")
+            )
+            result.append(
+                option_factory(
+                    "人员名单", prefix + ".nickname", f"管理者 {index + 1} · 姓名", "text", ""
+                )
+            )
+            result.append(
+                option_factory(
+                    "人员名单", prefix + ".enabled", f"管理者 {index + 1} · 启用", "bool", True
+                )
+            )
         return result
 
     def value(self, key: str) -> Any:
@@ -82,10 +100,13 @@ class EditableLists:
 
     @staticmethod
     def is_list_key(key: str) -> bool:
-        return key.startswith((
-            "contest_filter.whitelist.", "contest_filter.blacklist.",
-            "people.manager_entries.",
-        ))
+        return key.startswith(
+            (
+                "contest_filter.whitelist.",
+                "contest_filter.blacklist.",
+                "people.manager_entries.",
+            )
+        )
 
     def change(self, key: str, value: Any) -> None:
         parts = key.split(".")
@@ -101,7 +122,7 @@ class EditableLists:
             self.managers.append({"uid": "", "nickname": "", "enabled": True})
         else:
             raise ValueError("此分类没有可新增的列表")
- 
+
     def remove(self, key: str) -> None:
         if not self.is_list_key(key):
             raise ValueError("只能删除列表条目")
@@ -141,7 +162,8 @@ class EditableLists:
         incoming = {row["uid"]: row["nickname"] for row in self.managers if row["enabled"]}
         with Store(db_path) as store:
             existing = {
-                row["uid"]: row["nickname"] for row in store.list_hidden_people()
+                row["uid"]: row["nickname"]
+                for row in store.list_hidden_people()
                 if row["platform"] == platform
             }
             for uid in existing.keys() - incoming.keys():

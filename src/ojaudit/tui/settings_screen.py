@@ -329,11 +329,15 @@ class SettingsScreen(Screen):
             return
         self.reload()
         rows = self.model.options_for(category)
-        prefix = "contest_filter." + group + "." if category == "比赛筛选" else "people.manager_entries."
+        prefix = (
+            "contest_filter." + group + "." if category == "比赛筛选" else "people.manager_entries."
+        )
         indices = [index for index, option in enumerate(rows) if option.key.startswith(prefix)]
         if indices:
             view = self.query_one("#settings-values", ListView)
-            view.call_after_refresh(setattr, view, "index", indices[-2] if category == "比赛筛选" else indices[-3])
+            view.call_after_refresh(
+                setattr, view, "index", indices[-2] if category == "比赛筛选" else indices[-3]
+            )
             self.focus_values = True
             view.focus()
 

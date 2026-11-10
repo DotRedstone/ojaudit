@@ -249,14 +249,16 @@ def nowcoder_source():
     collect = load_config().get("collect", {})
     if not isinstance(collect, dict):
         raise TypeError("collect 配置必须是表")
-    settings.update({
-        "phase": "all" if collect.get("include_after", False)
-                 and collect.get("phase", "contest") == "contest"
-                 else collect.get("phase", "contest"),
-        "threads": collect.get("threads", 1),
-        "retry_count": collect.get("retry_count", 2),
-        "readonly": collect.get("readonly", True),
-    })
+    settings.update(
+        {
+            "phase": "all"
+            if collect.get("include_after", False) and collect.get("phase", "contest") == "contest"
+            else collect.get("phase", "contest"),
+            "threads": collect.get("threads", 1),
+            "retry_count": collect.get("retry_count", 2),
+            "readonly": collect.get("readonly", True),
+        }
+    )
     if cookie_file().is_file():
         settings["cookie"] = cookie_file().read_text(encoding="utf-8").strip()
     return NowcoderSource(settings)

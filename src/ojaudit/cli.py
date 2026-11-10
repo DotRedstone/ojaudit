@@ -286,9 +286,7 @@ def _export(store: Store, args: argparse.Namespace) -> Path:
         (args.platform, args.contest),
     ).fetchone()
     if exists is None:
-        raise ValueError(
-            f"比赛不存在：{args.platform}/{args.contest}；请先 collect 或 migrate"
-        )
+        raise ValueError(f"比赛不存在：{args.platform}/{args.contest}；请先 collect 或 migrate")
     marks = {
         row["uid"]: row["mark"] for row in store.list_person_marks(args.platform, args.contest)
     }

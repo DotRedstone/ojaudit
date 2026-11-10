@@ -7,11 +7,12 @@ Notes: 独立入口，不改变现有 CLI 的行为。
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import ClassVar
 
 from textual.app import App
 
-from ojaudit.core.config import load_config
+from ojaudit.core.config import data_dir, load_config
 from ojaudit.tui.data import LocalContests
 from ojaudit.tui.screens import HomeScreen
 
@@ -55,9 +56,16 @@ class AuditApp(App[None]):
     }
     theme_name = "ansi"
 
-    def __init__(self, contests: LocalContests | None = None) -> None:
+    def __init__(
+        self, contests: LocalContests | None = None, db_path: str | Path | None = None
+    ) -> None:
         super().__init__()
-        self.contests = contests if contests is not None else LocalContests()
+        settings = load_config().get("storage", {})
+        configured = settings.get("sqlite_path") if isinstance(settings, dict) else None
+        selected = db_path or (
+            Path(configured).expanduser() if configured else data_dir() / "ojaudit.sqlite"
+        )
+        self.contests = contests if contests is not None else LocalContests(selected)
         appearance = load_config().get("appearance", {})
         self.theme_name = str(appearance.get("theme", "ansi"))
         self.nerd_font = bool(appearance.get("nerd_font", False))
@@ -101,8 +109,8 @@ class AuditApp(App[None]):
         )
 
 
-def main() -> None:
-    AuditApp().run()
+def main(db_path: str | Path | None = None) -> None:
+    AuditApp(db_path=db_path).run()
 
 
 if __name__ == "__main__":

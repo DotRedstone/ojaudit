@@ -170,8 +170,14 @@ class HomeScreen(ShellScreen):
     OPTIONS = ("比赛列表", "打开比赛 ID", "账户 / 登录", "设置")
 
     def compose(self) -> ComposeResult:
+        hint = (
+            "本地数据库不存在：先运行 ojaudit login，再运行 ojaudit collect <比赛ID>。"
+            if not self.app.contests.db_path.is_file()
+            else ""
+        )
         items: list[object] = [
-            NavigationListView(*(ListItem(Label(item)) for item in self.OPTIONS))
+            Static(hint),
+            NavigationListView(*(ListItem(Label(item)) for item in self.OPTIONS)),
         ]
         if not self.app.contests.list_contests(show_all=True):
             items.append(
@@ -191,9 +197,10 @@ class HomeScreen(ShellScreen):
         elif index == 2:
             self.app.push_screen(EntryDialog(login=True), self.save_login)
         elif index == 3:
+            from ojaudit.tui.settings_model import SettingsModel
             from ojaudit.tui.settings_screen import SettingsScreen
 
-            self.app.push_screen(SettingsScreen())
+            self.app.push_screen(SettingsScreen(SettingsModel(db_path=self.app.contests.db_path)))
 
     def open_contest_id(self, raw: str | None) -> None:
         if raw is None:

@@ -73,3 +73,9 @@
 **当前缺少官方排行榜快照**：数据库没有官方名次及罚时字段，因此临时按照本地每人每题最高提交分数排序，并明确标识「非官方推导」；此结果不能作为正式官方成绩。CLI/TUI 现均将排行榜行交给导出插件，并有 CSV 字节一致性回归测试。生成文件保存在 `$XDG_DATA_HOME/ojaudit/exports/<platform>/<contest_id>/ranking.{md,csv,html}`，无 XDG 环境变量时使用 `~/.local/share`；平台和比赛 ID 经过路径段验证。
 
 本阶段新增合成数据测试 `tests/tui/test_settings_ranking.py`；阶段/PR 的唯一进度来源仍为 [roadmap](roadmap.md)。
+
+## r19 批次 B：数据库路径
+
+数据库路径的优先级为：命令行 `--db PATH` > 配置文件 `[storage] sqlite_path = "..."` > `$XDG_DATA_HOME/ojaudit/ojaudit.sqlite`（未设置 XDG 变量时为 `~/.local/share/ojaudit/ojaudit.sqlite`）。
+
+不带子命令启动 `ojaudit --db PATH` 时，TUI 会打开同一 SQLite 数据库，设置中的管理者名单也对应当前数据库。可在「账户 → SQLite 路径」保存下次启动使用的数据库位置；本次启动若指定了 `--db`，始终以命令行选项为准。数据库不存在时，可先 `ojaudit login`，再 `ojaudit collect 比赛ID`。

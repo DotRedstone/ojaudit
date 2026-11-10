@@ -7,6 +7,9 @@ Notes: 不修改任何业务层、采集或检测逻辑。
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
+from rich.console import RenderableType
 from textual import events
 from textual.message import Message
 from textual.widgets import ListItem, ListView
@@ -33,21 +36,6 @@ class NavigateListView(ListView):
         self.index = list(self.children).index(event.item)
 
 
-def restore_index(view: ListView, index: int) -> None:
-    """重填列表后恢复选中位置。
-
-    立即设置一次；新条目尚未挂载导致设置无效时，下一帧再补一次——只在那时仍未选中时补，
-    不会覆盖用户（或程序）在这之间移动过的选中位置。
-    """
-    view.index = index
-
-    def later() -> None:
-        if view.index is None and view.children:
-            view.index = min(index, len(view.children) - 1)
-
-    view.call_after_refresh(later)
-
-
 class NavigateListItem(ListItem):
     """单击仅更改高亮；双击才发出 ListView.Selected。"""
 
@@ -69,3 +57,44 @@ def __getattr__(name: str):
 
         return SearchLine
     raise AttributeError(name)
+
+
+def refill(
+    view: ListView,
+    rows: Sequence[RenderableType],
+    *,
+    index: int | None = None,
+    classes: Sequence[str] | None = None,
+) -> None:
+    """原地重填列表：更新已有条目的文字，多则追加、少则移除，不整表清空重建。
+
+    clear() 后旧条目要到下一帧才真正移除，期间设置选中会把高亮打在旧条目上（高亮消失）；
+    原地更新时条目始终是同一批，选中与高亮自然保持。index 为 None 时保留当前选中位置。
+    classes 为每行附加的 CSS 类（如设置页的分组标题 section），空串表示无。
+    """
+    from textual.widgets import Label
+
+    items = [child for child in view.children if not child.has_class("-gone")]
+    for position, row in enumerate(rows):
+        if position < len(items):
+            item = items[position]
+            # 同一帧刚追加的条目尚未挂载，查不到子控件，所以创建时记下标签。
+            label = getattr(item, "row_label", None) or item.query_one(Label)
+            label.update(row)
+        else:
+            label = Label(row)
+            item = NavigateListItem(label)
+            item.row_label = label  # type: ignore[attr-defined]
+            view.append(item)
+        wanted = classes[position] if classes else ""
+        item.set_class(wanted == "section", "section")
+    for extra in items[len(rows) :]:
+        extra.add_class("-gone")
+        extra.remove()
+    if not rows:
+        view.index = None
+        return
+    target = index if index is not None else view.index
+    target = 0 if target is None else max(0, min(target, len(rows) - 1))
+    if view.index != target:
+        view.index = target

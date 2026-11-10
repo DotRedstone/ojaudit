@@ -29,7 +29,7 @@ from ojaudit.tui.data import LocalContests
 from ojaudit.tui.icons import glyph, label
 from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView as NavigationListView
-from ojaudit.tui.interaction import restore_index
+from ojaudit.tui.interaction import refill
 from ojaudit.tui.popup import ConfirmPopup, InputPopup, SearchLine
 from ojaudit.tui.splitter import start_drag
 
@@ -272,7 +272,8 @@ class ShellScreen(Chrome, Screen):
         ("g", "first", "首项"),
         ("shift+g", "last", "末项"),
         ("l,right", "open", "进入下一层"),
-        ("enter,space", "activate", "打开 / 复核"),
+        ("enter", "activate", "打开 / 复核"),
+        ("space", "space", "打开 / 复核（多选页面为选中）"),
         ("slash", "search", "搜索"),
     ]
 
@@ -372,6 +373,10 @@ class ShellScreen(Chrome, Screen):
     def action_activate(self) -> None:
         """回车：默认与 → 相同（进入下一层）；可复核的页面改为复核。"""
         self.action_open()
+
+    def action_space(self) -> None:
+        """空格：默认同回车；支持多选的页面改为选中 / 取消选中。"""
+        self.action_activate()
 
     @on(NavigationListView.Activated)
     def activated(self, event: NavigationListView.Activated) -> None:
@@ -485,17 +490,12 @@ class TableScreen(ShellScreen):
         colors = ui.palette(self.app)
         width = self.row_width()
         view = self.query_one("#items", ListView)
-        previous = view.index or 0
         self.rows = self.ordered(self.items())
         self.query_one(".thead", Static).update(
             ui.table_header(self.COLUMNS, width, colors.muted, self.sort, colors.accent)
         )
-        view.clear()
-        for row in self.rows:
-            view.append(ListItem(Label(ui.table_row(self.cells(row), self.COLUMNS, width))))
-        if not self.rows:
-            view.append(ListItem(Label(Text(self.EMPTY, style=colors.muted))))
-        restore_index(view, max(0, min(previous, len(self.rows) - 1)))
+        lines = [ui.table_row(self.cells(row), self.COLUMNS, width) for row in self.rows]
+        refill(view, lines or [Text(self.EMPTY, style=colors.muted)])
         self.refresh_chrome()
 
     def selected_row(self, index: int) -> Any:
@@ -846,11 +846,7 @@ class HomeScreen(ShellScreen):
 
 def _fill(view: ListView, rows: Sequence[Text], empty: Text) -> None:
     """重填列表并保持选中位置；没有数据时显示一行说明。"""
-    previous = view.index or 0
-    view.clear()
-    for row in rows or [empty]:
-        view.append(ListItem(Label(row)))
-    restore_index(view, max(0, min(previous, len(rows) - 1)))
+    refill(view, list(rows) or [empty])
 
 
 def level_counts(summary: ContestSummary, colors: ui.Palette) -> Text:

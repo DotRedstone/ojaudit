@@ -346,6 +346,47 @@ def test_ranking_table_columns_and_export_copies_path(tmp_path, monkeypatch):
     asyncio.run(scenario())
 
 
+def test_people_multi_select_opens_comparison(tmp_path, monkeypatch):
+    from ojaudit.tui.review_screens import CompareScreen, PeopleScreen
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    local, data = _fixture(tmp_path)
+
+    async def scenario():
+        app = AuditApp(local)
+        async with app.run_test(size=(150, 36)) as pilot:
+            app.push_screen(PeopleScreen(data, "首页"))
+            await pilot.pause()
+            screen = app.screen
+            uids = [row["uid"] for row in screen.rows]
+            view = screen.query_one("#items", ListView)
+            view.index = uids.index("a")
+            await pilot.press("space")
+            view.index = uids.index("b")
+            await pilot.press("space")
+            await pilot.pause()
+            assert screen.picked == ["a", "b"]
+            assert "已选 2 人" in screen.subtitle()
+            await pilot.press("enter")
+            await pilot.pause()
+            compare = app.screen
+            assert isinstance(compare, CompareScreen)
+            assert compare.uids == ["a", "b"]
+            assert len(compare.query(".compare-pane")) == 2
+            first = compare.query_one("#compare-0")
+            assert "相同" in str(first.border_subtitle)
+            problem = compare.position
+            await pilot.press("down")
+            assert compare.position == (problem + 1) % len(compare.problems)
+            await pilot.press("left")
+            await pilot.pause()
+            assert app.screen is screen
+            await pilot.press("x")
+            assert screen.picked == []
+
+    asyncio.run(scenario())
+
+
 def test_person_page_by_submission_timeline(tmp_path, monkeypatch):
     from ojaudit.tui.review_screens import CodeScreen, PersonScreen
 

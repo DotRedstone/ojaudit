@@ -6,6 +6,8 @@ Scope: TUI
 Notes:
 - 所有弹窗 Esc 取消、Enter 确认；输入类弹窗可带实时校验，校验不通过时 Enter 不会关闭。
 - 是 / 否确认可以用 ←/→（h/l、Tab）选择、Enter 确定，也可以直接按 y / n 或点击。
+- 与页面导航一致：选项弹窗里 ← 返回（同 Esc）、→ 确定（同 Enter）；输入框获得焦点时方向键与
+  字母键照常用于编辑。
 - 密码输入框只把值交给调用方，不显示、不记录。
 """
 
@@ -82,9 +84,11 @@ class Popup(ModalScreen[Any]):
     """弹窗基类：居中、透明背景、单层边框；标题在上边框，底部一行可点击的按键提示；
     点击弹窗外部等同于取消。"""
 
-    HINTS: ClassVar[Sequence[Hint]] = (("esc", "取消", "cancel"),)
+    HINTS: ClassVar[Sequence[Hint]] = (("←", "返回", "cancel"),)
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("escape", "cancel", "取消", priority=True),
+        # 非优先绑定：输入框有焦点时 ← 先由输入框移动光标。
+        Binding("left", "back", "返回", show=False),
     ]
     DEFAULT_CSS = """
     Popup { align: center middle; background: transparent; }
@@ -113,6 +117,14 @@ class Popup(ModalScreen[Any]):
     def action_cancel(self) -> None:
         self.dismiss(None)
 
+    def action_back(self) -> None:
+        self.action_cancel()
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        # 输入框有焦点时，导航键（← / h / l / j / k / →）留给输入框编辑文字。
+        navigation = {"back", "choose", "cursor_down", "cursor_up"}
+        return not (action in navigation and isinstance(self.focused, Input))
+
     def on_click(self, event: events.Click) -> None:
         box = self.query_one(".popup")
         if not box.region.contains(event.screen_x, event.screen_y):
@@ -123,7 +135,7 @@ class Popup(ModalScreen[Any]):
 class InputPopup(Popup):
     """单行输入。validate 返回错误文字或 None；info 根据输入实时给出说明（如命中数）。"""
 
-    HINTS: ClassVar[Sequence[Hint]] = (("enter", "确定", "submit"), ("esc", "取消", "cancel"))
+    HINTS: ClassVar[Sequence[Hint]] = (("↵", "确定", "submit"), ("esc", "取消", "cancel"))
 
     def __init__(
         self,
@@ -193,10 +205,12 @@ class InputPopup(Popup):
 class MenuPopup(Popup):
     """从若干选项中选一个（单击即选）；当前值前显示 ●。"""
 
-    HINTS: ClassVar[Sequence[Hint]] = (("enter", "确定", "choose"), ("esc", "取消", "cancel"))
+    HINTS: ClassVar[Sequence[Hint]] = (("↵", "确定", "choose"), ("←", "返回", "cancel"))
 
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("escape", "cancel", "取消", priority=True),
+        Binding("left,h", "back", "返回", show=False),
+        Binding("right,l", "choose", "确定", show=False),
         Binding("j", "cursor_down", "下移", show=False),
         Binding("k", "cursor_up", "上移", show=False),
     ]
@@ -257,9 +271,9 @@ class ChoiceNotePopup(MenuPopup):
 
     ICON = "mark"
     HINTS: ClassVar[Sequence[Hint]] = (
-        ("enter", "保存", "save"),
+        ("↵", "保存", "save"),
         ("tab", "备注", "toggle_focus"),
-        ("esc", "取消", "cancel"),
+        ("←", "返回", "cancel"),
     )
 
     BINDINGS: ClassVar[list[Binding]] = [
@@ -310,6 +324,9 @@ class ChoiceNotePopup(MenuPopup):
         self.dismiss(self._result())
 
     def action_save(self) -> None:
+        self.save()
+
+    def action_choose(self) -> None:
         self.save()
 
 

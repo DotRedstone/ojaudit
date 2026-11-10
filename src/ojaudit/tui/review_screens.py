@@ -999,7 +999,17 @@ class PersonScreen(ReviewListScreen):
 
     def subtitle(self) -> str:
         person = self.data.person(self.uid)
-        mark = "管理者" if person["hidden"] else ui.MARK_NAMES.get(person["mark"], "未标记")
+        if person["hidden"]:
+            mark = "管理者"
+        elif person["mark"] in ui.MARK_NAMES:
+            mark = ui.MARK_NAMES[person["mark"]]
+        else:
+            # 没被检测筛出的人不需要人工复核，按正常处理。
+            involved = any(
+                not f["is_stale"] and self.uid in (str(f["uid_a"]), str(f["uid_b"]))
+                for f in self.data.findings()
+            )
+            mark = "待复核" if involved else "无线索 · 按正常处理"
         note = f" · {person['note']}" if person.get("note") else ""
         return f"UID {self.uid} · {mark}{note}"
 

@@ -20,6 +20,7 @@
 - `rank`/`export` 默认导出到与 TUI 相同的 XDG 目录。
 
 ### 工程
+- 插件安装拒绝 `ext::` 等可执行命令的 git 地址，禁用凭据交互与 hooks，核对检出 SHA，登记中去掉 URL 凭据；改用真实 git 测试。
 - 导入集中到 `core.ingest`，分析流程集中到 `core.analysis`，榜单集中到 `core.ranking`；CLI 不再依赖 TUI 模块。
 - 删除未使用的检测模块与 `core.pipeline`；测试按模块命名；CI 检查模块头部。
 

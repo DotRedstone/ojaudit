@@ -80,11 +80,21 @@ ListView:focus > ListItem.-highlight {
 
 /* ── 首页 ───────────────────────────────────────── */
 
-#home-stats { height: 2; padding: 0 1; }
-#menu { height: auto; max-width: 64; margin-bottom: 1; }
-#empty-guide { height: auto; margin-bottom: 1; padding: 0 1; color: $warning; }
-#home-recent { height: auto; max-height: 9; padding: 0 1; }
-#home-db { dock: bottom; height: 1; padding: 0 1; }
+#tiles { height: 4; margin-bottom: 1; }
+.tile {
+    width: 1fr;
+    height: 4;
+    margin-right: 1;
+    padding: 0 1;
+    border: $border-style $panel;
+    border-title-color: $text-muted;
+    background: $background;
+}
+.tile:hover { border: $border-style $primary; border-title-color: $primary; }
+#tile-3 { margin-right: 0; }
+#home-recent { height: 1fr; }
+#home-recent .thead { padding: 0 2; }
+#home-queue { height: 1fr; margin-top: 1; }
 
 /* ── 比赛总览 ───────────────────────────────────── */
 

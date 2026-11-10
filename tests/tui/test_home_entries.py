@@ -26,8 +26,7 @@ def test_open_local_contest_by_id(tmp_path):
         app = AuditApp(LocalContests(db))
         async with app.run_test() as pilot:
             assert isinstance(app.screen, HomeScreen)
-            app.screen.query_one(ListView).index = HomeScreen.OPTIONS.index("打开比赛 ID")
-            await pilot.press("enter")
+            await pilot.press("o")
             await pilot.pause()
             assert isinstance(app.screen, EntryDialog)
             app.screen.query_one(Input).value = "101"
@@ -43,8 +42,7 @@ def test_missing_contest_shows_actionable_path(tmp_path):
     async def scenario():
         app = AuditApp(LocalContests(tmp_path / "missing.sqlite"))
         async with app.run_test() as pilot:
-            app.screen.query_one(ListView).index = HomeScreen.OPTIONS.index("打开比赛 ID")
-            await pilot.press("enter")
+            await pilot.press("o")
             await pilot.pause()
             app.screen.query_one(Input).value = "999"
             await pilot.press("enter")
@@ -64,8 +62,7 @@ def test_login_masked_and_mode_0600(tmp_path, monkeypatch):
     async def scenario():
         app = AuditApp(LocalContests(tmp_path / "missing.sqlite"))
         async with app.run_test() as pilot:
-            app.screen.query_one(ListView).index = HomeScreen.OPTIONS.index("账户与登录")
-            await pilot.press("enter")
+            await pilot.press("3")
             await pilot.pause()
             assert isinstance(app.screen, AccountScreen)
             app.screen.query_one(ListView).index = AccountScreen.OPTIONS.index("粘贴 Cookie")

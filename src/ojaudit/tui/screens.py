@@ -10,9 +10,11 @@ Notes:
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Sequence
 from typing import Any, ClassVar
 
+from rich.cells import cell_len
 from rich.text import Text
 from textual import events, on
 from textual.app import ComposeResult
@@ -48,6 +50,7 @@ KEY_PRESS = {
     "[": "left_square_bracket",
     "]": "right_square_bracket",
     "h/l": "l",
+    "1-4": "1",
 }
 
 
@@ -63,7 +66,11 @@ class KeyBar(Static):
         colors = ui.palette(self.app)
         text = Text(no_wrap=True)
         self.spans = []
+        # 宽度不够时先舍弃靠后的提示，任务状态（进度与取消）始终保留。
+        budget = self.size.width - right.cell_len - 4 if right.cell_len else 10**6
         for index, (key, action) in enumerate(hints):
+            if index and text.cell_len + 3 + cell_len(key) + 1 + cell_len(action) > budget:
+                break
             if index:
                 text.append("   ")
             start = text.cell_len
@@ -515,32 +522,47 @@ def _validate_contest_id(value: str) -> str | None:
     return None
 
 
-def _menu_row(icon: str, name: str, detail: str, width: int, app: Any) -> Text:
-    colors = ui.palette(app)
-    mark = glyph(icon, app.nerd_font)
-    left = Text((mark + "  " if mark else "") + name, style=colors.fg)
-    return ui.table_row(
-        [left, Text(detail, style=colors.muted)],
-        (ui.Column(""), ui.Column("", 14, "right")),
-        width,
-    )
-
-
 class HomeScreen(ShellScreen):
-    """最底下的一页（目录）：一行概况、入口菜单与最近比赛。"""
+    """首页仪表盘：顶部四张编号卡片即入口（比赛、待复核、账号、设置），下面是最近比赛与
+    待复核队列。
+
+    卡片可点击或按 1–4 进入；两个列表用 Tab 切换，回车 / 双击直接打开比赛或证据。
+    """
 
     PAGE_ICON = "home"
     TITLE = "ojaudit"
     PATH = "首页"
-    HINTS = (("↵", "打开"), ("c", "采集"), ("p", "待复核"), ("q", "退出"), ("t", "主题"))
-    OPTIONS = ("比赛列表", "待复核", "采集新比赛", "打开比赛 ID", "账户与登录", "设置")
-    ICON_KEYS = ("list", "pending", "collect", "open", "login", "settings")
+    HINTS = (
+        ("↵", "打开"),
+        ("tab", "切换面板"),
+        ("1-4", "卡片"),
+        ("c", "采集"),
+        ("o", "打开 ID"),
+        ("q", "退出"),
+    )
+    TILES = (
+        ("list", "比赛", "contests"),
+        ("pending", "待复核", "pending"),
+        ("login", "账号", "account"),
+        ("settings", "设置", "settings"),
+    )
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         *ShellScreen.BINDINGS,
+        ("1", "tile(0)", "比赛列表"),
+        ("2,p", "tile(1)", "待复核"),
+        ("3", "tile(2)", "账户与登录"),
+        ("4", "tile(3)", "设置"),
         ("c", "collect", "采集新比赛"),
         ("o", "open_id", "打开比赛 ID"),
-        ("p", "pending", "待复核"),
     ]
+    QUEUE_LIMIT = 50
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.recent: list[Any] = []
+        self.summaries: dict[tuple[str, str], ContestSummary] = {}
+        self.queue: list[Any] = []
+        self.people: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
 
     def page_title(self) -> str:
         return "首页"
@@ -555,18 +577,24 @@ class HomeScreen(ShellScreen):
     def compose(self) -> ComposeResult:
         yield from self.chrome_top()
         with Vertical(id="body"):
-            yield Static("", id="home-stats")
-            yield NavigationListView(*(ListItem(Label(name)) for name in self.OPTIONS), id="menu")
-            if not self.app.contests.list_contests(show_all=True):
-                yield Static(
-                    "首次使用：在「账户与登录」扫码，回到比赛列表按 S 同步你参加过的比赛，"
-                    "回车即可采集并检测（命令行：ojaudit login → ojaudit collect <比赛ID>）",
-                    id="empty-guide",
-                )
-            yield Static("", id="home-recent")
-            yield Static("", id="home-db")
+            yield Horizontal(
+                *(Static("", id=f"tile-{i}", classes="tile") for i in range(len(self.TILES))),
+                id="tiles",
+            )
+            with Vertical(id="home-recent", classes="panel"):
+                yield Static("", classes="thead", id="recent-head")
+                yield NavigationListView(id="recent")
+            with Vertical(id="home-queue", classes="panel"):
+                yield NavigationListView(id="queue")
 
     def on_mount(self) -> None:
+        for index, (icon, name, _target) in enumerate(self.TILES):
+            mark = glyph(icon, self.app.nerd_font)
+            self.query_one(
+                f"#tile-{index}"
+            ).border_title = f"[{index + 1}] {mark + ' ' if mark else ''}{name}"
+        self.query_one("#home-recent").border_title = "最近比赛"
+        self.query_one("#home-queue").border_title = "待复核"
         self.refresh_home()
         super().on_mount()
 
@@ -581,103 +609,196 @@ class HomeScreen(ShellScreen):
         self.refresh_home()
         super().on_layout_change()
 
+    def _tile(self, index: int, value: Text, caption: str) -> None:
+        colors = ui.palette(self.app)
+        body = Text(no_wrap=True, overflow="ellipsis")
+        body.append_text(value)
+        body.append("\n" + caption, style=colors.muted)
+        self.query_one(f"#tile-{index}", Static).update(body)
+
     def refresh_home(self) -> None:
-        from ojaudit.tui.account_service import logged_in_locally
+        from ojaudit.tui.account_service import current_uid, logged_in_locally
         from ojaudit.tui.workflow import pending_entries
 
         colors = ui.palette(self.app)
         contests = self.app.contests.list_contests(show_all=True)
         pending = pending_entries(self.app.contests) if contests else []
-        findings = sum(entry.kind == "finding" for entry in pending)
-        suspects = len(pending) - findings
+        findings = [entry for entry in pending if entry.kind == "finding"]
+        suspects = len(pending) - len(findings)
         logged_in = logged_in_locally()
-
-        stats = Text()
-        for index, (value, name, color) in enumerate(
-            (
-                (len(contests), "场比赛", colors.fg),
-                (findings, "条待复核", colors.warn if findings else colors.fg),
-                (suspects, "名存疑", colors.caution if suspects else colors.fg),
+        self.summaries = {
+            (e.contest.platform, e.contest.contest_id): contest_summary(
+                self.app.contests, e.contest
             )
-        ):
-            if index:
-                stats.append("   ")
-            stats.append(str(value), style=f"bold {color}")
-            stats.append(" " + name, style=colors.muted)
-        stats.append("   ")
-        stats.append_text(
-            ui.dot("已登录", colors.ok) if logged_in else ui.dot("未登录", colors.muted)
+            for e in contests
+        }
+        states = Counter(summary.state for summary in self.summaries.values())
+
+        def number(value: int, unit: str, color: str) -> Text:
+            text = Text(str(value), style=f"bold {color if value else colors.fg}")
+            text.append(" " + unit, style=colors.fg)
+            return text
+
+        self._tile(
+            0,
+            number(len(contests), "场", colors.accent),
+            f"已分析 {states['已分析']} · 未采集 {states['未采集']}"
+            if contests
+            else "登录后按 S 同步",
         )
-        self.query_one("#home-stats", Static).update(stats)
-
-        details = (
-            f"{len(contests)} 场" if contests else "按 S 同步",
-            f"{findings} 条" if findings else "无",
-            "输入比赛 ID",
-            "",
-            "已登录" if logged_in else "扫码登录",
-            "",
+        self._tile(1, number(len(findings), "条线索", colors.warn), f"存疑选手 {suspects} 名")
+        uid = current_uid()
+        self._tile(
+            2,
+            Text("已登录", style=f"bold {colors.ok}")
+            if logged_in
+            else Text("未登录", style=f"bold {colors.muted}"),
+            (f"UID {uid}" if uid else "牛客") if logged_in else "按 3 扫码登录",
         )
-        menu = self.query_one("#menu", ListView)
-        width = max(min(menu.size.width, 64) - 4, 30)
-        for item, icon, name, detail in zip(menu.children, self.ICON_KEYS, self.OPTIONS, details):
-            item.query_one(Label).update(_menu_row(icon, name, detail, width, self.app))
-
-        recent = Text()
-        if contests:
-            columns = (
-                ui.Column("最近比赛"),
-                ui.Column("状态", 8),
-                ui.Column("实锤 强 疑", 10),
-                ui.Column("复核", 14),
-            )
-            total = max(self.query_one("#home-recent").size.width - 2, 60)
-            recent.append_text(ui.table_header(columns, total, colors.muted))
-            for entry in contests[:6]:
-                summary = contest_summary(self.app.contests, entry.contest)
-                recent.append("\n")
-                recent.append_text(
-                    ui.table_row(
-                        [
-                            Text(entry.contest.name, style=colors.fg),
-                            state_text(summary, colors),
-                            level_counts(summary, colors),
-                            ui.progress(summary.reviewed, summary.findings, colors, 6),
-                        ],
-                        columns,
-                        total,
-                    )
-                )
-        self.query_one("#home-recent", Static).update(recent)
-
         db = self.app.contests.db_path
         try:
             shown = "~/" + str(db.relative_to(db.home()))
         except ValueError:
             shown = str(db)
-        self.query_one("#home-db", Static).update(
-            Text("数据库 " + (shown if db.is_file() else "尚未创建"), style=colors.muted)
+        self._tile(
+            3,
+            Text(f"主题 {self.app.theme_name}", style=f"bold {colors.fg}"),
+            shown if db.is_file() else "数据库尚未创建",
         )
 
+        self.recent = contests
+        columns = (
+            ui.Column("比赛"),
+            ui.Column("日期", 10),
+            ui.Column("状态", 8),
+            ui.Column("实锤 强 疑", 10),
+            ui.Column("复核", 12),
+        )
+        view = self.query_one("#recent", ListView)
+        total = max(view.size.width - 4, 50)
+        self.query_one("#recent-head", Static).update(ui.table_header(columns, total, colors.muted))
+        rows = []
+        for entry in contests:
+            summary = self.summaries[(entry.contest.platform, entry.contest.contest_id)]
+            rows.append(
+                ui.table_row(
+                    [
+                        Text(entry.contest.name, style=colors.fg),
+                        Text(summary.date, style=colors.muted),
+                        state_text(summary, colors),
+                        level_counts(summary, colors),
+                        ui.progress(summary.reviewed, summary.findings, colors, 4),
+                    ],
+                    columns,
+                    total,
+                )
+            )
+        _fill(view, rows, Text("还没有比赛：登录后进入比赛列表按 S 同步", style=colors.muted))
+
+        self.queue = pending[: self.QUEUE_LIMIT]
+        self.people = {}
+        queue = self.query_one("#queue", ListView)
+        self.query_one("#home-queue").border_subtitle = (
+            f"共 {len(pending)} 项 · p 查看全部" if pending else ""
+        )
+        _fill(
+            queue,
+            [self._queue_row(entry, queue.size.width - 4) for entry in self.queue],
+            Text("没有待复核的内容", style=colors.ok),
+        )
+
+    def _queue_row(self, entry: Any, width: int) -> Text:
+        from ojaudit.tui.review_data import ReviewData
+
+        colors = ui.palette(self.app)
+        key = (entry.contest.platform, entry.contest.contest_id)
+        if key not in self.people:
+            self.people[key] = {
+                str(p["uid"]): p for p in ReviewData(self.app.contests, entry.contest).people()
+            }
+        people = self.people[key]
+
+        def person(uid: str) -> Text:
+            row = people.get(uid, {"name": uid, "mark": "", "hidden": False})
+            return ui.person_text(
+                str(row["name"]), uid, str(row["mark"]), bool(row["hidden"]), colors, False
+            )
+
+        columns = (ui.Column("", 8), ui.Column("", 3), ui.Column(""), ui.Column("", 18))
+        if entry.kind == "finding":
+            item = entry.finding or {}
+            pair = person(str(item["uid_a"]))
+            pair.append("  ↔  ", style=colors.muted)
+            pair.append_text(person(str(item["uid_b"])))
+            cells = [
+                ui.chip(ui.level_name(item["verdict_level"]), colors.level(item["verdict_level"])),
+                Text(ui.problem_label(item["problem_index"]), style=f"bold {colors.fg}"),
+                pair,
+                Text(entry.contest.name, style=colors.muted),
+            ]
+        else:
+            cells = [
+                ui.dot("存疑", colors.caution),
+                Text("—", style=colors.muted),
+                person(entry.uid),
+                Text(entry.contest.name, style=colors.muted),
+            ]
+        return ui.table_row(cells, columns, max(width, 40))
+
     def open_index(self, index: int) -> None:
-        name = self.OPTIONS[index] if 0 <= index < len(self.OPTIONS) else ""
-        if name == "比赛列表":
+        focused = self.app.focused
+        view_id = focused.id if isinstance(focused, ListView) else "recent"
+        if view_id == "recent":
+            if not self.recent:
+                self.app.push_screen(ContestListScreen(self.app.contests))
+            elif 0 <= index < len(self.recent):
+                contest = self.recent[index].contest
+                open_contest(
+                    self.app, contest, self.summaries.get((contest.platform, contest.contest_id))
+                )
+            return
+        if view_id == "queue" and 0 <= index < len(self.queue):
+            self.open_queue(self.queue[index])
+
+    def action_tile(self, index: int) -> None:
+        target = self.TILES[index][2]
+        if target == "contests":
             self.app.push_screen(ContestListScreen(self.app.contests))
-        elif name == "待复核":
+        elif target == "pending":
             self.action_pending()
-        elif name == "采集新比赛":
-            self.action_collect()
-        elif name == "打开比赛 ID":
-            self.action_open_id()
-        elif name == "账户与登录":
+        elif target == "account":
             from ojaudit.tui.account_screen import AccountScreen
 
             self.app.push_screen(AccountScreen())
-        elif name == "设置":
+        else:
             from ojaudit.tui.settings_model import SettingsModel
             from ojaudit.tui.settings_screen import SettingsScreen
 
             self.app.push_screen(SettingsScreen(SettingsModel(db_path=self.app.contests.db_path)))
+
+    def on_click(self, event: events.Click) -> None:
+        widget = event.widget
+        while widget is not None and widget is not self:
+            if widget.has_class("tile"):
+                event.stop()
+                self.action_tile(int(str(widget.id).removeprefix("tile-")))
+                return
+            widget = widget.parent  # type: ignore[assignment]
+
+    def open_queue(self, entry: Any) -> None:
+        from ojaudit.tui.review_data import ReviewData
+        from ojaudit.tui.review_screens import EvidenceScreen, PersonScreen
+
+        data = ReviewData(self.app.contests, entry.contest)
+        if entry.kind == "finding":
+            sequence = [
+                item.finding
+                for item in self.queue
+                if item.kind == "finding" and item.contest == entry.contest
+            ]
+            self.app.push_screen(EvidenceScreen(data, "首页", entry.finding, sequence=sequence))
+        else:
+            self.app.push_screen(PersonScreen(data, "首页", entry.uid))
 
     def action_pending(self) -> None:
         from ojaudit.tui.pending_screen import PendingScreen
@@ -712,6 +833,15 @@ class HomeScreen(ShellScreen):
             self.notify("多个平台存在该 ID，请从比赛列表选择", severity="warning")
         else:
             self.app.push_screen(MissingContestScreen(cid))
+
+
+def _fill(view: ListView, rows: Sequence[Text], empty: Text) -> None:
+    """重填列表并保持选中位置；没有数据时显示一行说明。"""
+    previous = view.index or 0
+    view.clear()
+    for row in rows or [empty]:
+        view.append(ListItem(Label(row)))
+    view.call_after_refresh(setattr, view, "index", max(0, min(previous, len(rows) - 1)))
 
 
 def level_counts(summary: ContestSummary, colors: ui.Palette) -> Text:
@@ -845,21 +975,22 @@ class ContestListScreen(TableScreen):
         if row is None:
             return
         summary = self.summaries.get((row.contest.platform, row.contest.contest_id))
-        if summary is not None and summary.state == "未采集":
-            contest = row.contest
-            self.app.push_screen(
-                ConfirmPopup(
-                    "采集比赛", f"「{contest.name}」还没有采集。\n现在采集并检测？", default=True
-                ),
-                lambda ok: (
-                    ok
-                    and self.app.start_workflow(
-                        contest.contest_id, "collect_analyze", contest.platform
-                    )
-                ),
-            )
-            return
-        self.app.push_screen(ContestOverviewScreen(row.contest, self.contests))
+        open_contest(self.app, row.contest, summary)
+
+
+def open_contest(app: Any, contest: Contest, summary: ContestSummary | None) -> None:
+    """打开比赛总览；还没采集的比赛先询问是否采集并检测。"""
+    if summary is not None and summary.state == "未采集":
+        app.push_screen(
+            ConfirmPopup(
+                "采集比赛", f"「{contest.name}」还没有采集。\n现在采集并检测？", default=True
+            ),
+            lambda ok: (
+                ok and app.start_workflow(contest.contest_id, "collect_analyze", contest.platform)
+            ),
+        )
+        return
+    app.push_screen(ContestOverviewScreen(contest, app.contests))
 
 
 class ContestOverviewScreen(ShellScreen):

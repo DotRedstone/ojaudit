@@ -22,7 +22,7 @@ from ojaudit.tui.account_service import qr_half_blocks, qr_matrix
 from ojaudit.tui.app import AuditApp
 from ojaudit.tui.data import LocalContests
 from ojaudit.tui.popup import ConfirmPopup, SearchLine
-from ojaudit.tui.screens import ContestListScreen, HomeScreen
+from ojaudit.tui.screens import ContestListScreen
 from ojaudit.tui.settings_model import CATEGORIES, SettingsModel
 from ojaudit.tui.settings_screen import SettingsScreen
 from ojaudit.tui.splitter import Splitter
@@ -200,20 +200,25 @@ def test_search_line_jumps_and_escape_restores(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
 
     async def scenario():
-        app = AuditApp(LocalContests(tmp_path / "none.sqlite"))
+        db = tmp_path / "s.sqlite"
+        with Store(db) as store:
+            for cid, name in (("1", "甲训练赛"), ("2", "乙训练赛"), ("3", "丙周赛")):
+                store.put_contest_listing("nowcoder", cid, name, int(cid))
+        app = AuditApp(LocalContests(db))
         async with app.run_test() as pilot:
             await pilot.pause()
-            view = app.screen.query_one(ListView)
-            await pilot.press("slash", *"设置")
+            view = app.screen.query_one("#recent", ListView)
+            names = [entry.contest.name for entry in app.screen.recent]
+            await pilot.press("slash", *"丙")
             await pilot.pause()
             assert isinstance(app.screen, SearchLine)
-            assert view.index == HomeScreen.OPTIONS.index("设置")
+            assert view.index == names.index("丙周赛")
             await pilot.press("escape")
             await pilot.pause()
             assert view.index == 0
-            await pilot.press("slash", *"账户", "enter")
+            await pilot.press("slash", *"乙", "enter")
             await pilot.pause()
-            assert view.index == HomeScreen.OPTIONS.index("账户与登录")
+            assert view.index == names.index("乙训练赛")
 
     asyncio.run(scenario())
 

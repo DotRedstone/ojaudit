@@ -115,10 +115,10 @@ def login_with_qr(
     data = json.loads(response.read().decode("utf-8"))
     body = data.get("data") if isinstance(data, dict) else None
     if not isinstance(body, dict):
-        raise ValueError("扫码接口返回结构无效")
+        raise TypeError("扫码接口返回结构无效")
     ticket = body.get("ticket")
     if not isinstance(ticket, str):
-        raise ValueError("扫码接口缺少票据")
+        raise TypeError("扫码接口缺少票据")
     expire = body.get("expireSecond", 120)
     if not isinstance(expire, (float, int)) or not 1 <= expire <= 300:
         raise ValueError("扫码过期时间无效")

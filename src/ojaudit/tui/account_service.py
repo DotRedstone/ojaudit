@@ -100,15 +100,16 @@ def login_with_qr(
     output: Callable[[str], None] | None = None,
     *,
     opener: Any = None,
+    cookie_jar: http.cookiejar.CookieJar | None = None,
     pause: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
 ) -> None:
     """在终端显示二维码、轮询确认并将 Cookie 保存到权限 0600 的本机文件。
 
-    opener/pause/clock 只供合成测试注入，不允许界面输出票据、Cookie 或接口正文。
+    opener/cookie_jar/pause/clock 只供合成测试注入，不允许界面输出票据、Cookie 或接口正文。
     """
     show = output or (lambda message: print(message, file=sys.__stdout__, flush=True))
-    jar = http.cookiejar.CookieJar()
+    jar = cookie_jar if cookie_jar is not None else http.cookiejar.CookieJar()
     client = opener or urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
     response = client.open(urllib.request.Request(QR_ENDPOINT, headers=HEADERS), timeout=20)
     data = json.loads(response.read().decode("utf-8"))

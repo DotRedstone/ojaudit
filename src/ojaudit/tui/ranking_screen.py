@@ -15,9 +15,9 @@ from textual.widgets import Label, ListView, Static
 
 from ojaudit.core.ranking import RankingOptions
 from ojaudit.tui.icons import label as label_icon
-from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView
 from ojaudit.tui.screens import ShellScreen
+from ojaudit.tui.ui_components import StatusRow
 from ojaudit.tui.ranking_data import export_ranking, final_ranking, pending_warnings
 from ojaudit.tui.review_data import ReviewData
 
@@ -98,7 +98,7 @@ class RankingScreen(ShellScreen):
         view.clear()
         for index, (label, titles, _) in enumerate(POLICIES):
             view.append(
-                ListItem(
+                StatusRow(
                     Label(
                         label_icon(
                             ("cheater", "suspect", "manager", "export")[index],
@@ -124,21 +124,20 @@ class RankingScreen(ShellScreen):
                 row.get("person_mark", ""), ""
             )
             preview.append(
-                ListItem(
-                    Label(
-                        label_icon(
-                            "ranking",
-                            f"#{row['rank']}  {row['name']} · {row['score']:g} 分"
-                            f"{' · ' + mark if mark else ''}",
-                            self.app.nerd_font,
-                        )
-                    )
+                StatusRow(
+                    label_icon(
+                        "ranking",
+                        f"#{row['rank']}  {row['name']} · {row['score']:g} 分"
+                        f"{' · ' + mark if mark else ''}",
+                        self.app.nerd_font,
+                    ),
+                    kind=f"mark-{row['person_mark']}"
+                    if row.get("person_mark") in {"cheater", "suspect", "normal", "manager"}
+                    else "",
                 )
             )
         if not preview.children:
-            preview.append(
-                ListItem(Label(label_icon("people", "当前策略下无可展示人员", self.app.nerd_font)))
-            )
+            preview.append(StatusRow("当前策略下无可展示人员"))
         self.query_one("#status", Static).update(
             self.app.status_line("排行榜 · 非官方推导", str(self.data.contest.contest_id))
         )

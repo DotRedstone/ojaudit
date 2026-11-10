@@ -20,13 +20,13 @@ from ojaudit.cli_operations import (
     plugins_command,
     save_cookie,
 )
-from ojaudit.core.config import data_dir
+from ojaudit.core.config import data_dir, load_config
 from ojaudit.core.filters import filter_contests, load_contest_filter
 from ojaudit.core.people import HiddenPerson, exclude_hidden_submissions
 from ojaudit.core.ranking import RankingOptions, build_final_ranking
 from ojaudit.core.schema import Contest, Submission, validate_submission
 from ojaudit.core.store import Store
-from ojaudit.plugins.detectors.classifier import classify
+from ojaudit.plugins.detectors.nowcoder import analyze as analyze_nowcoder
 from ojaudit.plugins.detectors.pair import analyze_pair
 
 
@@ -133,17 +133,95 @@ def _submissions(store: Store, platform: str, cid: str) -> list[Submission]:
 def _analyze(
     store: Store, platform: str, cid: str, threshold: float, json_out: Path | None = None
 ) -> str:
+    exists = store.execute(
+        "SELECT 1 FROM contests WHERE platform=? AND contest_id=?", (platform, cid)
+    ).fetchone()
+    if exists is None:
+        raise ValueError(f"比赛不存在：{platform}/{cid}；请先 collect 或 migrate")
+    settings = load_config()
+    detector = settings.get("detector", {})
+    detector = detector if isinstance(detector, dict) else {}
+    if not detector.get("enabled", True):
+        raise ValueError("检测已在设置中禁用")
+    plugins = settings.get("plugins", {})
+    plugins = plugins if isinstance(plugins, dict) else {}
+
+    def plugin(name: str) -> dict:
+        options = plugins.get(name, {})
+        return options if isinstance(options, dict) else {}
+
+    def params(name: str) -> dict:
+        options = plugin(name).get("params", {})
+        return options if isinstance(options, dict) else {}
+
+    def enabled(name: str) -> bool:
+        return bool(plugin(name).get("enabled", True))
+
     submissions = _submissions(store, platform, cid)
     hidden = tuple(HiddenPerson(**p) for p in store.list_hidden_people())
     visible = exclude_hidden_submissions(submissions, hidden)
-    findings = classify(analyze_pair(visible, {"threshold": threshold}))
+    pair_params = {"threshold": threshold, **params("builtin_pair")}
+    if not enabled("builtin_pair"):
+        raise ValueError("基础两两比较插件已禁用，无法生成线索")
+    if not enabled("nowcoder_similarity"):
+        raise ValueError("相似度插件已禁用，无法生成线索")
+    if not enabled("nowcoder_classify"):
+        raise ValueError("分级插件已禁用，无法生成线索")
+    candidates = {
+        (tuple(row["pair"]), row["problem"], row["language"]): row
+        for row in analyze_pair(visible, pair_params)
+    }
+    similarity_params = params("nowcoder_similarity")
+    thresholds = params("nowcoder_classify")
+    outputs = analyze_nowcoder(
+        visible,
+        {
+            **similarity_params,
+            "thresholds": thresholds,
+            "enable_template": enabled("nowcoder_template"),
+            "enable_timeline": enabled("nowcoder_timeline"),
+        },
+    )
+    findings = []
+    for item in outputs:
+        key = (tuple(item["pair"]), item["problem"], item["language"])
+        if key not in candidates or item["verdict"] == "排除":
+            continue
+        scores = {
+            "similarity": candidates[key]["similarity"],
+            **item["scores"],
+            "rare_score": item["rare"]["score"],
+            "template_crowd": item["crowd_count"],
+            "timeline": item["timeline"],
+        }
+        reasons = [
+            candidates[key]["reason"],
+            f"模板相同人数：{item['crowd_count']}",
+            f"稀有片段共享：{item['rare']['shared']}",
+            f"时间线：{item['timeline']}",
+            f"检测分级：{item['verdict']}（仅供人工复核）",
+        ]
+        findings.append(
+            {
+                **item,
+                "level": item["verdict"],
+                "similarity": candidates[key]["similarity"],
+                "scores_detail": scores,
+                "reasons_detail": reasons,
+            }
+        )
     run_id = uuid.uuid4().hex
+    active = ["builtin_pair", "nowcoder_similarity", "nowcoder_classify"]
+    if enabled("nowcoder_template"):
+        active.append("nowcoder_template")
+    if enabled("nowcoder_timeline"):
+        active.append("nowcoder_timeline")
     with store.connection:
         store.execute(
             """INSERT INTO analysis_runs(
                    run_id, platform, contest_id, plugin_set, created_from, created_at
                ) VALUES (?, ?, ?, ?, ?, ?)""",
-            (run_id, platform, cid, "builtin-pair+classifier", "cli", _stamp()),
+            (run_id, platform, cid, "+".join(active), "cli", _stamp()),
         )
         for item in findings:
             left, right = sorted(item["pair"])
@@ -159,11 +237,8 @@ def _analyze(
                     item["problem"],
                     item["language"],
                     item["level"],
-                    json.dumps({"similarity": item["similarity"]}),
-                    json.dumps(
-                        [item["reason"], item["classification_reason"]],
-                        ensure_ascii=False,
-                    ),
+                    json.dumps(item["scores_detail"], ensure_ascii=False),
+                    json.dumps(item["reasons_detail"], ensure_ascii=False),
                 ),
             )
     if json_out is not None:

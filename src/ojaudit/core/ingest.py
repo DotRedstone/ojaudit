@@ -29,17 +29,34 @@ from ojaudit.core.store import Store, placeholder_title
 
 
 def _problems_from_submissions(
-    platform: str, contest_id: str, rows: Iterable[tuple[int, str]]
+    platform: str, contest_id: str, rows: Iterable[tuple[int, str] | tuple[int, str, str]]
 ) -> list[Problem]:
-    """从提交中出现的题号与（可选）题目标题推导题目；有标题者优先。"""
+    """从提交中出现的题号、（可选）标题与平台题目 ID 推导题目；有值者优先。"""
     titles: dict[int, str] = {}
-    for index, title in rows:
+    ids: dict[int, str] = {}
+    for row in rows:
+        index, title = row[0], row[1]
         if title or index not in titles:
             titles[index] = title or titles.get(index, "")
+        if len(row) > 2 and row[2]:
+            ids[index] = str(row[2])
     return [
-        Problem(platform, contest_id, index, str(index), title or placeholder_title(index))
+        Problem(
+            platform,
+            contest_id,
+            index,
+            ids.get(index, str(index)),
+            title or placeholder_title(index),
+        )
         for index, title in sorted(titles.items())
     ]
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def import_bundle(store: Store, bundle: Any) -> Contest:
@@ -186,12 +203,19 @@ def migrate_nowcoder(store: Store, source: Path, reviews: Path | None = None) ->
     review_rows = _read_reviews(reviews) if reviews is not None else []
 
     by_contest: dict[str, dict[str, Any]] = {
-        str(c["contest_id"]): {"name": str(c["name"] or c["contest_id"]), "rows": []}
+        str(c["contest_id"]): {
+            "name": str(c["name"] or c["contest_id"]),
+            "start": _int_or_none(c.get("start_time")),
+            "end": _int_or_none(c.get("end_time")),
+            "rows": [],
+        }
         for c in contests
     }
     for row in rows:
         cid = str(row["contest_id"])
-        by_contest.setdefault(cid, {"name": cid, "rows": []})["rows"].append(row)
+        by_contest.setdefault(cid, {"name": cid, "start": None, "end": None, "rows": []})[
+            "rows"
+        ].append(row)
 
     plans = []
     every_submission: list[Submission] = []
@@ -218,10 +242,16 @@ def migrate_nowcoder(store: Store, source: Path, reviews: Path | None = None) ->
             validate_submission(item)
             parsed.append(item)
             names[uid] = str(row["student"] or uid)
-            titles.append((index, str(row.get("problem_title") or "").strip()))
+            titles.append(
+                (
+                    index,
+                    str(row.get("problem_title") or "").strip(),
+                    str(row.get("problem_id") or ""),
+                )
+            )
         plans.append(
             (
-                Contest("nowcoder", cid, entry["name"]),
+                Contest("nowcoder", cid, entry["name"], entry["start"], entry["end"]),
                 [Participant("nowcoder", cid, uid, name) for uid, name in sorted(names.items())],
                 _problems_from_submissions("nowcoder", cid, titles),
                 parsed,

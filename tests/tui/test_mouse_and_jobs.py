@@ -26,14 +26,14 @@ from ojaudit.tui.settings_model import CATEGORIES, SettingsModel
 from ojaudit.tui.settings_screen import SettingsScreen
 
 
-def test_clicking_top_bar_on_home_does_not_pop_it(tmp_path, monkeypatch):
+def test_clicking_status_bar_on_home_does_not_pop_it(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
 
     async def scenario():
         app = AuditApp(LocalContests(tmp_path / "none.sqlite"))
         async with app.run_test() as pilot:
             await pilot.pause()
-            await pilot.click("#breadcrumb", offset=(2, 0))
+            await pilot.click("#status", offset=(70, 0))
             await pilot.pause()
             assert isinstance(app.screen, HomeScreen)
             await pilot.press("q")
@@ -75,9 +75,9 @@ def test_progress_is_shown_and_clicking_status_cancels(tmp_path, monkeypatch):
                 await pilot.pause(0.05)
                 if app.job_progress and app.job_progress[1] > 3:
                     break
-            top = str(app.screen.query_one("#breadcrumb").render())
-            assert "下载源码" in top and "/100" in top
-            await pilot.click("#breadcrumb", offset=(130, 0))
+            bar = str(app.screen.query_one("#status").render())
+            assert "下载源码" in bar and "/100" in bar
+            await pilot.click("#status", offset=(135, 0))
             await pilot.pause()
             assert isinstance(app.screen, ConfirmPopup)
             await pilot.press("y")

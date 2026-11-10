@@ -54,6 +54,7 @@ class ConfirmLeave(ConfirmPopup):
 
 
 class SettingsScreen(Chrome, Screen):
+    PAGE_ICON = "settings"
     TITLE = "设置"
     PATH = "首页 › 设置"
     HINTS = (

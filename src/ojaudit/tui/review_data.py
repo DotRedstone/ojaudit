@@ -20,6 +20,23 @@ from ojaudit.core.store import Store
 from ojaudit.tui.data import LocalContests
 from ojaudit.tui.ui import level_rank, level_weight
 
+# 复核只有「作弊 / 存疑 / 正常」三种结论（外加撤销）；线索状态与人员标记都由它推出。
+VERDICTS = ("cheater", "suspect", "normal")
+VERDICT_NAMES = {"cheater": "作弊", "suspect": "存疑", "normal": "正常"}
+STATUS_OF = {"cheater": "已核查", "suspect": "需进一步核实", "normal": "无需跟进"}
+VERDICT_OF = {status: verdict for verdict, status in STATUS_OF.items()}
+_RANK = {"": 0, "normal": 1, "suspect": 2, "cheater": 3}
+
+
+def finding_verdict(finding: dict[str, Any]) -> str:
+    """线索的复核结论；待复核为空串。"""
+    return VERDICT_OF.get(str(finding.get("status", "")), "")
+
+
+def quick_note(uid: str) -> str:
+    """快速复核一并处理的线索使用的备注；撤销此人的作弊结论时据此找回并撤销这些线索。"""
+    return f"随 {uid} 认定作弊一并处理"
+
 
 def _items(rows: Any) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
@@ -247,6 +264,104 @@ class ReviewData:
                 platform=self.contest.platform,
                 contest_id=self.contest.contest_id,
             )
+
+    # ── 复核：唯一的人工结论入口 ─────────────────────────
+
+    def _now(self) -> str:
+        return datetime.now(UTC).isoformat()
+
+    def judge_finding(
+        self,
+        finding: dict[str, Any],
+        verdict: str,
+        note: str = "",
+        who: tuple[str, ...] | None = None,
+        quick: bool = False,
+    ) -> int:
+        """复核一条线索。verdict 为空串表示撤销复核。
+
+        作弊时 who 是被认定的一方或双方（默认双方）；存疑 / 正常不改变已认定的作弊者。
+        双方的人员标记随之更新；返回快速复核一并处理的线索数。
+        """
+        if finding["is_stale"]:
+            raise ValueError("不能修改已失效线索")
+        pair = (str(finding["uid_a"]), str(finding["uid_b"]))
+        index, language = int(finding["problem_index"]), str(finding["language"])
+        with Store(self.local.db_path) as store:
+            if verdict:
+                store.put_finding_review(
+                    finding["run_id"], *pair, index, language, STATUS_OF[verdict], note,
+                    self._now(), platform=self.contest.platform,
+                    contest_id=self.contest.contest_id,
+                )  # fmt: skip
+            else:
+                store.clear_finding_review(*self.key, *pair, index, language)
+        accused = set(who or pair) if verdict == "cheater" else set()
+        resolved = 0
+        for uid in pair:
+            if self.person(uid)["hidden"]:
+                continue
+            base = "cheater" if uid in accused else ("" if verdict == "cheater" else verdict)
+            resolved += self._settle(uid, finding_key(finding), base, quick)
+        return resolved
+
+    def judge_person(self, uid: str, verdict: str, note: str = "", quick: bool = False) -> int:
+        """直接复核一名选手（不经由某条线索）。verdict 为空串表示撤销标记。"""
+        if self.person(uid)["hidden"]:
+            raise ValueError("管理者不可被标记为参赛选手")
+        return self._apply_mark(uid, verdict, note, quick)
+
+    def _settle(self, uid: str, key: tuple[str, str, int, str], base: str, quick: bool) -> int:
+        """此人的标记 = 本条结论与其余已复核线索中最重的一个。
+
+        其余线索里的「作弊」只在此人本来就是作弊者时才算数：一方认定或随他人一并处理的
+        线索不牵连另一方。
+        """
+        current = str(self.person(uid)["mark"])
+        best = base
+        for item in self.findings():
+            if (
+                item["is_stale"]
+                or finding_key(item) == key
+                or uid not in (str(item["uid_a"]), str(item["uid_b"]))
+                or item.get("note") == quick_note(uid)
+            ):
+                continue
+            verdict = finding_verdict(item)
+            if verdict == "cheater" and current != "cheater":
+                verdict = ""
+            if _RANK[verdict] > _RANK[best]:
+                best = verdict
+        if best == current:
+            return 0
+        return self._apply_mark(uid, best, str(self.person(uid)["note"]), quick)
+
+    def _apply_mark(self, uid: str, mark: str, note: str, quick: bool) -> int:
+        previous = str(self.person(uid)["mark"])
+        resolved = 0
+        with Store(self.local.db_path) as store:
+            if mark:
+                store.put_person_mark(*self.key, uid, mark, note, self._now())
+            else:
+                store.clear_person_mark(*self.key, uid)
+            for item in self.findings():
+                if item["is_stale"] or uid not in (str(item["uid_a"]), str(item["uid_b"])):
+                    continue
+                pair = (str(item["uid_a"]), str(item["uid_b"]))
+                index, language = int(item["problem_index"]), str(item["language"])
+                if previous == "cheater" and mark != "cheater":
+                    # 撤销作弊结论：当初随此人一并处理的线索回到待复核。
+                    if item.get("note") == quick_note(uid):
+                        store.clear_finding_review(*self.key, *pair, index, language)
+                elif mark == "cheater" and quick and item["status"] == DEFAULT_REVIEW_STATUS:
+                    # 快速复核：作弊几道题对结论没有区别，此人其余待复核线索一并处理。
+                    store.put_finding_review(
+                        item["run_id"], *pair, index, language, "已核查", quick_note(uid),
+                        self._now(), platform=self.contest.platform,
+                        contest_id=self.contest.contest_id,
+                    )  # fmt: skip
+                    resolved += 1
+        return resolved
 
 
 def _decode(value: Any) -> Any:

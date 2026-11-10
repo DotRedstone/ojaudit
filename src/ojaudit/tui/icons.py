@@ -62,15 +62,6 @@ def label(key: str, text: str, enabled: bool) -> str:
     return f"{mark} {text}" if mark else text
 
 
-def breadcrumb(path: str, enabled: bool) -> str:
-    parts = path.split(" › ")
-    if not parts:
-        return path
-    return " › ".join(
-        label("home" if i == 0 else "open", part, enabled) for i, part in enumerate(parts)
-    )
-
-
 def enabled_for(widget: object) -> bool:
     app = getattr(widget, "app", None)
     return bool(getattr(app, "nerd_font", False))

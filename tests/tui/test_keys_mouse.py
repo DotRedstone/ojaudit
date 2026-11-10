@@ -15,7 +15,7 @@ from ojaudit.core.schema import Contest, Submission
 from ojaudit.core.store import Store
 from ojaudit.tui.app import AuditApp
 from ojaudit.tui.data import LocalContests
-from ojaudit.tui.review_screens import ChoiceDialog
+from ojaudit.tui.review_screens import ReviewPopup
 from ojaudit.tui.screens import ContestListScreen, ContestOverviewScreen, EntryDialog, HomeScreen
 from ojaudit.tui.settings_model import SettingsModel
 from ojaudit.tui.settings_screen import ConfirmLeave, EditValue, SettingsScreen
@@ -76,9 +76,15 @@ def test_mouse_single_then_double_click(tmp_path):
             await pilot.press("enter")
             await pilot.pause()
             assert isinstance(app.screen, ContestOverviewScreen)
-            await pilot.click("#breadcrumb", offset=(2, 0))
+            # 书脊：第一条是首页、第二条是比赛列表，点击直接翻回那一页。
+            await pilot.click("#pages", offset=(4, 3))
             await pilot.pause()
             assert isinstance(app.screen, ContestListScreen)
+            await pilot.press("enter")
+            await pilot.pause()
+            await pilot.click("#pages", offset=(1, 3))
+            await pilot.pause()
+            assert isinstance(app.screen, HomeScreen)
 
     asyncio.run(scenario())
 
@@ -113,9 +119,9 @@ def test_choice_dialog_and_settings_confirmation(tmp_path):
     async def scenario():
         app = AuditApp(LocalContests(tmp_path / "empty.sqlite"))
         async with app.run_test() as pilot:
-            app.push_screen(ChoiceDialog("虚构结论", (("正常", "normal"), ("存疑", "suspect"))))
+            app.push_screen(ReviewPopup("虚构结论", (("正常", "normal"), ("存疑", "suspect"))))
             await pilot.pause()
-            assert isinstance(app.screen, ChoiceDialog)
+            assert isinstance(app.screen, ReviewPopup)
             await pilot.press("escape")
             await pilot.pause()
             assert isinstance(app.screen, HomeScreen)

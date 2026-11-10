@@ -1,0 +1,90 @@
+/* Wallpaper-first, single-screen review styling based on nowcoder-collect.
+   Keep all navigation and key bindings in Python unchanged. */
+Screen {
+    layout: vertical;
+    background: $background;
+    color: $foreground;
+}
+#breadcrumb {
+    height: 1;
+    padding: 0 2;
+    background: $background;
+    color: $text-muted;
+}
+#pane {
+    height: 1fr;
+    margin: 0 1;
+    padding: 0 1;
+    border: round $panel;
+    background: $background;
+    border-title-color: $accent;
+    border-subtitle-color: $text-muted;
+}
+#pane:focus-within { border: round $accent; }
+.pane-title { height: 2; padding: 0 1; text-style: bold; color: $accent; }
+#summary { height: 6; padding: 1 1; color: $foreground; }
+#home-overview {
+    height: 5;
+    padding: 1 1;
+    color: $foreground;
+    background: $background;
+    border-left: thick $accent;
+}
+ListView {
+    height: 1fr;
+    border: none;
+    background: $background;
+    scrollbar-size: 1 1;
+}
+ListItem { padding: 0 2; color: $foreground; }
+ListItem.-highlight { background: $accent 20%; color: $foreground; text-style: none; }
+ListItem.-hovered { background: $accent 13%; }
+DataTable > .datatable--cursor { background: $accent 20%; text-style: none; }
+Input { height: 3; background: $surface; }
+#status {
+    height: 1;
+    dock: bottom;
+    background: $surface;
+    color: $foreground;
+}
+#evidence-meta { height: 6; padding: 0 1; border-left: thick $accent; }
+#code-pair { height: 1fr; }
+.source-pane {
+    width: 1fr;
+    height: 1fr;
+    margin: 0 1;
+    padding: 0 1;
+    border: round $panel;
+    background: $background;
+    scrollbar-size: 1 1;
+    overflow: auto;
+}
+.source-pane:focus { border: round $accent; }
+#code-meta { height: 3; padding: 0 1; }
+#code-body { height: 1fr; overflow: auto; padding: 0 1; background: $background; }
+#settings-columns { min-height: 12; }
+#ranking-note { height: 2; padding: 0 1; color: $warning; }
+#categories, #options-pane, #ranking-options, #ranking-preview {
+    background: $background;
+    border: round $panel;
+}
+#categories:focus-within, #options-pane:focus-within,
+#ranking-options:focus-within, #ranking-preview:focus-within {
+    border: round $accent;
+}
+#entry-dialog, #dialog, #edit-dialog, #confirm {
+    background: $surface;
+    border: round $accent;
+}
+#style-help {
+    width: 86;
+    max-width: 95%;
+    height: auto;
+    padding: 1 2;
+    border: round $accent;
+    background: $surface;
+}
+StyleHelpScreen {
+    align: center middle;
+    background: $background 70%;
+}

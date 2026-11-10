@@ -13,6 +13,7 @@ from textual.app import App
 
 from ojaudit.core.config import load_config
 from ojaudit.tui.data import LocalContests
+from ojaudit.tui.icons import label
 from ojaudit.tui.screens import HomeScreen
 
 
@@ -73,10 +74,16 @@ class AuditApp(App[None]):
         index = self.THEMES.index(self.theme_name) if self.theme_name in self.THEMES else 0
         self.theme_name = self.THEMES[(index + 1) % len(self.THEMES)]
         self._apply_theme()
-        self.notify(f"主题：{self.theme_name}（设置页可保存）")
+        self.notify(label("theme", f"主题：{self.theme_name}（设置页可保存）", self.nerd_font))
 
     def action_help(self) -> None:
-        self.notify("j/k 移动 · g/G 首尾 · Enter/l 进入 · Esc/h 返回 · a 全部 · t 主题 · q 退出")
+        self.notify(
+            label(
+                "help",
+                "j/k 移动 · g/G 首尾 · Enter/l 进入 · Esc/h 返回 · a 全部 · t 主题 · q 退出",
+                self.nerd_font,
+            )
+        )
 
 
 def main() -> None:

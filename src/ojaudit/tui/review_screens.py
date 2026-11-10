@@ -21,13 +21,13 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, ListView, Select, Static
 
 from ojaudit.core.reviews import REVIEW_STATUSES
-from ojaudit.tui import palette
 from ojaudit.tui.icons import breadcrumb, label
 from ojaudit.tui.interaction import Breadcrumb
 from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView as NavigationListView
 from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.screens import ShellScreen
+from ojaudit.tui.ui_components import StatusRow, row_kind
 
 
 def _syntax(code: str, language: str) -> Syntax:
@@ -140,17 +140,10 @@ class ReviewListScreen(ShellScreen):
         self.rows = self.items()
         view.clear()
         for item in self.rows:
-            widget = ListItem(
-                Label(label(self.icon_for(item), self.label_for(item), self.app.nerd_font))
+            widget = StatusRow(
+                label(self.icon_for(item), self.label_for(item), self.app.nerd_font),
+                kind=row_kind(item),
             )
-            if item.get("hidden"):
-                widget.styles.color = palette.MANAGER
-            elif item.get("mark") == "cheater":
-                widget.styles.color = palette.CONFIRMED
-            elif item.get("mark") == "suspect":
-                widget.styles.color = palette.SUSPECT
-            elif item.get("mark") == "normal":
-                widget.styles.color = palette.NORMAL
             view.append(widget)
         if not self.rows:
             view.append(ListItem(Label(label("list", "暂无数据", self.app.nerd_font))))
@@ -161,7 +154,8 @@ class ReviewListScreen(ShellScreen):
 
 
 class FindingsScreen(ReviewListScreen):
-    TITLE = "线索 · 当前与已失效"
+    TITLE = "线索"
+    HINTS = "Enter 证据  f 筛选  / 搜索  j/k 移动  Esc 返回"
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         *ShellScreen.BINDINGS,
         ("f", "cycle_filter", "切换线索过滤"),
@@ -275,9 +269,9 @@ class EvidenceScreen(ShellScreen):
         score_text = (
             " · ".join(score_label(k, v) for k, v in scores.items())
             if isinstance(scores, dict)
-            else str(scores)
+            else "无"
         )
-        reason_text = "；".join(str(x) for x in reason) if isinstance(reason, list) else str(reason)
+        reason_text = "；".join(str(x) for x in reason) if isinstance(reason, list) else str(reason or "无")
         stale = "【已失效】" if finding["is_stale"] else ""
         self.query_one("#evidence-meta", Static).update(
             label(
@@ -311,12 +305,11 @@ class EvidenceScreen(ShellScreen):
         else:
             left_view.update(_syntax(left_code, finding["language"]))
             right_view.update(_syntax(right_code, finding["language"]))
-        color = {
-            "high": palette.CONFIRMED,
-            "medium": palette.STRONG,
-            "low": palette.SUSPECT,
-        }.get(str(finding["verdict_level"]).lower(), palette.EXCLUDED)
-        self.query_one("#evidence-meta", Static).styles.border_left = ("solid", color)
+        meta = self.query_one("#evidence-meta", Static)
+        meta.remove_class("level-high", "level-medium", "level-low")
+        level = str(finding["verdict_level"]).lower()
+        if level in {"high", "medium", "low"}:
+            meta.add_class(f"level-{level}")
         self.refresh_breadcrumb()
         self._update_status()
 
@@ -427,6 +420,7 @@ class EvidenceScreen(ShellScreen):
 
 class PeopleScreen(ReviewListScreen):
     TITLE = "选手"
+    HINTS = "Enter 详情  j/k 移动  / 搜索  Esc 返回"
 
     def items(self) -> list[dict[str, Any]]:
         return self.data.people()
@@ -457,6 +451,7 @@ class PeopleScreen(ReviewListScreen):
 
 class PersonScreen(ReviewListScreen):
     TITLE = "选手详情"
+    HINTS = "Enter 提交  m 标记  j/k 移动  Esc 返回"
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         *ShellScreen.BINDINGS,
         ("m", "mark", "人员标记"),
@@ -502,6 +497,7 @@ class PersonScreen(ReviewListScreen):
 
 class SubmissionScreen(ReviewListScreen):
     TITLE = "提交历史（含 WA / CE）"
+    HINTS = "Enter 查看代码  j/k 移动  Esc 返回"
 
     def __init__(self, data: ReviewData, path: str, uid: str, problem: int) -> None:
         super().__init__(data, f"{path} › 题 {problem} › 提交")
@@ -527,6 +523,7 @@ class SubmissionScreen(ReviewListScreen):
 
 class ProblemsScreen(ReviewListScreen):
     TITLE = "题目"
+    HINTS = "Enter 查看题目  j/k 移动  Esc 返回"
 
     def icon_for(self, row: dict[str, Any]) -> str:
         return "problem"
@@ -546,7 +543,8 @@ class ProblemsScreen(ReviewListScreen):
 
 
 class ProblemScreen(ReviewListScreen):
-    TITLE = "题目代表代码 · s 切换排序"
+    TITLE = "题目代表代码"
+    HINTS = "Enter 查看代码  s 排序  j/k 移动  Esc 返回"
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         *ShellScreen.BINDINGS,
         ("s", "sort", "切换排序"),

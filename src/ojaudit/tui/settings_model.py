@@ -147,7 +147,7 @@ def generated_options(manifests: list[PluginManifest]) -> tuple[Option, ...]:
                 f"plugins.{plugin}.enabled",
                 f"{plugin} · 启用",
                 "bool",
-                False,
+                True,
                 description=f"版本 {manifest.version} · {manifest.origin}",
             )
         )
@@ -158,7 +158,7 @@ def generated_options(manifests: list[PluginManifest]) -> tuple[Option, ...]:
                     f"plugins.{plugin}.enabled",
                     f"{plugin} · 启用",
                     "bool",
-                    False,
+                    True,
                     description=manifest.description,
                 )
             )

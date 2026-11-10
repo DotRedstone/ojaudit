@@ -13,16 +13,16 @@ from textual.widgets import ListView, Static
 from ojaudit.core.store import Store
 from ojaudit.tui.app import AuditApp
 from ojaudit.tui.data import LocalContests
-from ojaudit.tui.icons import GLYPHS, breadcrumb, glyph, label
+from ojaudit.tui.icons import GLYPHS, glyph, label
 from ojaudit.tui.ranking_screen import RankingScreen
 from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.review_screens import (
-    ChoiceDialog,
     CodeScreen,
     EvidenceScreen,
     FindingsScreen,
     PeopleScreen,
     ProblemsScreen,
+    ReviewPopup,
 )
 from ojaudit.tui.screens import ContestListScreen, ContestOverviewScreen, EntryDialog, HomeScreen
 from ojaudit.tui.settings_model import SettingsModel
@@ -39,8 +39,6 @@ def test_central_icons_and_plain_fallback():
     for key in GLYPHS:
         assert glyph(key, False) == ""
         assert not _private(label(key, "合成文字", False))
-    assert not _private(breadcrumb("首页 › 比赛 › 代码", False))
-    assert _private(breadcrumb("首页 › 比赛 › 代码", True))
 
 
 @pytest.mark.parametrize("enabled", [False, True])
@@ -77,7 +75,7 @@ def test_all_major_screens_render_with_icon_mode(tmp_path, enabled):
                 SettingsScreen(SettingsModel(tmp_path / "settings.toml", [], db_path=db)),
                 EntryDialog(),
                 EntryDialog(login=True),
-                ChoiceDialog("虚构标记", (("正常", "normal"),)),
+                ReviewPopup("虚构标记", (("正常", "normal"),)),
                 ConfirmLeave(),
                 EditValue(
                     SettingsModel(tmp_path / "settings.toml", [], db_path=db).options[0],

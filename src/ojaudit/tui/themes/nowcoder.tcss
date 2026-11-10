@@ -1,5 +1,5 @@
 /* ojaudit 界面样式：唯一样式来源。
-   结构：顶栏(#breadcrumb) / 内容(#body) / 按键提示栏(#status)。
+   结构：左侧书脊(#pages，上层页面) / 内容(#body) / 底部提示栏(#status)。
    颜色全部使用主题变量，跟随壁纸或内置主题切换。 */
 
 Screen {
@@ -12,12 +12,13 @@ Popup, SearchLine { background: transparent; }
 
 /* ── 外壳 ───────────────────────────────────────── */
 
-#breadcrumb {
-    height: 1;
-    padding: 0 1;
-    background: $surface;
+/* 停靠的部件互相重叠：书脊让出最下面一行给提示栏。 */
+#pages {
+    dock: left;
+    height: 100%;
+    margin-bottom: 1;
+    padding: 1 0 0 1;
 }
-#breadcrumb:hover { background: $surface-lighten-1; }
 
 #body {
     height: 1fr;
@@ -30,6 +31,7 @@ Popup, SearchLine { background: transparent; }
 }
 
 #status {
+    dock: bottom;
     height: 1;
     padding: 0 1;
     background: $surface;
@@ -208,6 +210,6 @@ App.-ansi ListView, App.-ansi .source-pane {
     scrollbar-color-hover: ansi_white;
     scrollbar-color-active: ansi_white;
 }
-App.-ansi #breadcrumb, App.-ansi #status, App.-ansi SearchLine > #search-line,
+App.-ansi #status, App.-ansi SearchLine > #search-line,
 App.-ansi SearchLine Input { background: ansi_default; }
 App.-ansi .popup Input:focus { background: ansi_default; }

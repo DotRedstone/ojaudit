@@ -43,7 +43,7 @@ def test_readonly_filter_and_stats(tmp_path):
     assert source.stats(source.list_contests()[0].contest).problems == 1
 
 
-def test_navigation_and_breadcrumb(tmp_path):
+def test_navigation_and_page_edges(tmp_path):
     source = _fixtures(tmp_path)
 
     async def scenario():
@@ -51,16 +51,17 @@ def test_navigation_and_breadcrumb(tmp_path):
         async with app.run_test() as pilot:
             await pilot.pause()
             assert isinstance(app.screen, HomeScreen)
-            assert "首页" in str(app.screen.query_one("#breadcrumb").render())
+            assert not app.screen.query_one("#pages").display
             await pilot.press("enter")
             await pilot.pause()
             assert isinstance(app.screen, ContestListScreen)
             assert len(app.screen.entries) == 1
-            assert "比赛列表" in str(app.screen.query_one("#breadcrumb").render())
+            assert "首" in str(app.screen.query_one("#pages").render())
             await pilot.press("enter")
             await pilot.pause()
             assert isinstance(app.screen, ContestOverviewScreen)
-            assert "校内练习甲" in str(app.screen.query_one("#breadcrumb").render())
+            edges = str(app.screen.query_one("#pages").render())
+            assert "比" in edges and "首" in edges, "书脊竖排列出上层页面"
             await pilot.press("escape")
             await pilot.pause()
             assert isinstance(app.screen, ContestListScreen)

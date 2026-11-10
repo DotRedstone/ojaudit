@@ -22,7 +22,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, ScrollableContainer, Vertical, VerticalScroll
 from textual.widgets import ListView, Static
 
-from ojaudit.core.reviews import DEFAULT_REVIEW_STATUS, REVIEW_STATUSES
+from ojaudit.core.reviews import DEFAULT_REVIEW_STATUS
 from ojaudit.core.schema import is_accepted
 from ojaudit.tui import ui
 from ojaudit.tui.code_view import (
@@ -36,7 +36,14 @@ from ojaudit.tui.code_view import (
     variable_mapping,
 )
 from ojaudit.tui.popup import ChoiceNotePopup, MenuPopup
-from ojaudit.tui.review_data import ReviewData, pair_key, pair_scores
+from ojaudit.tui.review_data import (
+    VERDICT_NAMES,
+    VERDICT_OF,
+    ReviewData,
+    finding_verdict,
+    pair_key,
+    pair_scores,
+)
 from ojaudit.tui.screens import ShellScreen, TableScreen
 from ojaudit.tui.splitter import Splitter
 
@@ -93,15 +100,13 @@ def _changed_lines(left: str, right: str) -> tuple[set[int], set[int]]:
 
 
 def status_text(status: str, colors: ui.Palette, stale: bool = False) -> Text:
+    """线索的复核结论：作弊 / 存疑 / 正常，未复核时显示「待复核」。"""
     if stale:
         return ui.dot("已失效", colors.muted)
-    color = {
-        DEFAULT_REVIEW_STATUS: colors.warn,
-        "需进一步核实": colors.caution,
-        "已核查": colors.ok,
-        "无需跟进": colors.muted,
-    }.get(status, colors.fg)
-    return ui.dot(status, color)
+    verdict = VERDICT_OF.get(status, "")
+    if not verdict:
+        return ui.dot(DEFAULT_REVIEW_STATUS, colors.warn)
+    return ui.dot(VERDICT_NAMES[verdict], colors.mark(verdict))
 
 
 def mark_text(person: dict[str, Any], colors: ui.Palette) -> Text:
@@ -117,22 +122,44 @@ def level_chip(level: object, colors: ui.Palette) -> Text:
     return ui.chip(ui.level_name(level), colors.level(level))
 
 
-class ChoiceDialog(ChoiceNotePopup):
-    """人员标记或线索结论 + 备注；返回 (值, 备注)。"""
+class ReviewPopup(ChoiceNotePopup):
+    """复核：作弊 / 存疑 / 正常 / 撤销复核，可附备注；返回 (值, 备注)。"""
 
-    def __init__(
-        self,
-        title: str,
-        options: tuple[tuple[str, str], ...],
-        value: str = "",
-        note: str = "",
-        hint: str = "",
-    ) -> None:
-        super().__init__(title + (f" · {hint}" if hint else ""), options, value, note)
+    def option_text(self, name: str, value: str, colors: ui.Palette) -> Text:
+        verdict = value.split(":")[0]
+        return Text(name, style=colors.mark(verdict) if verdict in VERDICT_NAMES else colors.muted)
 
 
-MARK_CHOICES = (("正常", "normal"), ("存疑", "suspect"), ("作弊者", "cheater"))
-REVIEW_CHOICES = tuple((status, status) for status in REVIEW_STATUSES)
+CLEAR = "clear"  # 撤销复核；与「待复核」的空值区分，避免光标默认停在撤销上
+
+
+def person_choices() -> list[tuple[str, str]]:
+    return [(name, verdict) for verdict, name in VERDICT_NAMES.items()] + [("撤销复核", CLEAR)]
+
+
+def review_person(screen: Any, uid: str, done: Any) -> None:
+    """人员页与代码页的复核：直接给这名选手下结论。"""
+    data: ReviewData = screen.data
+    person = data.person(uid)
+    if person["hidden"]:
+        screen.notify("管理者不参与复核", severity="warning")
+        return
+
+    def save(result: tuple[str, str] | None) -> None:
+        if result is None:
+            return
+        verdict, note = result
+        verdict = "" if verdict == CLEAR else verdict
+        resolved = data.judge_person(uid, verdict, note, review_settings()["quick_mark"])
+        name = VERDICT_NAMES.get(verdict, "未复核")
+        extra = f"，并一并处理此人其余线索 {resolved} 条" if resolved else ""
+        screen.notify(f"{person['name']}：{name}{extra}")
+        done()
+
+    screen.app.push_screen(
+        ReviewPopup(f"复核 {person['name']}", person_choices(), person["mark"], person["note"]),
+        save,
+    )
 
 
 class ReviewListScreen(TableScreen):
@@ -174,8 +201,9 @@ class ReviewListScreen(TableScreen):
 
 
 class FindingsScreen(ReviewListScreen):
+    PAGE_ICON = "findings"
     TITLE = "线索"
-    HINTS = (("↵", "查看证据"), ("f", "筛选"), ("s", "排序"), ("/", "搜索"), ("esc", "返回"))
+    HINTS = (("↵", "查看证据"), ("f", "筛选"), ("s", "排序"), ("/", "搜索"), ("←", "返回"))
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         *TableScreen.BINDINGS,
         ("f", "cycle_filter", "切换筛选"),
@@ -377,27 +405,23 @@ def nowcoder_links(
 
 
 class EvidenceScreen(ShellScreen):
+    PAGE_ICON = "evidence"
     TITLE = "线索证据"
     HINTS = (
-        ("k", "上一条"),
-        ("j", "下一条"),
+        ("↵", "复核"),
+        ("↑↓", "上/下一条"),
         ("tab", "对照/差异"),
-        ("r", "复核"),
-        ("m", "标记"),
-        ("u", "切换 A/B"),
         ("o", "打开牛客"),
-        ("esc", "返回"),
+        ("←", "返回"),
     )
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("escape,h,left", "back", "返回"),
+        ("enter,space", "review", "复核"),
         ("tab,shift+tab", "diff", "对照 / 差异视图"),
         ("j,down,n", "next", "下一条"),
         ("k,up,p", "previous", "上一条"),
         ("g", "first_evidence", "第一条"),
         ("shift+g", "last_evidence", "最后一条"),
-        ("r", "review", "复核结论"),
-        ("m", "mark", "标记选手"),
-        ("u", "switch_person", "切换标记对象 A/B"),
         ("o", "links", "在浏览器打开牛客页面"),
         ("f", "toggle_view('normalize')", "统一格式（空格、缩进、括号）"),
         ("c", "toggle_view('comments')", "去掉注释"),
@@ -419,7 +443,6 @@ class EvidenceScreen(ShellScreen):
         self.finding = finding
         self.contest = data.contest
         self.diff_mode = False
-        self.person_side = 0
         # 翻页顺序与上一页列表一致（列表可能按嫌疑度等排序）。
         self.sequence = [self._key(item) for item in sequence] if sequence else None
         self.options = _view_options()
@@ -670,10 +693,7 @@ class EvidenceScreen(ShellScreen):
             (left_pane, "#code-left", "a", a, left, lines_a, lines_b, None),
             (right_pane, "#code-right", "b", b, right, lines_b, lines_a, renamed_marks),
         ):
-            target = (side == "a") == (self.person_side == 0)
-            title = Text(
-                ("▶ " if target else "") + side.upper() + "  ", style=f"bold {colors.accent}"
-            )
+            title = Text(side.upper() + "  ", style=f"bold {colors.accent}")
             title.append_text(self._person(person))
             if row:
                 title.append(
@@ -746,76 +766,47 @@ class EvidenceScreen(ShellScreen):
         self.diff_mode = not self.diff_mode
         self.render_evidence()
 
-    def action_switch_person(self) -> None:
-        self.person_side = 1 - self.person_side
-        self.render_evidence()
-
-    @property
-    def target_uid(self) -> str:
-        return str(self.finding["uid_b" if self.person_side else "uid_a"])
-
-    def action_mark(self) -> None:
-        uid = self.target_uid
-        person = self.data.person(uid)
-        if person["hidden"]:
-            self.notify("管理者不可标记为参赛选手", severity="warning")
-            return
-        self.app.push_screen(
-            ChoiceDialog(
-                f"标记选手 {person['name']}",
-                MARK_CHOICES,
-                person["mark"],
-                person["note"],
-                hint="u 切换 A/B",
-            ),
-            lambda result: self._save_mark(uid, result),
-        )
-
-    def _save_mark(self, uid: str, result: tuple[str, str] | None) -> None:
-        if result is None:
-            return
-        mark, note = result
-        self.data.mark(uid, mark, note)
-        settings = review_settings()
-        resolved = 0
-        if mark == "cheater" and settings["quick_mark"]:
-            # 快速标记：此人的其他待复核线索一并处理，作弊几道题对结论没有区别。
-            name = self.data.person(uid)["name"]
-            for item in self.data.findings():
-                if (
-                    not item["is_stale"]
-                    and item["status"] == DEFAULT_REVIEW_STATUS
-                    and uid in (str(item["uid_a"]), str(item["uid_b"]))
-                ):
-                    self.data.review(item, "已核查", f"随 {name} 标记为作弊者一并处理")
-                    resolved += 1
-        self.notify(f"已标记{'，并处理此人其余线索 ' + str(resolved) + ' 条' if resolved else ''}")
-        self._refresh_current()
-        if settings["auto_advance"]:
-            self._advance()
-        else:
-            self.render_evidence()
+    def review_choices(self) -> tuple[list[tuple[str, str]], str]:
+        a = self.data.person(str(self.finding["uid_a"]))
+        b = self.data.person(str(self.finding["uid_b"]))
+        choices = [
+            ("作弊 · 双方", "cheater"),
+            (f"作弊 · 仅 {a['name']}", "cheater:a"),
+            (f"作弊 · 仅 {b['name']}", "cheater:b"),
+            ("存疑", "suspect"),
+            ("正常", "normal"),
+            ("撤销复核", CLEAR),
+        ]
+        current = finding_verdict(self.finding)
+        if current == "cheater":
+            cheats = (a["mark"] == "cheater", b["mark"] == "cheater")
+            current = {(True, False): "cheater:a", (False, True): "cheater:b"}.get(
+                cheats, "cheater"
+            )
+        return choices, current
 
     def action_review(self) -> None:
         if self.finding["is_stale"]:
             self.notify("已失效线索仅供查看", severity="warning")
             return
+        choices, current = self.review_choices()
         self.app.push_screen(
-            ChoiceDialog(
-                "复核结论",
-                REVIEW_CHOICES,
-                (self.finding["status"] if self.finding["status"] in REVIEW_STATUSES else ""),
-                self.finding.get("note", ""),
-            ),
+            ReviewPopup("复核", choices, current, self.finding.get("note", "")),
             self._save_review,
         )
 
     def _save_review(self, result: tuple[str, str] | None) -> None:
         if result is None:
             return
-        self.data.review(self.finding, *result)
+        value, note = result
+        verdict, _, side = ("" if value == CLEAR else value).partition(":")
+        who = (str(self.finding["uid_" + side]),) if side else None
+        settings = review_settings()
+        resolved = self.data.judge_finding(self.finding, verdict, note, who, settings["quick_mark"])
+        if resolved:
+            self.notify(f"已复核，并一并处理作弊者其余线索 {resolved} 条")
         self._refresh_current()
-        if review_settings()["auto_advance"]:
+        if verdict and settings["auto_advance"]:
             self._advance()
         else:
             self.render_evidence()
@@ -892,13 +883,14 @@ def _unified(
 
 
 class PeopleScreen(ReviewListScreen):
+    PAGE_ICON = "people"
     TITLE = "选手"
     HINTS = (
         ("↵", "查看"),
         ("a", "设为/取消管理者"),
         ("s", "排序"),
         ("/", "搜索"),
-        ("esc", "返回"),
+        ("←", "返回"),
     )
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         *TableScreen.BINDINGS,
@@ -975,11 +967,11 @@ class PeopleScreen(ReviewListScreen):
 
 
 class PersonScreen(ReviewListScreen):
+    PAGE_ICON = "person"
     TITLE = "选手"
-    HINTS = (("↵", "提交历史"), ("m", "标记"), ("esc", "返回"))
+    HINTS = (("↵", "复核"), ("→", "提交历史"), ("←", "返回"))
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         *TableScreen.BINDINGS,
-        ("m", "mark", "标记选手"),
     ]
     COLUMNS = (
         ui.Column("题", 3),
@@ -1064,28 +1056,14 @@ class PersonScreen(ReviewListScreen):
                 SubmissionScreen(self.data, self.PATH, self.uid, int(item["problem_index"]))
             )
 
-    def action_mark(self) -> None:
-        person = self.data.person(self.uid)
-        if person["hidden"]:
-            self.notify("管理者不可标记为参赛选手", severity="warning")
-            return
-        self.app.push_screen(
-            ChoiceDialog(
-                f"标记选手 {person['name']}", MARK_CHOICES, person["mark"], person["note"]
-            ),
-            self._save,
-        )
-
-    def _save(self, result: tuple[str, str] | None) -> None:
-        if result is not None:
-            self.data.mark(self.uid, *result)
-            self.notify("人员标记已保存")
-            self.refresh_chrome()
+    def action_activate(self) -> None:
+        review_person(self, self.uid, self.reload)
 
 
 class SubmissionScreen(ReviewListScreen):
+    PAGE_ICON = "submissions"
     TITLE = "提交历史"
-    HINTS = (("↵", "查看代码"), ("esc", "返回"))
+    HINTS = (("↵", "查看代码"), ("←", "返回"))
     COLUMNS = (
         ui.Column("时间", 14),
         ui.Column("结果", 12),
@@ -1136,8 +1114,9 @@ class SubmissionScreen(ReviewListScreen):
 
 
 class ProblemsScreen(ReviewListScreen):
+    PAGE_ICON = "problems"
     TITLE = "题目"
-    HINTS = (("↵", "查看代码"), ("s", "排序"), ("/", "搜索"), ("esc", "返回"))
+    HINTS = (("↵", "查看代码"), ("s", "排序"), ("/", "搜索"), ("←", "返回"))
     COLUMNS = (
         ui.Column("题", 3),
         ui.Column("题目"),
@@ -1193,8 +1172,9 @@ class ProblemsScreen(ReviewListScreen):
 
 
 class ProblemScreen(ReviewListScreen):
+    PAGE_ICON = "problem"
     TITLE = "代表代码"
-    HINTS = (("↵", "查看代码"), ("s", "排序"), ("esc", "返回"))
+    HINTS = (("↵", "查看代码"), ("s", "排序"), ("←", "返回"))
     COLUMNS = (
         ui.Column("选手"),
         ui.Column("结果", 12),
@@ -1252,24 +1232,24 @@ class ProblemScreen(ReviewListScreen):
 
 
 class CodeScreen(ShellScreen):
+    PAGE_ICON = "code"
     TITLE = "代码"
     HINTS = (
-        ("k", "上一份"),
-        ("j", "下一份"),
+        ("↵", "复核"),
+        ("↑↓", "上/下一份"),
         ("[", "前一次提交"),
         ("]", "后一次提交"),
-        ("m", "标记"),
-        ("esc", "返回"),
+        ("←", "返回"),
     )
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("escape,h,left", "back", "返回"),
-        ("n,j,down,right,l,enter,space", "next", "下一份"),
+        ("enter,space", "review", "复核此人"),
+        ("n,j,down", "next", "下一份"),
         ("p,k,up", "previous", "上一份"),
         ("g", "first_code", "第一份"),
         ("shift+g", "last_code", "最后一份"),
         ("left_square_bracket", "earlier", "同题上一次提交"),
         ("right_square_bracket", "later", "同题下一次提交"),
-        ("m", "mark", "标记选手"),
     ]
 
     def __init__(
@@ -1373,20 +1353,5 @@ class CodeScreen(ShellScreen):
     def action_later(self) -> None:
         self._history(1)
 
-    def action_mark(self) -> None:
-        uid = self.current["uid"]
-        person = self.data.person(uid)
-        if person["hidden"]:
-            self.notify("管理者不可标记为参赛选手", severity="warning")
-            return
-        self.app.push_screen(
-            ChoiceDialog(
-                f"标记选手 {person['name']}", MARK_CHOICES, person["mark"], person["note"]
-            ),
-            lambda result: self._save(uid, result),
-        )
-
-    def _save(self, uid: str, result: tuple[str, str] | None) -> None:
-        if result is not None:
-            self.data.mark(uid, *result)
-            self.render_code()
+    def action_review(self) -> None:
+        review_person(self, str(self.current["uid"]), self.render_code)

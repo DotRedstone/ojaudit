@@ -3,7 +3,8 @@ Module: TUI / screens
 Description: 统一页面外壳、表格列表基类，以及首页、比赛列表与比赛总览。
 Scope: TUI
 Notes:
-- 每个页面由「顶栏路径 + 标题 + 内容 + 按键提示栏」组成，提示栏只列本页关键操作。
+- 每个页面由「左侧书脊 + 标题 + 内容 + 按键提示栏」组成，提示栏只列本页关键操作。
+- 导航：→ 进入下一层，← 返回上一层，↑↓ 在同一层中移动；回车默认同 →，可复核的页面为复核。
 - 详情页由 review_screens 实现；本模块不写数据库。
 """
 
@@ -12,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, ClassVar
 
+from rich.cells import cell_len
 from rich.text import Text
 from textual import events, on
 from textual.app import ComposeResult
@@ -23,14 +25,13 @@ from ojaudit.core.schema import Contest
 from ojaudit.tui import ui
 from ojaudit.tui.contest_list_data import ContestSummary, contest_summary
 from ojaudit.tui.data import LocalContests
-from ojaudit.tui.icons import breadcrumb, glyph, label
-from ojaudit.tui.interaction import Breadcrumb
+from ojaudit.tui.icons import glyph, label
 from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView as NavigationListView
 from ojaudit.tui.popup import ConfirmPopup, InputPopup, SearchLine
 from ojaudit.tui.splitter import Splitter, start_drag
 
-NAV_HINTS: tuple[tuple[str, str], ...] = (("↵", "打开"), ("esc", "返回"), ("/", "搜索"))
+NAV_HINTS: tuple[tuple[str, str], ...] = (("↵", "打开"), ("←", "返回"), ("/", "搜索"))
 
 
 # 提示栏上显示的按键 → 点击时模拟的按键。
@@ -42,6 +43,9 @@ KEY_PRESS = {
     "space": "space",
     "tab": "tab",
     "←→": "right",
+    "←": "left",
+    "→": "right",
+    "↑↓": "down",
     "[": "left_square_bracket",
     "]": "right_square_bracket",
     "h/l": "l",
@@ -49,13 +53,14 @@ KEY_PRESS = {
 
 
 class KeyBar(Static):
-    """底部提示栏：每个提示都可以用鼠标点击，等同于按下对应按键。"""
+    """底部一行：左侧是本页按键提示（可点击，等同按键），右侧是后台任务状态（点击可取消）。"""
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__("", **kwargs)
         self.spans: list[tuple[int, int, str]] = []
+        self.job_x = 10**6
 
-    def show(self, hints: Sequence[tuple[str, str]], right: str) -> None:
+    def show(self, hints: Sequence[tuple[str, str]], right: Text) -> None:
         colors = ui.palette(self.app)
         text = Text(no_wrap=True)
         self.spans = []
@@ -67,52 +72,139 @@ class KeyBar(Static):
             text.append(f" {action}", style=colors.muted)
             press = KEY_PRESS.get(key, key.split("/")[0])
             self.spans.append((start, text.cell_len, press))
-        gap = self.size.width - text.cell_len - len(right) - 2
+        gap = self.size.width - text.cell_len - right.cell_len - 2
+        self.job_x = 10**6
         if gap > 0:
             text.append(" " * gap)
-            text.append(right, style=colors.muted)
+            self.job_x = text.cell_len
+            text.append_text(right)
         self.update(text)
 
     def on_click(self, event: events.Click) -> None:
+        x = event.x - 1
+        app: Any = self.app
+        if x >= self.job_x:
+            event.stop()
+            if app.job_running:
+                app.push_screen(
+                    ConfirmPopup("后台任务", f"{app.job_status}\n取消这个任务？"),
+                    lambda ok: ok and app.cancel_workflow(),
+                )
+            return
         for start, end, key in self.spans:
-            if start <= event.x - 1 < end:
+            if start <= x < end:
                 event.stop()
-                self.app.simulate_key(key)
+                app.simulate_key(key)
                 return
 
 
+class PageEdges(Static):
+    """书页式层级：上层页面像压在下面的书页，只露出一条竖排标题的书脊。
+
+    越靠右越接近当前页；点击某条书脊直接翻回那一页。首页没有书脊。
+    """
+
+    SPINE = 3  # 两格宽的字 + 一格书页边线
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__("", **kwargs)
+        self.hover: int | None = None
+
+    def pages(self) -> list[Any]:
+        stack = [screen for screen in self.app.screen_stack if isinstance(screen, Chrome)]
+        return stack[: stack.index(self.screen)] if self.screen in stack else []
+
+    def refresh_edges(self) -> None:
+        pages = self.pages()
+        self.display = bool(pages)
+        if not pages:
+            return
+        colors = ui.palette(self.app)
+        height = max(self.size.height, 3)
+        self.styles.width = len(pages) * self.SPINE + 1
+        columns = []
+        for page in pages:
+            mark = glyph(page.PAGE_ICON, self.app.nerd_font)
+            head = [mark + " ", "  "] if mark else []
+            columns.append(head + _vertical(page.page_title(), height - 2 - len(head)))
+        text = Text(no_wrap=True)
+        for row in range(height):
+            if row:
+                text.append("\n")
+            for index, cells in enumerate(columns):
+                nearest = index == len(columns) - 1
+                color = (
+                    colors.accent
+                    if index == self.hover
+                    else (colors.fg if nearest else colors.muted)
+                )
+                char = cells[row - 1] if 0 < row <= len(cells) else "  "
+                text.append(char, style=f"bold {color}" if nearest else color)
+                text.append("▕", style=colors.accent if index == self.hover else colors.line)
+        self.update(text)
+
+    def _index(self, x: int) -> int | None:
+        index = (x - 1) // self.SPINE
+        return index if x >= 1 and 0 <= index < len(self.pages()) else None
+
+    def on_mouse_move(self, event: events.MouseMove) -> None:
+        index = self._index(event.x)
+        if index != self.hover:
+            self.hover = index
+            self.refresh_edges()
+
+    def on_leave(self, _event: events.Leave) -> None:
+        if self.hover is not None:
+            self.hover = None
+            self.refresh_edges()
+
+    def on_click(self, event: events.Click) -> None:
+        index = self._index(event.x)
+        if index is None:
+            return
+        event.stop()
+        target = self.pages()[index]
+        while self.app.screen is not target and len(self.app.screen_stack) > 2:
+            self.app.pop_screen()
+
+
+def _vertical(title: str, rows: int) -> list[str]:
+    """把标题竖排：每行一个两格宽的字符；英文数字占半格补空格；过长时以 ⋮ 收尾。"""
+    cells = []
+    for char in title:
+        if char.isspace():
+            continue
+        cells.append(char if cell_len(char) == 2 else char + " ")
+    if len(cells) > rows:
+        cells = cells[: max(rows - 1, 0)] + ["⋮ "]
+    return cells
+
+
 class Chrome:
-    """顶栏与提示栏渲染；所有全屏页面共用，保证位置和配色一致。"""
+    """所有全屏页面共用的外壳：左侧书脊（上层页面）与底部提示栏。"""
 
     PATH = "首页"
+    PAGE_ICON = "open"
     HINTS: ClassVar[Sequence[tuple[str, str]]] = NAV_HINTS
 
+    def page_title(self) -> str:
+        return str(getattr(self, "TITLE", "")) or "·"
+
     def chrome_top(self) -> ComposeResult:
-        yield Breadcrumb("", id="breadcrumb")
+        # 底栏横跨整个宽度，书脊占据其上方的整个高度（Textual 中后停靠的部件优先占边）。
+        yield PageEdges(id="pages")
+        yield KeyBar(id="status")
 
     def chrome_bottom(self) -> ComposeResult:
-        yield KeyBar(id="status")
+        yield from ()
 
     def _update_status(self) -> None:
         app: Any = self.app  # type: ignore[attr-defined]
         colors = ui.palette(app)
-        width = app.size.width
-        top = Text(no_wrap=True)
-        top.append(" ", style=f"on {colors.accent}")
-        top.append(
-            label("home", "ojaudit", app.nerd_font) + " ",
-            style=f"bold {colors.bg} on {colors.accent}",
-        )
-        top.append("  ")
-        parts = breadcrumb(self.PATH, app.nerd_font).split(" › ")
-        for index, part in enumerate(parts):
-            if index:
-                top.append(" › ", style=colors.muted)
-            last = index == len(parts) - 1
-            top.append(part, style=f"bold {colors.fg}" if last else colors.muted)
         busy = app.job_running
-        right = Text(style=colors.warn if busy else colors.muted)
-        right.append("● " + str(app.job_status))
+        right = Text(no_wrap=True)
+        if busy or app.job_status != "空闲":
+            right.append("● " + str(app.job_status), style=colors.warn if busy else colors.muted)
         if busy and app.job_progress is not None:
             _stage, done, total, _ = app.job_progress
             right.append("  ")
@@ -120,19 +212,12 @@ class Chrome:
                 right.append_text(ui.bar(done / total, 16, colors.warn, colors.surface))
                 right.append(" ")
             right.append(app.progress_text(), style=colors.fg)
-            right.append("  x 取消", style=colors.muted)
-        gap = width - top.cell_len - right.cell_len - 2
-        crumb = self.query_one("#breadcrumb", Breadcrumb)  # type: ignore[attr-defined]
-        crumb.job_x = width
-        if gap > 0:
-            top.append(" " * gap)
-            crumb.job_x = top.cell_len
-            top.append_text(right)
-        crumb.update(top)
+            right.append("  点击取消", style=colors.muted)
         hints = list(self.HINTS) + [("?", "帮助")]
         if not app.key_hints:
             hints = [("?", "帮助")]
-        self.query_one("#status", KeyBar).show(hints, str(app.theme_name))  # type: ignore[attr-defined]
+        self.query_one("#status", KeyBar).show(hints, right)  # type: ignore[attr-defined]
+        self.query_one("#pages", PageEdges).refresh_edges()  # type: ignore[attr-defined]
 
 
 class ShellScreen(Chrome, Screen):
@@ -142,7 +227,8 @@ class ShellScreen(Chrome, Screen):
         ("k,up", "up", "上移"),
         ("g", "first", "首项"),
         ("shift+g", "last", "末项"),
-        ("enter,l,right,space", "open", "打开"),
+        ("l,right", "open", "进入下一层"),
+        ("enter,space", "activate", "打开 / 复核"),
         ("slash", "search", "搜索"),
     ]
     TITLE = ""
@@ -153,7 +239,9 @@ class ShellScreen(Chrome, Screen):
     def heading(self) -> Text:
         """页面标题行：粗体标题 + 弱化的副标题。"""
         colors = ui.palette(self.app)
-        text = Text(self.TITLE, style=f"bold {colors.fg}")
+        text = Text(
+            label(self.PAGE_ICON, self.TITLE, self.app.nerd_font), style=f"bold {colors.fg}"
+        )
         subtitle = self.subtitle()
         if subtitle:
             text.append("   " + subtitle, style=colors.muted)
@@ -255,9 +343,16 @@ class ShellScreen(Chrome, Screen):
     def open_index(self, index: int) -> None:
         raise NotImplementedError
 
+    def action_activate(self) -> None:
+        """回车：默认与 → 相同（进入下一层）；可复核的页面改为复核。"""
+        self.action_open()
+
     @on(NavigationListView.Activated)
     def activated(self, event: NavigationListView.Activated) -> None:
-        self.open_index(event.index)
+        if event.keyboard:
+            self.action_activate()
+        else:
+            self.open_index(event.index)
 
 
 class SortHeader(Static):
@@ -354,7 +449,11 @@ class TableScreen(ShellScreen):
         return [row for _, row in present] + missing
 
     def row_width(self) -> int:
-        return max(self.app.size.width - 8, 40)
+        view = self.query_one("#items", ListView)
+        if view.size.width:
+            return max(view.size.width - 4, 40)
+        edges = len(self.query_one("#pages", PageEdges).pages()) * PageEdges.SPINE + 1
+        return max(self.app.size.width - 8 - edges, 40)
 
     def reload(self) -> None:
         colors = ui.palette(self.app)
@@ -410,6 +509,7 @@ def _menu_row(icon: str, name: str, detail: str, width: int, app: Any) -> Text:
 
 
 class HomeScreen(ShellScreen):
+    PAGE_ICON = "home"
     TITLE = "首页"
     PATH = "首页"
     HINTS = (("↵", "打开"), ("q", "退出"), ("t", "主题"))
@@ -605,6 +705,7 @@ def state_text(summary: ContestSummary, colors: ui.Palette) -> Text:
 
 
 class ContestListScreen(TableScreen):
+    PAGE_ICON = "list"
     TITLE = "比赛列表"
     PATH = "首页 › 比赛列表"
     HINTS = (
@@ -736,8 +837,9 @@ class ContestListScreen(TableScreen):
 
 
 class ContestOverviewScreen(ShellScreen):
+    PAGE_ICON = "contest"
     TITLE = "比赛总览"
-    HINTS = (("↵", "打开"), ("esc", "返回"), ("c", "重新采集"), ("R", "重新分析"))
+    HINTS = (("↵", "打开"), ("←", "返回"), ("c", "重新采集"), ("R", "重新分析"))
     OPTIONS = ("线索", "选手", "题目", "排行榜")
     ICON_KEYS = ("findings", "people", "problems", "ranking")
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
@@ -874,6 +976,7 @@ class ContestOverviewScreen(ShellScreen):
 class MissingContestScreen(ShellScreen):
     """没有本地数据时保留可操作的采集引导。"""
 
+    PAGE_ICON = "contest"
     TITLE = "本地没有这场比赛"
     OPTIONS = ("采集并检测", "仅采集", "返回")
 

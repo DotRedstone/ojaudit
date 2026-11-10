@@ -91,3 +91,42 @@ def test_empty_store(tmp_path):
             await pilot.press("q")
 
     asyncio.run(scenario())
+
+
+def test_deep_pages_fold_outer_layers_into_path(tmp_path, monkeypatch):
+    from ojaudit.tui.screens import HomeScreen as Home
+    from ojaudit.tui.screens import ShellScreen
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+
+    class Page(ShellScreen):
+        def __init__(self, title: str) -> None:
+            super().__init__()
+            self.TITLE = title
+
+        def compose(self):
+            yield from self.shell([])
+
+    async def scenario():
+        app = AuditApp(LocalContests(tmp_path / "none.sqlite"))
+        async with app.run_test(size=(100, 30)) as pilot:
+            assert app.max_pages == 4
+            for title in ("比赛", "选手", "某人", "提交历史", "代码"):
+                app.push_screen(Page(title))
+                await pilot.pause()
+            rows = str(app.screen.query_one("#frame-top").render()).splitlines()
+            assert len(rows) == 4, "6 层只叠放 4 层"
+            assert "首页 › 比赛 › 选手" in rows[0]
+            assert "某人" in rows[1] and "代码" in rows[3]
+            # 点击折叠路径中的「首页」直接回到首页。
+            await pilot.click("#frame-top", offset=(4, 0))
+            await pilot.pause()
+            assert isinstance(app.screen, Home)
+
+            app.max_pages = 0
+            for title in ("比赛", "选手", "某人", "提交历史", "代码"):
+                app.push_screen(Page(title))
+                await pilot.pause()
+            assert len(str(app.screen.query_one("#frame-top").render()).splitlines()) == 6
+
+    asyncio.run(scenario())

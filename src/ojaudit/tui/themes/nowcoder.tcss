@@ -53,7 +53,7 @@ ListItem.-hovered { background: $accent 13%; }
 .status-row.mark-cheater, .status-row.level-high { color: $error; border-left: solid $error; }
 .status-row.mark-suspect, .status-row.level-medium { color: $warning; border-left: solid $warning; }
 .status-row.mark-normal, .status-row.level-low { color: $success; border-left: solid $success; }
-.status-row.mark-manager { color: $text-muted; border-left: solid $text-muted; }
+.status-row.mark-manager { color: $text-muted; border-left: solid $panel; }
 DataTable > .datatable--cursor { background: $accent 20%; text-style: none; }
 Input { height: 3; background: $surface; }
 #evidence-meta { height: 6; padding: 0 1; border-left: thick $accent; }

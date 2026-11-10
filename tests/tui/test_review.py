@@ -8,7 +8,7 @@ Notes: 不包含真实比赛、UID 或选手代码。
 import asyncio
 import json
 
-from textual.widgets import Button, Input, Select
+from textual.widgets import Input
 
 from ojaudit.core.filters import ContestFilter
 from ojaudit.core.store import Store
@@ -120,9 +120,9 @@ def test_evidence_diff_review_auto_advance(tmp_path):
             await pilot.press("r")
             await pilot.pause()
             assert isinstance(app.screen, ChoiceDialog)
-            app.screen.query_one("#choice", Select).value = "已核查"
+            app.screen.select("已核查")
             app.screen.query_one("#note", Input).value = "已比对"
-            app.screen.query_one("#save", Button).press()
+            app.screen.save()
             await pilot.pause()
             assert isinstance(app.screen, EvidenceScreen)
             assert app.screen.finding["uid_b"] == "fake-c"
@@ -147,9 +147,9 @@ def test_mark_synchronizes_across_screens(tmp_path):
             await pilot.press("m")
             await pilot.pause()
             assert isinstance(app.screen, ChoiceDialog)
-            app.screen.query_one("#choice", Select).value = "suspect"
+            app.screen.select("suspect")
             app.screen.query_one("#note", Input).value = "人工复核"
-            app.screen.query_one("#save", Button).press()
+            app.screen.save()
             await pilot.pause()
             assert data.person("fake-a")["mark"] == "suspect"
             await pilot.press("escape", "escape")
@@ -167,8 +167,8 @@ def test_mark_synchronizes_across_screens(tmp_path):
             await pilot.press("m")
             await pilot.pause()
             assert isinstance(app.screen, ChoiceDialog)
-            assert app.screen.query_one("#choice", Select).value == "suspect"
-            app.screen.query_one("#cancel", Button).press()
+            assert app.screen._result()[0] == "suspect"
+            await pilot.press("escape")
             await pilot.pause()
             assert isinstance(app.screen, PersonScreen)
 

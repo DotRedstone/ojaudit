@@ -7,6 +7,8 @@ Screen {
     background: $background;
     color: $foreground;
 }
+/* 弹窗与搜索行叠在当前页面之上，不遮挡背景（lazygit / nvim 的浮窗习惯）。 */
+Popup, SearchLine { background: transparent; }
 
 /* ── 外壳 ───────────────────────────────────────── */
 
@@ -34,7 +36,7 @@ Screen {
 }
 
 .panel {
-    border: round $panel;
+    border: $border-style $panel;
     border-title-color: $text-muted;
     border-title-style: bold;
     border-subtitle-color: $text-muted;
@@ -42,7 +44,7 @@ Screen {
     padding: 0 1;
 }
 .panel:focus-within {
-    border: round $primary;
+    border: $border-style $primary;
     border-title-color: $primary;
 }
 
@@ -87,7 +89,7 @@ ListView:focus > ListItem.-highlight {
 #home-columns { height: auto; max-height: 12; }
 #home-menu { width: 46; height: 10; }
 #home-menu ListView { height: auto; }
-#home-overview { width: 1fr; max-width: 64; height: 10; margin-left: 2; padding: 1 2; }
+#home-overview { width: 1fr; height: 10; padding: 1 2; }
 #empty-guide { height: auto; margin-top: 1; padding: 0 1; color: $warning; }
 #home-recent { height: auto; max-height: 12; margin-top: 1; padding: 0 1; }
 
@@ -99,7 +101,7 @@ ListView:focus > ListItem.-highlight {
     height: 4;
     margin-right: 1;
     padding: 0 2;
-    border: round $panel;
+    border: $border-style $panel;
     background: $background;
 }
 #card-3 { width: 2fr; }
@@ -120,7 +122,7 @@ ListView:focus > ListItem.-highlight {
 .source-pane {
     width: 1fr;
     height: 1fr;
-    border: round $panel;
+    border: $border-style $panel;
     border-title-color: $foreground;
     border-title-style: bold;
     border-subtitle-color: $text-muted;
@@ -129,15 +131,16 @@ ListView:focus > ListItem.-highlight {
     scrollbar-background: $background;
     scrollbar-color: $panel;
 }
-#pane-left { margin-right: 1; }
-.source-pane:focus { border: round $primary; }
+#pane-left { width: 1fr; }
+#pane-right { width: 1fr; }
+.source-pane:focus { border: $border-style $primary; }
 #code-left, #code-right, #code-body { width: auto; }
 #code-meta { height: 2; padding: 0 1; }
 
 /* ── 设置 ───────────────────────────────────────── */
 
 #settings-columns { height: 1fr; }
-#categories { width: 22; height: 1fr; margin-right: 1; }
+#categories { width: 22; height: 1fr; }
 #options-pane { width: 1fr; height: 1fr; }
 #settings-values { height: 1fr; }
 #settings-detail {
@@ -149,7 +152,7 @@ ListView:focus > ListItem.-highlight {
 /* ── 排行榜 ─────────────────────────────────────── */
 
 #ranking-columns { height: 1fr; }
-#ranking-side { width: 44; margin-right: 1; }
+#ranking-side { width: 44; }
 #ranking-options { height: 8; }
 #ranking-warning { height: auto; margin-top: 1; padding: 0 1; }
 #ranking-main { width: 1fr; height: 1fr; }
@@ -159,24 +162,55 @@ ListView:focus > ListItem.-highlight {
 
 #account-state { height: 7; max-width: 80; padding: 1 2; margin-bottom: 1; }
 
-/* ── 弹窗 ───────────────────────────────────────── */
+/* ── 弹窗：lazygit 风格，标题在上边框、提示在下边框，无按钮、无遮罩 ── */
 
-.dialog {
-    width: 64;
-    max-width: 90%;
+.popup {
     height: auto;
-    padding: 1 2;
-    border: round $primary;
-    background: $surface;
+    max-width: 90%;
+    max-height: 80%;
+    padding: 0 1;
+    border: $border-style $primary;
+    border-title-color: $primary;
+    border-title-style: bold;
+    border-subtitle-color: $text-muted;
+    background: $background;
 }
-.dialog.warning { border: round $warning; }
-.dialog-title { text-style: bold; color: $foreground; width: 100%; }
-.dialog-hint { color: $text-muted; width: 100%; margin-bottom: 1; }
-.dialog Input, .dialog Select { margin-bottom: 1; }
-.dialog-buttons { height: auto; align-horizontal: right; }
-.dialog-buttons Button { margin-left: 1; min-width: 10; }
+.popup.warning { border: $border-style $warning; border-title-color: $warning; }
+.popup-input, .popup Input {
+    border: none;
+    height: 1;
+    padding: 0;
+    margin: 0;
+    background: $background;
+}
+.popup Input:focus { background: $primary 12%; }
+.popup-note { color: $text-muted; height: auto; }
+.popup-message { height: auto; padding: 0 0 0 0; }
+.popup ListView { height: auto; max-height: 16; background: $background; }
+.popup #note { margin-top: 1; }
 
-#style-help { width: 72; }
+#style-help { height: auto; }
+#qr-code { height: auto; margin: 1 0 0 0; }
+#qr-wrap { height: auto; align-horizontal: center; }
+#qr-status { height: auto; margin-top: 1; }
 
-Input { background: $background; border: tall $panel; }
-Input:focus { border: tall $primary; }
+/* 设置页的分组标题行不参与高亮 */
+ListView > ListItem.section { padding-top: 0; }
+ListView > ListItem.section.-highlight { background: $background; border-left: blank; }
+
+Input { background: $background; border: none; height: 1; padding: 0; }
+
+/* ── ANSI / 透明背景模式：只用终端 16 色，不做半透明叠色 ── */
+
+App.-ansi ListView > ListItem.-highlight { background: ansi_default; border-left: outer ansi_bright_black; }
+App.-ansi ListView:focus > ListItem.-highlight { background: ansi_bright_black; border-left: outer ansi_blue; }
+App.-ansi ListItem.-hovered { background: ansi_default; }
+App.-ansi ListView, App.-ansi .source-pane {
+    scrollbar-background: ansi_default;
+    scrollbar-color: ansi_bright_black;
+    scrollbar-color-hover: ansi_white;
+    scrollbar-color-active: ansi_white;
+}
+App.-ansi #breadcrumb, App.-ansi #status, App.-ansi SearchLine > #search-line,
+App.-ansi SearchLine Input { background: ansi_default; }
+App.-ansi .popup Input:focus { background: ansi_default; }

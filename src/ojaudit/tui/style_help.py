@@ -10,10 +10,12 @@ from typing import ClassVar
 
 from rich.text import Text
 from textual.app import ComposeResult
-from textual.screen import ModalScreen, Screen
+from textual.screen import Screen
 from textual.widgets import Static
 
 from ojaudit.tui import ui
+from ojaudit.tui.icons import label
+from ojaudit.tui.popup import Popup
 
 KEY_NAMES = {
     "escape": "esc",
@@ -50,24 +52,30 @@ def _bindings(screen: Screen) -> list[tuple[str, str]]:
     return [(" ".join(keys), description) for keys, description in merged.values()]
 
 
-class StyleHelpScreen(ModalScreen[None]):
+class StyleHelpScreen(Popup):
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        ("escape", "close", "返回"),
+        ("escape,q", "close", "返回"),
         ("question_mark", "close", "关闭帮助"),
     ]
-    DEFAULT_CSS = """
-    StyleHelpScreen { align: center middle; background: $background 60%; }
-    """
+    WIDTH = 72
+    ICON = "help"
+
+    def __init__(self) -> None:
+        super().__init__("按键", "esc 关闭")
 
     def compose(self) -> ComposeResult:
-        yield Static("", id="style-help", classes="dialog")
+        yield self.frame(Static("", id="style-help"))
 
     def on_mount(self) -> None:
+        super().on_mount()
         colors = ui.palette(self.app)
         stack = self.app.screen_stack
         page = stack[-2] if len(stack) > 1 else None
         title = getattr(page, "TITLE", "") or "当前页面"
-        text = Text(f"{title} · 按键\n\n", style=f"bold {colors.fg}")
+        self.query_one(
+            ".popup"
+        ).border_title = f" {label('help', f'{title} · 按键', self.app.nerd_font)} "
+        text = Text()
         rows = _bindings(page) if page is not None else []
         for keys, description in [*rows, ("", ""), *GLOBAL]:
             if not keys:

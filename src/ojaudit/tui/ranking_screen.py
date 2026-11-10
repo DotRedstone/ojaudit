@@ -21,6 +21,7 @@ from ojaudit.tui.interaction import NavigateListView
 from ojaudit.tui.ranking_data import export_ranking, final_ranking, pending_warnings
 from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.screens import ShellScreen
+from ojaudit.tui.splitter import Splitter
 
 POLICIES = (
     ("作弊者", ("剔除", "标记"), ("drop", "mark")),
@@ -78,6 +79,7 @@ class RankingScreen(ShellScreen):
                         classes="panel",
                     )
                     yield Static("", id="ranking-warning", classes="panel")
+                yield Splitter("ranking-side", "ranking", minimum=30)
                 with Vertical(id="ranking-main", classes="panel"):
                     yield Static("", classes="thead")
                     yield NavigateListView(id="ranking-preview")

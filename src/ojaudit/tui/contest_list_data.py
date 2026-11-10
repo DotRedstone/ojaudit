@@ -44,7 +44,9 @@ def _date(timestamp: int | None) -> str:
 def contest_summary(local: LocalContests, contest: Contest) -> ContestSummary:
     stats = local.stats(contest)
     review = ReviewData(local, contest)
-    state = "已分析" if review.latest_run() else ("已采集" if stats.submissions else "未采集")
+    # 只在账号比赛列表中登记、还没有任何选手与提交的比赛视为未采集。
+    collected = stats.submissions or stats.participants
+    state = "已分析" if review.latest_run() else ("已采集" if collected else "未采集")
     current = [row for row in review.findings() if not row["is_stale"]]
     levels = tuple(
         sum(level_rank(row["verdict_level"]) == rank for row in current) for rank in (0, 1, 2)

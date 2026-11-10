@@ -142,55 +142,74 @@ def plugin_manifests(directory: str | Path | None = None) -> list[PluginManifest
     return discover_manifests(directory)
 
 
+STAGE_NAMES = {
+    "builtin_pair": "指纹初筛",
+    "nowcoder_similarity": "相似度",
+    "nowcoder_classify": "分级",
+    "nowcoder_template": "公共模板识别",
+    "nowcoder_timeline": "时间线",
+}
+REQUIRED_STAGES = frozenset({"builtin_pair", "nowcoder_similarity", "nowcoder_classify"})
+
+
 def generated_options(manifests: list[PluginManifest]) -> tuple[Option, ...]:
+    """检测阶段的开关与参数放在「检测」；「插件管理」只展示内置组件信息。"""
     options = list(STATIC_OPTIONS)
     for manifest in manifests:
         plugin = manifest.name
+        name = STAGE_NAMES.get(plugin, plugin)
         options.append(
             Option(
                 "插件管理",
-                f"plugins.{plugin}.enabled",
-                f"{plugin} · 启用",
-                "bool",
-                True,
-                description=f"版本 {manifest.version} · {manifest.origin}",
+                f"about.plugins.{plugin}",
+                name,
+                "text",
+                f"内置 · v{manifest.version}",
+                readonly=True,
+                description=manifest.description,
             )
         )
-        if manifest.kind.startswith("detector."):
+        if not manifest.kind.startswith("detector."):
+            continue
+        required = plugin in REQUIRED_STAGES
+        options.append(
+            Option(
+                "检测",
+                f"plugins.{plugin}.enabled",
+                f"{name} · 启用",
+                "bool",
+                True,
+                readonly=required,
+                description=(
+                    f"{manifest.description}（必需阶段，不能关闭）"
+                    if required
+                    else manifest.description
+                ),
+            )
+        )
+        for key, spec in manifest.params.items():
+            if not isinstance(spec, dict) or "type" not in spec:
+                continue
             options.append(
                 Option(
                     "检测",
-                    f"plugins.{plugin}.enabled",
-                    f"{plugin} · 启用",
-                    "bool",
-                    True,
-                    description=manifest.description,
+                    f"plugins.{plugin}.params.{key}",
+                    f"{name} · {spec.get('label', key)}",
+                    str(spec["type"]),
+                    spec.get("default"),
+                    tuple(str(x) for x in spec.get("choices", ())),
+                    spec.get("min"),
+                    spec.get("max"),
+                    description=str(spec.get("description") or manifest.description),
                 )
             )
-            for key, spec in manifest.params.items():
-                if not isinstance(spec, dict) or "type" not in spec:
-                    continue
-                kind = str(spec["type"])
-                options.append(
-                    Option(
-                        "检测",
-                        f"plugins.{plugin}.params.{key}",
-                        str(spec.get("label", key)),
-                        kind,
-                        spec.get("default"),
-                        tuple(str(x) for x in spec.get("choices", ())),
-                        spec.get("min"),
-                        spec.get("max"),
-                        description=f"{plugin}: {manifest.description}",
-                    )
-                )
     options.append(
         Option(
             "插件管理",
             "help.install",
-            "安装新插件（暂不联网）",
+            "第三方插件",
             "text",
-            "目前只展示已安装插件",
+            "用 ojaudit plugins install 登记；只记录清单，不执行代码",
             readonly=True,
         )
     )

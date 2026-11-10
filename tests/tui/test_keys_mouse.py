@@ -161,3 +161,28 @@ def test_edit_value_esc_from_input(tmp_path):
             assert isinstance(app.screen, HomeScreen)
 
     asyncio.run(scenario())
+
+
+def test_confirm_popup_left_right_enter(tmp_path):
+    from ojaudit.tui.popup import ConfirmPopup, HintRow
+
+    results = []
+
+    async def scenario():
+        app = AuditApp(LocalContests(tmp_path / "empty.sqlite"))
+        async with app.run_test() as pilot:
+            for keys in (("enter",), ("left", "enter"), ("h", "l", "enter"), ("tab", "space")):
+                app.push_screen(ConfirmPopup("合成确认", "继续？"), results.append)
+                await pilot.pause()
+                row = app.screen.query_one(HintRow)
+                assert row.selected == 1, "默认选中安全的「否」"
+                await pilot.press(*keys)
+                await pilot.pause()
+            app.push_screen(ConfirmPopup("合成确认", "继续？", default=True), results.append)
+            await pilot.pause()
+            assert app.screen.query_one(HintRow).selected == 0
+            await pilot.press("right", "enter")
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert results == [False, True, False, True, False]

@@ -59,7 +59,9 @@ class ShellScreen(Screen):
         current = getattr(self, "CURRENT", self.TITLE)
         contest = getattr(self, "contest", None)
         contest_id = str(contest.contest_id) if contest is not None else "—"
-        self.query_one("#status", Static).update(self.app.status_line(f"{current} · {self.app.job_status}", contest_id))
+        self.query_one("#status", Static).update(
+            self.app.status_line(f"{current} · {self.app.job_status}", contest_id)
+        )
 
     def on_screen_resume(self) -> None:
         self._update_status()
@@ -377,9 +379,9 @@ class ContestOverviewScreen(ShellScreen):
     def refresh_overview(self) -> None:
         stats = self.contests.stats(self.contest)
         self.query_one("#summary", Static).update(
-            "◈ 本地审核概览\\n"
-            f"参赛者 {stats.participants}  ·  提交 {stats.submissions}\\n"
-            f"检测线索 {stats.findings}  ·  题目 {stats.problems}\\n"
+            "◈ 本地审核概览\n"
+            f"参赛者 {stats.participants}  ·  提交 {stats.submissions}\n"
+            f"检测线索 {stats.findings}  ·  题目 {stats.problems}\n"
             "线索为待审核提示，不代表违规结论"
         )
         counts = (

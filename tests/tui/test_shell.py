@@ -31,7 +31,7 @@ def _fixtures(tmp_path):
             )
     return LocalContests(
         db,
-        ContestFilter(whitelist=(ContestRule("校内"),)),
+        ContestFilter(rules=(ContestRule("校内"),), mode="whitelist"),
     )
 
 

@@ -65,15 +65,11 @@ class SearchDialog(ModalScreen[str | None]):
 
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("escape", "cancel", "取消搜索", priority=True),
+        Binding("h", "cancel", "取消搜索"),
     ]
-    CSS = """
-    SearchDialog { align: center middle; }
-    #search-dialog { width: 64; height: auto; padding: 1 2;
-                     border: round $accent; background: $panel; }
-    """
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="search-dialog"):
+        with Vertical(id="search-dialog", classes="dialog-box"):
             yield Label("搜索当前列表（输入部分文字）")
             yield Input(placeholder="搜索…", id="search-text")
             with Horizontal():

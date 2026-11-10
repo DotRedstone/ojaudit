@@ -26,6 +26,7 @@ from ojaudit.tui.workflow import analyze_local, persist_bundle
 
 
 class AuditApp(App[None]):
+    ENABLE_COMMAND_PALETTE = False
     TITLE = "ojaudit · 审核工作台"
     CSS_PATH = "themes/nowcoder.tcss"
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
@@ -74,6 +75,12 @@ class AuditApp(App[None]):
         self._apply_theme()
         self.push_screen(HomeScreen())
         self.set_interval(4, self.poll_wallpaper)
+        self.set_interval(10, self.refresh_status)
+
+    def refresh_status(self) -> None:
+        update = getattr(self.screen, "_update_status", None)
+        if callable(update):
+            update()
 
     @property
     def job_running(self) -> bool:
@@ -185,7 +192,7 @@ class AuditApp(App[None]):
 
     def status_line(self, current: str, contest_id: str = "—") -> Text:
         colors = self.current_theme
-        mode_color = str(colors.success or "#a3be8c")
+        mode_color = str((colors.warning if self.job_running else colors.success) or colors.accent)
         background = str(colors.background or "#1e1e2e")
         bar = Text()
         bar.append(" NORMAL ", style=f"bold {background} on {mode_color}")

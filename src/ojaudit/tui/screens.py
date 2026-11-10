@@ -14,15 +14,15 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
-from textual.widgets import Button, Footer, Input, Label, ListView, Static
+from textual.widgets import Button, Input, Label, ListView, Static
 
 from ojaudit.core.schema import Contest
 from ojaudit.tui.contest_list_data import contest_list_description
 from ojaudit.tui.data import LocalContests
-from ojaudit.tui.icons import breadcrumb, label
+from ojaudit.tui.icons import label
 from ojaudit.tui.interaction import Breadcrumb, SearchDialog
-from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView as NavigationListView
+from ojaudit.tui.ui_components import StatusRow
 
 
 class ShellScreen(Screen):
@@ -38,32 +38,41 @@ class ShellScreen(Screen):
     TITLE = ""
     PATH = "首页"
 
+    HINTS = "Enter 打开  Esc 返回  / 搜索  j/k 移动"
+
+    def breadcrumb_text(self) -> str:
+        return self.PATH + (f"    {self.HINTS}" if self.app.key_hints and self.HINTS else "")
+
+    def refresh_breadcrumb(self) -> None:
+        self.query_one("#breadcrumb", Static).update(self.breadcrumb_text())
+
     def shell(self, content: list[object]) -> ComposeResult:
-        hints = " · Enter/l 进入 · Esc/h 返回 · ? 帮助" if self.app.key_hints else ""
-        yield Breadcrumb(breadcrumb(self.PATH, self.app.nerd_font) + hints, id="breadcrumb")
+        yield Breadcrumb(self.breadcrumb_text(), id="breadcrumb")
         with Vertical(id="pane"):
             yield from content
         yield Static("", id="status")
-        yield Footer()
 
     def on_mount(self) -> None:
         pane = self.query_one("#pane", Vertical)
-        pane.border_title = label("open", self.TITLE, self.app.nerd_font)
-        view = next(iter(self.query(ListView)), None)
-        if view is not None:
-            pane.border_subtitle = f"{len(view.children)} 项"
+        pane.border_title = self.TITLE
+        self.refresh_count()
         self._update_status()
         for view in self.query(ListView):
             view.focus()
             break
 
+    def refresh_count(self) -> None:
+        view = next(iter(self.query(ListView)), None)
+        if view is not None:
+            self.query_one("#pane", Vertical).border_subtitle = f"{len(view.children)} 项"
+
     def _update_status(self) -> None:
         current = getattr(self, "CURRENT", self.TITLE)
         contest = getattr(self, "contest", None)
         contest_id = str(contest.contest_id) if contest is not None else "—"
-        self.query_one("#status", Static).update(
-            self.app.status_line(f"{current} · {self.app.job_status}", contest_id)
-        )
+        if getattr(self.app, "job_running", False):
+            current = f"{current} · {self.app.job_status}"
+        self.query_one("#status", Static).update(self.app.status_line(current, contest_id))
 
     def on_screen_resume(self) -> None:
         self._update_status()
@@ -131,19 +140,12 @@ class EntryDialog(ModalScreen[str | None]):
         Binding("h", "cancel", "取消"),
     ]
 
-    CSS = """
-    EntryDialog { align: center middle; }
-    #entry-dialog { width: 68; height: auto; border: round $accent;
-                    background: $panel; padding: 1 2; }
-    #entry-buttons { height: auto; }
-    """
-
     def __init__(self, *, login: bool = False) -> None:
         super().__init__()
         self.login = login
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="entry-dialog"):
+        with Vertical(id="entry-dialog", classes="dialog-box"):
             yield Label(
                 label(
                     "login" if self.login else "contest",
@@ -211,7 +213,7 @@ class HomeScreen(ShellScreen):
             Static(hint),
             NavigationListView(
                 *(
-                    ListItem(Label(label(key, item, self.app.nerd_font)))
+                    StatusRow(label(key, item, self.app.nerd_font))
                     for key, item in zip(self.ICON_KEYS, self.OPTIONS)
                 )
             ),
@@ -284,11 +286,15 @@ class HomeScreen(ShellScreen):
 
 
 class ContestListScreen(ShellScreen):
-    TITLE = "比赛列表 · a 切换全部"
+    TITLE = "比赛列表"
+    HINTS = "Enter 打开  Esc 返回  / 搜索  j/k 移动  a 全部  c 采集  A 分析  x 取消"
     PATH = "首页 › 比赛列表"
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         *ShellScreen.BINDINGS,
         ("a", "toggle_all", "切换全部"),
+        ("c", "collect", "采集比赛"),
+        ("shift+a", "analyze_selected", "分析选中比赛"),
+        ("x", "cancel_task", "取消任务"),
     ]
 
     def __init__(self, contests: LocalContests):
@@ -298,14 +304,7 @@ class ContestListScreen(ShellScreen):
         self.entries = []
 
     def compose(self) -> ComposeResult:
-        yield from self.shell(
-            [
-                Button("采集比赛 ID", id="collect-contest"),
-                Button("分析当前选中比赛", id="analyze-contest"),
-                Button("取消当前后台任务", id="cancel-task"),
-                NavigationListView(id="contests"),
-            ]
-        )
+        yield from self.shell([NavigationListView(id="contests")])
 
     def on_mount(self) -> None:
         self.refresh_entries()
@@ -323,28 +322,25 @@ class ContestListScreen(ShellScreen):
             label_text = label("contest", text, self.app.nerd_font)
             if not entry.visible:
                 label_text += "  · " + label("hidden", "规则外", self.app.nerd_font)
-            view.append(ListItem(Label(label_text)))
+            view.append(StatusRow(label_text))
         if not self.entries:
             view.append(
-                ListItem(Label("暂无比赛：先执行 ojaudit login，再执行 ojaudit collect <比赛ID>"))
+                StatusRow("暂无比赛：先执行 ojaudit login，再执行 ojaudit collect <比赛ID>")
             )
         view.call_after_refresh(setattr, view, "index", 0)
         self.query_one("#breadcrumb", Static).update(
-            breadcrumb(
-                self.PATH + (" › 全部" if self.show_all else " › 已筛选"), self.app.nerd_font
-            )
+            self.breadcrumb_text() + (" · 全部" if self.show_all else " · 已筛选")
         )
+        self.refresh_count()
 
-    @on(Button.Pressed, "#collect-contest")
-    def collect_pressed(self, _event: Button.Pressed) -> None:
+    def action_collect(self) -> None:
         self.app.push_screen(EntryDialog(), self.collect_id)
 
     def collect_id(self, cid: str | None) -> None:
         if cid is not None and cid.strip():
             self.app.start_workflow(cid.strip(), "collect_analyze")
 
-    @on(Button.Pressed, "#analyze-contest")
-    def analyze_pressed(self, _event: Button.Pressed) -> None:
+    def action_analyze_selected(self) -> None:
         view = self.query_one("#contests", ListView)
         index = view.index if view.index is not None else 0
         if not 0 <= index < len(self.entries):
@@ -353,8 +349,7 @@ class ContestListScreen(ShellScreen):
         contest = self.entries[index].contest
         self.app.start_workflow(contest.contest_id, "analyze", contest.platform)
 
-    @on(Button.Pressed, "#cancel-task")
-    def cancel_pressed(self, _event: Button.Pressed) -> None:
+    def action_cancel_task(self) -> None:
         self.app.cancel_workflow()
 
     def on_workflow_finished(self) -> None:
@@ -372,6 +367,11 @@ class ContestListScreen(ShellScreen):
 
 class ContestOverviewScreen(ShellScreen):
     TITLE = "比赛总览"
+    HINTS = "Enter 打开/运行  Esc 返回  j/k 移动  x 取消任务"
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+        *ShellScreen.BINDINGS,
+        ("x", "cancel_task", "取消任务"),
+    ]
     OPTIONS = ("线索", "选手", "题目", "排行榜", "采集并检测", "本地分析")
     ICON_KEYS = ("findings", "people", "problems", "ranking", "collect_analyze", "analyze")
 
@@ -383,15 +383,12 @@ class ContestOverviewScreen(ShellScreen):
         self.CURRENT = f"{contest.platform}/{contest.contest_id}"
 
     def compose(self) -> ComposeResult:
-        with Vertical():
-            hints = " · Enter/l 进入 · Esc/h 返回 · ? 帮助" if self.app.key_hints else ""
-            yield Breadcrumb(breadcrumb(self.PATH, self.app.nerd_font) + hints, id="breadcrumb")
-            with Vertical(id="pane"):
-                yield Static("", id="summary")
-                yield NavigationListView(id="overview-options")
-                yield Button("取消当前后台任务", id="cancel-overview-job")
-            yield Static("", id="status")
-            yield Footer()
+        yield from self.shell(
+            [
+                Static("", id="summary"),
+                NavigationListView(id="overview-options"),
+            ]
+        )
 
     def on_mount(self) -> None:
         self.refresh_overview()
@@ -439,11 +436,11 @@ class ContestOverviewScreen(ShellScreen):
         index = view.index or 0
         view.clear()
         for key, name, count in zip(self.ICON_KEYS, self.OPTIONS, counts):
-            view.append(ListItem(Label(label(key, f"{name} · {count}", self.app.nerd_font))))
+            view.append(StatusRow(label(key, f"{name} · {count}", self.app.nerd_font)))
         view.call_after_refresh(setattr, view, "index", index)
+        self.refresh_count()
 
-    @on(Button.Pressed, "#cancel-overview-job")
-    def cancel_pressed(self, _event: Button.Pressed) -> None:
+    def action_cancel_task(self) -> None:
         self.app.cancel_workflow()
 
     def open_index(self, index: int) -> None:
@@ -472,6 +469,7 @@ class MissingContestScreen(ShellScreen):
     """没有本地数据时保留可操作的采集引导。"""
 
     TITLE = "本地缺少比赛"
+    HINTS = "Enter 选择  Esc 返回  j/k 移动"
     OPTIONS = ("采集并检测", "仅采集", "返回")
 
     def __init__(self, contest_id: str) -> None:
@@ -486,7 +484,12 @@ class MissingContestScreen(ShellScreen):
                     f"比赛 {self.contest_id} 尚未在本地数据库中。"
                     f"可选择采集，或运行 ojaudit collect {self.contest_id}。",
                 ),
-                NavigationListView(*(ListItem(Label(item)) for item in self.OPTIONS)),
+                NavigationListView(
+                    *(
+                        StatusRow(label(key, item, self.app.nerd_font))
+                        for key, item in zip(("collect_analyze", "collect", "back"), self.OPTIONS)
+                    )
+                ),
             ]
         )
 

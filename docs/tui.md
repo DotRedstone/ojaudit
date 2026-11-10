@@ -125,3 +125,14 @@
 比赛列表补充日期（本地库未记录则「日期未知」）、提交数、采集/分析状态、当前线索 H/M/L 计数和已复核/总线索进度。状态依赖本地导入提交及最新分析运行，不冒充远程同步状态。排行榜当前没有可验证的官方 submit-list 快照，依旧只按本地提交分数推算，明确标记「非官方排名」，不将推导数据误称官方名次。
 
 以上仅为批次 F 的交互与数据读取接线，不改既有壁纸主题、既有导航按键或检测算法；使用合成测试，无真实 Cookie、UID、比赛数据。
+
+
+## 全屏页面与弹窗统一壳（ui-unify）
+
+所有业务全屏页面都继承 `ShellScreen`，由同一 `shell()` 统一提供单行淡色路径（`#breadcrumb`）、圆角主窗格（`#pane`）和唯一底部状态栏（`#status`）。底栏显示 `NORMAL`、比赛 ID、当前层以及主题名和本地时钟；后台任务进行时胶囊改用主题警告色。已移除 Textual 默认 Footer 和命令面板入口，`?` 仍可打开应用帮助弹窗。
+
+路径末尾的当前页快捷键提示受外观设置 `appearance.key_hints` 控制。列表遵循方向键、`h/j/k/l`、`Enter`/`Space`、`Esc`、`g/G` 和 `/` 搜索；单击仅选中，双击或回车进入。比赛列表改用 `c` 采集、`Shift+A` 分析当前选中比赛、`x` 取消当前任务，`a` 继续切换显示全部；总览的采集与本地分析仍在列表中，`x` 用于取消任务。
+
+视觉只维护 `src/ojaudit/tui/themes/nowcoder.tcss`：半透明选中、左侧强调竖条、基于当前壁纸或内置主题的状态色、主题化代码/证据区。人员状态和线索等级使用 `StatusRow` 共享组件，不把 Mocha 固定色写入业务 widget。弹窗统一采用 `.dialog-box`（`height: auto`、`max-height: 20`）和半透明背景，`Esc`/`h` 取消；设置离开确认的取消仍表示继续编辑。
+
+回归测试位于 `tests/tui/test_ui_unify.py`，使用临时合成 SQLite 和临时目录 SVG，检查壳、底栏、主题与弹窗尺寸；既有 `test_keys_mouse.py` 与 `test_style.py` 继续覆盖键位和主题。开发环境内使用 `nix develop` 后运行 `ruff check .`、`ruff format --check .`、`pytest -q`。

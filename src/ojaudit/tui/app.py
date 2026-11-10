@@ -27,7 +27,11 @@ class AuditApp(App[None]):
     #summary { height: 3; padding: 1 2; }
     ListView { height: 1fr; border: none; }
     ListItem { padding: 0 2; }
-    ListItem.--highlight { background: $accent; color: $background; text-style: bold; }
+    ListItem.-highlight { background: $accent; color: $background; text-style: bold; }
+    ListItem.-hovered { background: $accent 25%; }
+    #breadcrumb:hover { background: $accent 20%; text-style: underline; }
+    Footer { background: $panel; }
+    #empty-guide { height: 4; padding: 1 2; color: $warning; }
     #status { dock: bottom; height: 1; background: $primary; color: $background; text-style: bold; }
     #evidence-meta { height: 6; padding: 0 1; }
     #code-pair { height: 1fr; }
@@ -40,7 +44,7 @@ class AuditApp(App[None]):
     #ranking-note { height: 2; padding: 0 1; color: $warning; }
     """
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        ("q", "quit", "退出"),
+        ("q", "context_quit", "返回/退出"),
         ("question_mark", "help", "帮助"),
         ("t", "cycle_theme", "切换主题"),
     ]
@@ -83,8 +87,26 @@ class AuditApp(App[None]):
         self._apply_theme()
         self.notify(f"主题：{self.theme_name}（设置页可保存）")
 
+    def action_context_quit(self) -> None:
+        from ojaudit.tui.screens import HomeScreen
+
+        if isinstance(self.screen, HomeScreen):
+            self.exit()
+        else:
+            cancel = getattr(self.screen, "action_cancel", None)
+            back = getattr(self.screen, "action_back", None)
+            if callable(cancel):
+                cancel()
+            elif callable(back):
+                back()
+            else:
+                self.pop_screen()
+
     def action_help(self) -> None:
-        self.notify("j/k 移动 · g/G 首尾 · Enter/l 进入 · Esc/h 返回 · a 全部 · t 主题 · q 退出")
+        self.notify(
+            "↑↓/jk 移动 · ←/h 返回 · →/l/Enter/空格 进入 · "
+            "单击选中/双击进入 · / 搜索 · g/G 首尾 · q 返回(首页退出)"
+        )
 
 
 def main(db_path: str | Path | None = None) -> None:

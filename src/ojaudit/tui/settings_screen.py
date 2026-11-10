@@ -11,14 +11,21 @@ from typing import Any, ClassVar
 
 from textual import on
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
-from textual.widgets import Button, Input, Label, ListItem, ListView, Static
+from textual.widgets import Button, Footer, Input, Label, ListView, Static
 
+from ojaudit.tui.interaction import Breadcrumb
+from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.settings_model import CATEGORIES, Option, SettingsModel
 
 
 class EditValue(ModalScreen[str | None]):
+    BINDINGS: ClassVar[list[Binding]] = [
+        Binding("escape", "cancel", "取消", priority=True),
+    ]
+
     CSS = """
     EditValue { align: center middle; }
     #edit-dialog { width: 66; height: auto; padding: 1 2; border: round $accent;
@@ -41,6 +48,13 @@ class EditValue(ModalScreen[str | None]):
     def on_mount(self) -> None:
         self.query_one("#edit-value", Input).focus()
 
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+    @on(Input.Submitted)
+    def submit_value(self, event: Input.Submitted) -> None:
+        self.dismiss(event.value)
+
     @on(Button.Pressed)
     def pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "accept":
@@ -50,6 +64,11 @@ class EditValue(ModalScreen[str | None]):
 
 
 class ConfirmLeave(ModalScreen[bool]):
+    BINDINGS: ClassVar[list[Binding]] = [
+        Binding("escape", "cancel", "继续编辑", priority=True),
+        Binding("h", "cancel", "继续编辑"),
+    ]
+
     CSS = """
     ConfirmLeave { align: center middle; }
     #confirm { width: 58; height: auto; border: round $warning;
@@ -63,6 +82,12 @@ class ConfirmLeave(ModalScreen[bool]):
                 yield Button("放弃更改", id="discard", variant="warning")
                 yield Button("继续编辑", id="stay", variant="primary")
 
+    def on_mount(self) -> None:
+        self.query_one("#stay", Button).focus()
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
     @on(Button.Pressed)
     def pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id == "discard")
@@ -72,13 +97,18 @@ class SettingsScreen(Screen):
     TITLE = "设置"
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("escape", "back", "返回"),
+        ("left,h", "previous", "返回分类/上层"),
+        ("right,l,enter", "edit", "进入/修改"),
+        ("space", "toggle", "切换选项"),
+        ("up,k", "up", "上移"),
+        ("down,j", "down", "下移"),
+        ("g", "first", "首项"),
+        ("shift+g", "last", "末项"),
+        ("slash", "search", "搜索"),
         ("ctrl+s", "save", "保存"),
-        ("space", "toggle", "切换开关"),
-        ("h", "previous", "减少 / 前一个"),
-        ("l", "next", "增加 / 后一个"),
-        ("enter", "edit", "编辑"),
         ("r", "reset", "恢复本类默认"),
         ("tab", "focus_next", "切换窗格"),
+        ("shift+tab", "focus_next", "切换窗格"),
     ]
     CSS = """
     #settings-columns { height: 1fr; margin: 1 2; }
@@ -98,7 +128,7 @@ class SettingsScreen(Screen):
         self.focus_values = False
 
     def compose(self) -> ComposeResult:
-        yield Static("首页 › 设置", id="breadcrumb")
+        yield Breadcrumb("首页 › 设置", id="breadcrumb")
         with Horizontal(id="settings-columns"):
             yield ListView(
                 *(ListItem(Label(category)) for category in CATEGORIES),
@@ -108,10 +138,11 @@ class SettingsScreen(Screen):
                 yield ListView(id="settings-values")
                 yield Static("", id="settings-detail")
         yield Static(
-            "Space 开关 · h/l 选项或数值 · Enter 输入 · r 恢复默认 · Ctrl+S 保存",
+            "↑↓/jk 移动 · ←/h 返回 · →/l/Enter 进入 · Space 切换 · Ctrl+S 保存",
             id="settings-help",
         )
         yield Static("", id="status")
+        yield Footer()
 
     def on_mount(self) -> None:
         self.query_one("#categories", ListView).border_title = "分类"
@@ -195,15 +226,33 @@ class SettingsScreen(Screen):
             return
         self.reload()
 
-    def action_previous(self) -> None:
-        self.modify(-1)
+    def active_view(self) -> ListView:
+        return self.query_one("#settings-values" if self.focus_values else "#categories", ListView)
 
-    def action_next(self) -> None:
-        self.modify(1)
+    def action_up(self) -> None:
+        view = self.active_view()
+        view.index = max(0, (view.index or 0) - 1)
+
+    def action_down(self) -> None:
+        view = self.active_view()
+        view.index = min(len(view.children) - 1, (view.index or 0) + 1)
+
+    def action_first(self) -> None:
+        self.active_view().index = 0
+
+    def action_last(self) -> None:
+        view = self.active_view()
+        view.index = max(0, len(view.children) - 1)
+
+    def action_previous(self) -> None:
+        if self.focus_values:
+            self.action_focus_next()
+        else:
+            self.action_back()
 
     def action_toggle(self) -> None:
         option = self.active_option()
-        if self.focus_values and option is not None and option.kind == "bool":
+        if self.focus_values and option is not None and option.kind in ("bool", "enum"):
             self.modify()
 
     def action_edit(self) -> None:
@@ -211,7 +260,10 @@ class SettingsScreen(Screen):
             self.action_focus_next()
             return
         option = self.active_option()
-        if option is None or option.readonly or option.kind in ("bool", "enum"):
+        if option is None or option.readonly:
+            return
+        if option.kind in ("bool", "enum"):
+            self.modify()
             return
         self.app.push_screen(
             EditValue(option, self.model.values[option.key]),

@@ -15,12 +15,16 @@ from typing import Any, ClassVar
 from rich.syntax import Syntax
 from textual import on
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, ListItem, ListView, Select, Static
+from textual.widgets import Button, Footer, Input, Label, ListView, Select, Static
 
 from ojaudit.core.reviews import REVIEW_STATUSES
 from ojaudit.tui import palette
+from ojaudit.tui.interaction import Breadcrumb
+from ojaudit.tui.interaction import NavigateListItem as ListItem
+from ojaudit.tui.interaction import NavigateListView as NavigationListView
 from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.screens import ShellScreen
 
@@ -32,6 +36,11 @@ def _syntax(code: str, language: str) -> Syntax:
 
 class ChoiceDialog(ModalScreen[tuple[str, str] | None]):
     """保存人员标记或线索结论及备注。"""
+
+    BINDINGS: ClassVar[list[Binding]] = [
+        Binding("escape", "back", "取消", priority=True),
+        Binding("h", "back", "取消"),
+    ]
 
     CSS = """
     ChoiceDialog { align: center middle; background: $background 65%; }
@@ -63,6 +72,15 @@ class ChoiceDialog(ModalScreen[tuple[str, str] | None]):
                 yield Button("保存", id="save", variant="primary")
                 yield Button("取消", id="cancel")
 
+    @on(Input.Submitted)
+    def submit_note(self, event: Input.Submitted) -> None:
+        self.action_save()
+
+    def action_save(self) -> None:
+        value = self.query_one("#choice", Select).value
+        if isinstance(value, str):
+            self.dismiss((value, self.query_one("#note", Input).value))
+
     @on(Button.Pressed)
     def pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "cancel":
@@ -73,7 +91,12 @@ class ChoiceDialog(ModalScreen[tuple[str, str] | None]):
                 self.dismiss((value, self.query_one("#note", Input).value))
 
     def action_back(self) -> None:
-        self.dismiss(None)
+        choice = self.query_one("#choice", Select)
+        if choice.expanded:
+            choice.expanded = False
+            choice.focus()
+        else:
+            self.dismiss(None)
 
 
 MARK_CHOICES = (("正常", "normal"), ("存疑", "suspect"), ("作弊者", "cheater"))
@@ -92,7 +115,7 @@ class ReviewListScreen(ShellScreen):
         self.rows: list[dict[str, Any]] = []
 
     def compose(self) -> ComposeResult:
-        yield from self.shell([ListView(id="items")])
+        yield from self.shell([NavigationListView(id="items")])
 
     def on_mount(self) -> None:
         self.reload()
@@ -153,9 +176,14 @@ class FindingsScreen(ReviewListScreen):
 class EvidenceScreen(ShellScreen):
     TITLE = "线索证据"
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        ("escape", "back", "返回"),
-        ("h", "back", "返回"),
+        ("escape,h,left", "back", "返回"),
         ("tab", "diff", "差异视图"),
+        ("shift+tab", "diff", "差异视图"),
+        ("j,down", "next", "下一条"),
+        ("k,up", "previous", "上一条"),
+        ("right,l,enter,space", "diff", "差异视图"),
+        ("g", "first_evidence", "首条"),
+        ("shift+g", "last_evidence", "末条"),
         ("r", "review", "复核"),
         ("m", "mark", "人员标记"),
         ("u", "switch_person", "切换选手"),
@@ -177,13 +205,14 @@ class EvidenceScreen(ShellScreen):
         self.CURRENT = f"{self.finding['uid_a']} ↔ {self.finding['uid_b']}"
 
     def compose(self) -> ComposeResult:
-        yield Static(self.PATH, id="breadcrumb")
+        yield Breadcrumb(self.PATH, id="breadcrumb")
         with Vertical(id="pane"):
             yield Static("", id="evidence-meta")
             with Horizontal(id="code-pair"):
                 yield Static("", id="code-left", classes="source-pane")
                 yield Static("", id="code-right", classes="source-pane")
         yield Static("", id="status")
+        yield Footer()
 
     def on_mount(self) -> None:
         self.query_one("#pane", Vertical).border_title = self.TITLE
@@ -244,6 +273,12 @@ class EvidenceScreen(ShellScreen):
         self.query_one("#evidence-meta", Static).styles.border_left = ("solid", color)
         self.query_one("#breadcrumb", Static).update(self.PATH)
         self._update_status()
+
+    def action_first_evidence(self) -> None:
+        self._move(-1000000)
+
+    def action_last_evidence(self) -> None:
+        self._move(1000000)
 
     def action_diff(self) -> None:
         self.diff_mode = not self.diff_mode
@@ -328,7 +363,12 @@ class EvidenceScreen(ShellScreen):
         findings = self.data.findings()
         current = next((i for i, item in enumerate(findings) if self._same(item, self.finding)), 0)
         if findings:
-            self.finding = findings[(current + delta) % len(findings)]
+            target = (current + delta) % len(findings)
+            if delta == -1000000:
+                target = 0
+            elif delta == 1000000:
+                target = len(findings) - 1
+            self.finding = findings[target]
             self._sync_path()
             self.render_evidence()
 
@@ -476,10 +516,11 @@ class ProblemScreen(ReviewListScreen):
 class CodeScreen(ShellScreen):
     TITLE = "代码浏览"
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        ("escape", "back", "返回"),
-        ("h", "back", "返回"),
-        ("n", "next", "下一份"),
-        ("p", "previous", "上一份"),
+        ("escape,h,left", "back", "返回"),
+        ("n,j,down,right,l,enter,space", "next", "下一份"),
+        ("p,k,up", "previous", "上一份"),
+        ("g", "first_code", "首份"),
+        ("shift+g", "last_code", "末份"),
         ("left_square_bracket", "earlier", "上次提交"),
         ("right_square_bracket", "later", "下次提交"),
         ("m", "mark", "人员标记"),
@@ -495,11 +536,12 @@ class CodeScreen(ShellScreen):
         self.base_path = path
 
     def compose(self) -> ComposeResult:
-        yield Static("", id="breadcrumb")
+        yield Breadcrumb("", id="breadcrumb")
         with Vertical(id="pane"):
             yield Static("", id="code-meta")
             yield Static("", id="code-body")
         yield Static("", id="status")
+        yield Footer()
 
     def on_mount(self) -> None:
         self.query_one("#pane", Vertical).border_title = self.TITLE
@@ -523,6 +565,14 @@ class CodeScreen(ShellScreen):
         )
         self.query_one("#code-body", Static).update(_syntax(row["code"], row["language"]))
         self._update_status()
+
+    def action_first_code(self) -> None:
+        self.index = 0
+        self.render_code()
+
+    def action_last_code(self) -> None:
+        self.index = len(self.items) - 1
+        self.render_code()
 
     def action_next(self) -> None:
         if self.index + 1 < len(self.items):

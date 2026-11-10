@@ -1,6 +1,6 @@
 """
 Module: Store Tests
-Description: 验证 SQLite 初始化、迁移和比赛写入。
+Description: 验证 SQLite 初始化、迁移、比赛写入与管理/复核记录持久化。
 Scope: Test
 """
 
@@ -16,4 +16,4 @@ def test_store_migrates_and_persists_contest(tmp_path):
             ("demo", "c1"),
         ).fetchone()
         assert row["name"] == "合成训练赛"
-        assert store.execute("SELECT version FROM schema_version").fetchone()[0] == 1
+        assert store.execute("SELECT version FROM schema_version").fetchone()[0] == 2

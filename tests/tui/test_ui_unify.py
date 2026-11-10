@@ -180,13 +180,11 @@ def test_compact_modal_sizing_and_escape(tmp_path, monkeypatch):
     asyncio.run(scenario())
 
 
-
 def test_status_row_has_exactly_one_accent_marker(tmp_path, monkeypatch):
     """accent 只由 TCSS 的左边框绘制，不额外输出文本竖条。"""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    css = (
-        Path(__file__).resolve().parents[2] / "src/ojaudit/tui/themes/nowcoder.tcss"
-    ).read_text(encoding="utf-8")
+    css_path = Path(__file__).resolve().parents[2] / "src/ojaudit/tui/themes/nowcoder.tcss"
+    css = css_path.read_text(encoding="utf-8")
     assert ".status-row { border-left: solid $accent; }" in css
 
     async def scenario():

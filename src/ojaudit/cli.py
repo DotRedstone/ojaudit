@@ -13,18 +13,13 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ojaudit.cli_operations import (
-    import_bundle,
-    migrate_nowcoder,
-    nowcoder_source,
-    plugins_command,
-    save_cookie,
-)
+from ojaudit.cli_operations import nowcoder_source, plugins_command, save_cookie
 from ojaudit.core.config import data_dir, load_config
 from ojaudit.core.filters import filter_contests, load_contest_filter
+from ojaudit.core.ingest import import_bundle, import_json, migrate_nowcoder
 from ojaudit.core.people import HiddenPerson, exclude_hidden_submissions
 from ojaudit.core.ranking import RankingOptions, build_final_ranking
-from ojaudit.core.schema import Contest, Submission, validate_submission
+from ojaudit.core.schema import Contest
 from ojaudit.core.store import Store
 from ojaudit.plugins.detectors.nowcoder import analyze as analyze_nowcoder
 from ojaudit.plugins.detectors.pair import analyze_pair
@@ -34,125 +29,10 @@ def _stamp() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _import_json(store: Store, source: Path) -> tuple[str, str]:
-    """导入合成/旧版 JSON 包；先验证结构，再写入标准 schema。"""
-    raw = json.loads(source.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict):
-        raise TypeError("导入文件根节点必须是 JSON 对象")
-    info = raw.get("contest", raw)
-    platform = str(info.get("platform", raw.get("platform", "synthetic")))
-    cid = str(info.get("contest_id", raw.get("contest_id", "")))
-    name = str(info.get("name", raw.get("name", "")))
-    if not all((platform, cid, name)):
-        raise ValueError("导入包缺少比赛平台、ID 或名称")
-    people = raw.get("participants", [])
-    submissions = raw.get("submissions", [])
-    if not isinstance(people, list) or not isinstance(submissions, list):
-        raise TypeError("participants 和 submissions 必须是数组")
-    parsed = []
-    for item in submissions:
-        row = Submission(
-            platform,
-            cid,
-            str(item["submission_id"]),
-            str(item["uid"]),
-            int(item["problem_index"]),
-            str(item["language"]),
-            str(item.get("verdict", "")),
-            float(item.get("score", 0)),
-            int(item.get("submit_time", 0)),
-            str(item.get("phase", "contest")),
-            str(item.get("code", "")),
-        )
-        validate_submission(row)
-        parsed.append(row)
-    problem_titles = {}
-    for item in submissions:
-        index = int(item["problem_index"])
-        title = str(item.get("problem_title") or "").strip()
-        problem_titles.setdefault(index, title or f"题 {index}")
-        if title:
-            problem_titles[index] = title
-    names = {str(p["uid"]): str(p.get("name", p["uid"])) for p in people}
-    for row in parsed:
-        names.setdefault(row.uid, row.uid)
-    with store.connection:
-        store.put_contest(platform, cid, name)
-        for uid, person_name in sorted(names.items()):
-            store.execute(
-                """INSERT INTO participants(platform, contest_id, uid, name)
-                   VALUES (?, ?, ?, ?)
-                   ON CONFLICT(platform, contest_id, uid) DO UPDATE SET name=excluded.name""",
-                (platform, cid, uid, person_name),
-            )
-        for index, title in sorted(problem_titles.items()):
-            store.execute(
-                """INSERT INTO problems(platform,contest_id,problem_index,problem_id,title,full_score)
-                   VALUES (?,?,?,?,?,NULL)
-                   ON CONFLICT(platform,contest_id,problem_index) DO UPDATE SET
-                   title=CASE WHEN problems.title='' OR problems.title=('题 ' || problems.problem_index)
-                              THEN excluded.title ELSE problems.title END""",
-                (platform, cid, index, str(index), title),
-            )
-        for row in parsed:
-            store.execute(
-                """INSERT INTO submissions(
-                       platform, contest_id, submission_id, uid, problem_index,
-                       language, verdict, score, submit_time, phase, code
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(platform, contest_id, submission_id) DO UPDATE SET
-                   uid=excluded.uid, problem_index=excluded.problem_index,
-                   language=excluded.language, verdict=excluded.verdict,
-                   score=excluded.score, submit_time=excluded.submit_time,
-                   phase=excluded.phase, code=excluded.code""",
-                (
-                    row.platform,
-                    row.contest_id,
-                    row.submission_id,
-                    row.uid,
-                    row.problem_index,
-                    row.language,
-                    row.verdict,
-                    row.score,
-                    row.submit_time,
-                    row.phase,
-                    row.code,
-                ),
-            )
-    return platform, cid
-
-
-def _submissions(store: Store, platform: str, cid: str) -> list[Submission]:
-    rows = store.execute(
-        """SELECT * FROM submissions WHERE platform=? AND contest_id=?
-           ORDER BY submission_id""",
-        (platform, cid),
-    ).fetchall()
-    return [
-        Submission(
-            r["platform"],
-            r["contest_id"],
-            r["submission_id"],
-            r["uid"],
-            r["problem_index"],
-            r["language"],
-            r["verdict"],
-            r["score"],
-            r["submit_time"],
-            r["phase"],
-            r["code"],
-        )
-        for r in rows
-    ]
-
-
 def _analyze(
     store: Store, platform: str, cid: str, threshold: float, json_out: Path | None = None
 ) -> str:
-    exists = store.execute(
-        "SELECT 1 FROM contests WHERE platform=? AND contest_id=?", (platform, cid)
-    ).fetchone()
-    if exists is None:
+    if not store.contest_exists(platform, cid):
         raise ValueError(f"比赛不存在：{platform}/{cid}；请先 collect 或 migrate")
     settings = load_config()
     detector = settings.get("detector", {})
@@ -173,7 +53,7 @@ def _analyze(
     def enabled(name: str) -> bool:
         return bool(plugin(name).get("enabled", True))
 
-    submissions = _submissions(store, platform, cid)
+    submissions = store.submissions(platform, cid)
     hidden = tuple(HiddenPerson(**p) for p in store.list_hidden_people())
     visible = exclude_hidden_submissions(submissions, hidden)
     pair_params = {"threshold": threshold, **params("builtin_pair")}
@@ -232,31 +112,26 @@ def _analyze(
         active.append("nowcoder_template")
     if enabled("nowcoder_timeline"):
         active.append("nowcoder_timeline")
-    with store.connection:
-        store.execute(
-            """INSERT INTO analysis_runs(
-                   run_id, platform, contest_id, plugin_set, created_from, created_at
-               ) VALUES (?, ?, ?, ?, ?, ?)""",
-            (run_id, platform, cid, "+".join(active), "cli", _stamp()),
-        )
-        for item in findings:
-            left, right = sorted(item["pair"])
-            store.execute(
-                """INSERT INTO findings(
-                       run_id, uid_a, uid_b, problem_index, language,
-                       verdict_level, scores, reasons
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    run_id,
-                    left,
-                    right,
-                    item["problem"],
-                    item["language"],
-                    item["level"],
-                    json.dumps(item["scores_detail"], ensure_ascii=False),
-                    json.dumps(item["reasons_detail"], ensure_ascii=False),
-                ),
-            )
+    store.save_analysis(
+        run_id,
+        platform,
+        cid,
+        "+".join(active),
+        "cli",
+        _stamp(),
+        (
+            {
+                "uid_a": item["pair"][0],
+                "uid_b": item["pair"][1],
+                "problem_index": item["problem"],
+                "language": item["language"],
+                "level": item["level"],
+                "scores": item["scores_detail"],
+                "reasons": item["reasons_detail"],
+            }
+            for item in findings
+        ),
+    )
     if json_out is not None:
         json_out.parent.mkdir(parents=True, exist_ok=True)
         json_out.write_text(
@@ -281,11 +156,7 @@ def _rank_rows(store: Store, platform: str, cid: str) -> list[dict]:
 
 
 def _export(store: Store, args: argparse.Namespace) -> Path:
-    exists = store.execute(
-        "SELECT 1 FROM contests WHERE platform=? AND contest_id=?",
-        (args.platform, args.contest),
-    ).fetchone()
-    if exists is None:
+    if not store.contest_exists(args.platform, args.contest):
         raise ValueError(f"比赛不存在：{args.platform}/{args.contest}；请先 collect 或 migrate")
     marks = {
         row["uid"]: row["mark"] for row in store.list_person_marks(args.platform, args.contest)
@@ -415,14 +286,10 @@ def main(argv: list[str] | None = None) -> None:
             else:
                 if args.input is None or args.reviews or args.legacy_db:
                     raise ValueError("JSON 模式需要输入文件；--reviews/--db 仅供旧库模式使用")
-                platform, cid = _import_json(store, args.input)
-                print(f"imported={platform}/{cid}")
+                contest = import_json(store, args.input)
+                print(f"imported={contest.platform}/{contest.contest_id}")
         elif args.command == "contests":
-            rows = store.execute(
-                "SELECT platform, contest_id, name FROM contests ORDER BY platform, contest_id"
-            ).fetchall()
-            contests = [Contest(**dict(row)) for row in rows]
-            for decision in filter_contests(contests, load_contest_filter()):
+            for decision in filter_contests(store.list_contests(), load_contest_filter()):
                 if args.all or decision.visible:
                     print(
                         f"{decision.contest.platform}/{decision.contest.contest_id}\t"

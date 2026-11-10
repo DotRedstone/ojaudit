@@ -11,7 +11,8 @@ from types import SimpleNamespace
 import pytest
 
 from ojaudit import cli
-from ojaudit.cli_operations import migrate_nowcoder, save_cookie
+from ojaudit.cli_operations import save_cookie
+from ojaudit.core.ingest import migrate_nowcoder
 from ojaudit.core.schema import Contest, Participant, Submission
 from ojaudit.core.store import Store
 

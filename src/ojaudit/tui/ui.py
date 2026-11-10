@@ -17,6 +17,8 @@ from typing import Any
 from rich.cells import cell_len
 from rich.text import Text
 
+from ojaudit.core.schema import is_accepted
+
 # 检测等级：旧检测器输出中文分级，示例数据和外部插件可能输出 high/medium/low。
 # rank 越小越需要优先复核；未知等级排在最后。
 _LEVELS: dict[str, tuple[str, int]] = {
@@ -210,7 +212,7 @@ def duration(seconds: object) -> str:
 
 def verdict_color(verdict: str, colors: Palette) -> str:
     raw = str(verdict)
-    if any(mark in raw for mark in ("答案正确", "Accepted", "通过")) or raw.upper() == "AC":
+    if is_accepted(raw):
         return colors.ok
     if any(mark in raw for mark in ("编译", "Compile")) or raw.upper() == "CE":
         return colors.muted

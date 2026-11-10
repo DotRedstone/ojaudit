@@ -23,6 +23,7 @@ from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Input, Label, Select, Static
 
 from ojaudit.core.reviews import DEFAULT_REVIEW_STATUS, REVIEW_STATUSES
+from ojaudit.core.schema import is_accepted
 from ojaudit.tui import ui
 from ojaudit.tui.icons import label
 from ojaudit.tui.review_data import ReviewData
@@ -600,11 +601,6 @@ class EvidenceScreen(ShellScreen):
         self._move(-1)
 
 
-def _is_ac(verdict: str) -> bool:
-    raw = str(verdict)
-    return raw.upper() in ("AC", "ACCEPTED") or any(m in raw for m in ("答案正确", "通过"))
-
-
 class PeopleScreen(ReviewListScreen):
     TITLE = "选手"
     HINTS = (("↵", "查看"), ("/", "搜索"), ("esc", "返回"))
@@ -622,7 +618,7 @@ class PeopleScreen(ReviewListScreen):
         submitted: Counter[str] = Counter()
         for row in self.data.submissions():
             submitted[row["uid"]] += 1
-            if _is_ac(row["verdict"]):
+            if is_accepted(row["verdict"]):
                 solved[row["uid"]].add(int(row["problem_index"]))
         findings: Counter[str] = Counter()
         for f in self.data.findings():
@@ -699,7 +695,7 @@ class PersonScreen(ReviewListScreen):
                         **item,
                         "count": len(history[index]),
                         "final": history[index][-1]["verdict"],
-                        "solved": any(_is_ac(r["verdict"]) for r in history[index]),
+                        "solved": any(is_accepted(r["verdict"]) for r in history[index]),
                         "findings": findings[index],
                     }
                 )
@@ -803,7 +799,7 @@ class ProblemsScreen(ReviewListScreen):
         for row in self.data.submissions():
             index = int(row["problem_index"])
             tried[index].add(row["uid"])
-            if _is_ac(row["verdict"]):
+            if is_accepted(row["verdict"]):
                 solved[index].add(row["uid"])
         findings: Counter[int] = Counter(
             int(f["problem_index"]) for f in self.data.findings() if not f["is_stale"]

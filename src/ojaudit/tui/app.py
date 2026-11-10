@@ -34,6 +34,8 @@ class AuditApp(App[None]):
     .source-pane:focus { border: round $accent; }
     #code-meta { height: 3; padding: 0 1; }
     #code-body { height: 1fr; overflow: auto; padding: 0 1; }
+    #settings-columns { min-height: 12; }
+    #ranking-note { height: 2; padding: 0 1; color: $warning; }
     """
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("q", "quit", "退出"),

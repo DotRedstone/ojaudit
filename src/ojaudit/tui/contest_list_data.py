@@ -24,7 +24,7 @@ class ContestSummary:
     levels: tuple[int, int, int]  # 实锤 / 中偏强 / 存疑（含 high/medium/low）
     findings: int
     reviewed: int
-    marked: int
+    flagged: int  # 被检测线索涉及的人数：只有这些人需要人工复核
 
     @property
     def submissions(self) -> int:
@@ -51,7 +51,7 @@ def contest_summary(local: LocalContests, contest: Contest) -> ContestSummary:
     levels = tuple(
         sum(level_rank(row["verdict_level"]) == rank for row in current) for rank in (0, 1, 2)
     )
-    marked = sum(1 for person in review.people() if person["mark"])
+    flagged = len({str(row[key]) for row in current for key in ("uid_a", "uid_b")})
     return ContestSummary(
         stats=stats,
         date=_date(contest.start_time or contest.end_time),
@@ -59,7 +59,7 @@ def contest_summary(local: LocalContests, contest: Contest) -> ContestSummary:
         levels=levels,  # type: ignore[arg-type]
         findings=len(current),
         reviewed=sum(row["status"] != "待复核" for row in current),
-        marked=marked,
+        flagged=flagged,
     )
 
 

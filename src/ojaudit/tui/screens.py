@@ -1087,7 +1087,7 @@ class ContestOverviewScreen(ShellScreen):
             f"{summary.findings} 条 · {summary.findings - summary.reviewed} 待复核"
             if summary.findings
             else ("尚未分析，按 R 运行" if summary.state != "已分析" else "无线索"),
-            f"{stats.participants} 人 · {summary.marked} 已标记",
+            f"{stats.participants} 人 · {summary.flagged} 人涉及线索",
             f"{stats.problems} 题",
             "本地推导，非官方",
         )

@@ -15,9 +15,9 @@ from pathlib import Path
 from typing import Any
 
 from ojaudit.core.config import data_dir, load_config, save_config
-from ojaudit.tui.editable_lists import EditableLists
 from ojaudit.core.plugins import PluginManifest, discover_manifests, validate_parameters
 from ojaudit.core.store import Store
+from ojaudit.tui.editable_lists import EditableLists
 
 CATEGORIES = (
     "账户",

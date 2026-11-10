@@ -108,29 +108,37 @@ def derive_rows(
     每人每题取赛中最高分（同分取最早），总分降序；同分时最后一次得分越早越靠前。
     """
     best: dict[tuple[str, int], tuple[float, int]] = {}
+    attempts: dict[tuple[str, int], int] = {}
     counts: dict[str, int] = {}
     for uid, problem, score, time, phase in submissions:
         counts[str(uid)] = counts.get(str(uid), 0) + 1
         if phase != "contest":
             continue
         key = (str(uid), int(problem))
+        attempts[key] = attempts.get(key, 0) + 1
         old = best.get(key)
         if old is None or score > old[0] or (score == old[0] and time < old[1]):
             best[key] = (float(score), int(time))
-    totals: dict[str, list[tuple[float, int]]] = {}
-    for (uid, _), record in best.items():
-        totals.setdefault(uid, []).append(record)
+    # 每人每题：赛中最高分、首次达到该分的时间、赛中提交次数（导出表格的可选列）。
+    detail: dict[str, dict[int, dict[str, Any]]] = {}
+    for (uid, problem), (score, time) in best.items():
+        detail.setdefault(uid, {})[problem] = {
+            "score": score,
+            "time": time,
+            "attempts": attempts[(uid, problem)],
+        }
     rows = []
     for uid, name in people:
-        records = totals.get(str(uid), [])
+        problems = detail.get(str(uid), {})
         rows.append(
             {
                 "platform": platform,
                 "uid": str(uid),
                 "name": name,
-                "score": sum(record[0] for record in records),
-                "submit_time": max((record[1] for record in records), default=0),
+                "score": sum(item["score"] for item in problems.values()),
+                "submit_time": max((item["time"] for item in problems.values()), default=0),
                 "submissions": counts.get(str(uid), 0),
+                "problems": problems,
             }
         )
     # 同分时最后一次得分越早越靠前；0 分时有提交的排在只报名的人前面。
@@ -143,6 +151,25 @@ def derive_rows(
         )
     )
     return [{**row, "rank": index} for index, row in enumerate(rows, 1)]
+
+
+def contest_layout(store: Any, platform: str, contest_id: str) -> tuple[list[int], int | None, str]:
+    """比赛的题号列表、开始时间（毫秒）与名称，供导出表格生成各题列、相对用时与标题。"""
+    problems = [
+        int(row[0])
+        for row in store.connection.execute(
+            "SELECT problem_index FROM problems WHERE platform=? AND contest_id=? "
+            "UNION SELECT problem_index FROM submissions WHERE platform=? AND contest_id=? "
+            "ORDER BY 1",
+            (platform, contest_id, platform, contest_id),
+        )
+    ]
+    row = store.connection.execute(
+        "SELECT start_time, name FROM contests WHERE platform=? AND contest_id=?",
+        (platform, contest_id),
+    ).fetchone()
+    start = int(row[0]) if row and row[0] else None
+    return problems, start, str(row[1]) if row else contest_id
 
 
 def contest_ranking(
@@ -178,13 +205,10 @@ def default_export_path(
     return base / _safe_part(platform) / _safe_part(contest_id) / f"ranking.{format_name}"
 
 
-def export_ranking(ranking: FinalRanking, format_name: str, destination: Path) -> Path:
-    from ojaudit.plugins.exporters.csv import export_csv
-    from ojaudit.plugins.exporters.html import export_html
-    from ojaudit.plugins.exporters.markdown import export_markdown
-    from ojaudit.plugins.exporters.xlsx import export_xlsx
+def export_ranking(table: Any, format_name: str, destination: Path) -> Path:
+    """table 为 core.ranking_table.RankingTable。"""
+    from ojaudit.core.ranking_table import write_table
 
-    exporters = {"md": export_markdown, "csv": export_csv, "html": export_html, "xlsx": export_xlsx}
-    if format_name not in exporters:
+    if format_name not in EXPORT_FORMATS:
         raise ValueError("仅支持 xlsx/md/csv/html")
-    return exporters[format_name](list(ranking.rows), destination)
+    return write_table(table, format_name, destination)

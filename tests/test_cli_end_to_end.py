@@ -65,7 +65,8 @@ def test_cli_end_to_end(tmp_path, capsys, monkeypatch):
     main([*base, "export", "synthetic", "c1", "--output", str(destination)])
     with destination.open(encoding="utf-8-sig", newline="") as stream:
         rows = list(csv.DictReader(stream))
-    assert [row["uid"] for row in rows] == ["u1"]
-    assert rows[0]["rank"] == "1"
+    assert [row["UID"] for row in rows] == ["u1"]
+    assert rows[0]["名次"] == "1"
+    assert "标记" not in rows[0], "作弊者已除名、无人带标记时不输出标记列"
     with Store(db) as store:
         assert store.list_finding_reviews(run)[0]["status"] == "已核查"

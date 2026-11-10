@@ -1,41 +1,74 @@
 """
 Module: TUI / ranking screen
-Description: 展示本地推导榜单、排名策略和导出选项。
+Description: 展示本地推导榜单：名单处理策略、表格内容选项、预览与导出（导出后复制路径）。
 Scope: TUI
-Notes: 预览明确注明非官方，不将人工标记直接当作作弊事实。
+Notes: 预览与导出使用同一张表格；预览明确注明非官方，不将人工标记直接当作作弊事实。
 """
 
 from __future__ import annotations
 
-from typing import ClassVar
+import os
+import shutil
+import subprocess
+from typing import Any, ClassVar
 
+from rich.cells import cell_len
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Label, ListView, Static
 
 from ojaudit.core.ranking import RankingOptions
+from ojaudit.core.ranking_table import TableOptions
 from ojaudit.tui import ui
 from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView
-from ojaudit.tui.ranking_data import export_ranking, final_ranking, pending_warnings
+from ojaudit.tui.ranking_data import export_ranking, final_ranking, pending_warnings, ranking_table
 from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.screens import ShellScreen
 from ojaudit.tui.splitter import Splitter
 
+# 名单处理：哪些人出现在榜单上、是否标注。
 POLICIES = (
     ("作弊者", ("除名", "标记"), ("drop", "mark")),
     ("存疑者", ("照常", "标记", "剔除"), ("keep", "mark", "drop")),
     ("管理者", ("剔除", "标记"), ("drop", "mark")),
     ("未提交者", ("保留", "剔除"), ("keep", "drop")),
+)
+# 表格内容：榜单展示哪些列，以及导出格式。
+TABLE = (
+    ("各题得分", ("隐藏", "显示"), (False, True)),
+    ("提交次数", ("隐藏", "显示"), (False, True)),
+    ("时间", ("隐藏", "显示"), (False, True)),
     ("导出格式", ("Excel", "Markdown", "CSV", "HTML"), ("xlsx", "md", "csv", "html")),
 )
-PREVIEW_COLUMNS = (
-    ui.Column("名次", 4, "right"),
-    ui.Column("姓名"),
-    ui.Column("得分", 8, "right"),
-    ui.Column("标记", 8),
-)
+GROUPS = {"ranking-options": POLICIES, "ranking-table": TABLE}
+_WIDTHS = {
+    "名次": (4, "right"),
+    "UID": (12, "left"),
+    "总分": (6, "right"),
+    "提交": (4, "right"),
+    "最后得分": (8, "left"),
+    "标记": (6, "left"),
+}
+
+
+def copy_to_clipboard(app: Any, text: str) -> None:
+    """复制到系统剪贴板：优先用 wl-copy / xclip / xsel / pbcopy，同时发 OSC 52（远程终端也可用）。"""
+    tools = (
+        (["wl-copy"], bool(os.environ.get("WAYLAND_DISPLAY"))),
+        (["xclip", "-selection", "clipboard"], bool(os.environ.get("DISPLAY"))),
+        (["xsel", "--clipboard", "--input"], bool(os.environ.get("DISPLAY"))),
+        (["pbcopy"], True),
+    )
+    for command, usable in tools:
+        if usable and shutil.which(command[0]):
+            try:
+                subprocess.run(command, input=text.encode(), timeout=2, check=False)
+                break
+            except (OSError, subprocess.SubprocessError):
+                continue
+    app.copy_to_clipboard(text)
 
 
 class RankingScreen(ShellScreen):
@@ -43,9 +76,9 @@ class RankingScreen(ShellScreen):
     TITLE = "排行榜"
     HINTS = (
         ("↵", "切换取值"),
-        ("tab", "策略/预览"),
+        ("tab", "切换面板"),
         ("a", "设为/取消管理者"),
-        ("e", "导出"),
+        ("e", "导出并复制路径"),
         ("←", "返回"),
     )
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
@@ -56,16 +89,20 @@ class RankingScreen(ShellScreen):
         ("k,up", "up", "上移"),
         ("g", "first", "首项"),
         ("shift+g", "last", "末项"),
-        ("tab,shift+tab", "focus_next", "切换策略 / 预览"),
-        ("e", "export", "导出"),
+        ("tab", "focus_next", "切换 名单处理 / 表格内容 / 预览"),
+        ("shift+tab", "focus_previous", "反向切换面板"),
+        ("e", "export", "导出并复制路径"),
         ("a", "toggle_manager", "把预览中选中的人设为 / 取消管理者"),
     ]
+    PANELS = ("ranking-options", "ranking-table", "ranking-preview")
 
     def __init__(self, data: ReviewData) -> None:
         super().__init__()
         self.data = data
         self.contest = data.contest
         self.choice_indices = [0] * len(POLICIES)
+        self.table_indices = [0] * len(TABLE)
+        self.preview_rows: list[dict[str, Any]] = []
         self.PATH = f"首页 › 比赛列表 › {data.contest.name} › 排行榜"
 
     def subtitle(self) -> str:
@@ -75,11 +112,12 @@ class RankingScreen(ShellScreen):
         yield from self.chrome_top()
         with Vertical(id="body"), Horizontal(id="ranking-columns"):
             with Vertical(id="ranking-side"):
-                yield NavigateListView(
-                    *(ListItem(Label(name)) for name, _, _ in POLICIES),
-                    id="ranking-options",
-                    classes="panel",
-                )
+                for view_id, items in GROUPS.items():
+                    yield NavigateListView(
+                        *(ListItem(Label(name)) for name, _, _ in items),
+                        id=view_id,
+                        classes="panel ranking-group",
+                    )
                 yield Static("", id="ranking-warning", classes="panel")
             yield Splitter("ranking-side", "ranking", minimum=30)
             with Vertical(id="ranking-main", classes="panel"):
@@ -88,11 +126,11 @@ class RankingScreen(ShellScreen):
         yield from self.chrome_bottom()
 
     def on_mount(self) -> None:
-        self.query_one("#ranking-options").border_title = "导出策略"
+        self.query_one("#ranking-options").border_title = "名单处理"
+        self.query_one("#ranking-table").border_title = "表格内容"
         self.query_one("#ranking-warning").border_title = "提醒"
         self.query_one("#ranking-main").border_title = "预览"
         self.refresh_ranking()
-        self.query_one("#ranking-options", ListView).focus()
         super().on_mount()
         self.query_one("#ranking-options", ListView).focus()
 
@@ -101,26 +139,40 @@ class RankingScreen(ShellScreen):
 
     def policy(self) -> RankingOptions:
         return RankingOptions(
-            cheaters=POLICIES[0][2][self.choice_indices[0]],
-            suspects=POLICIES[1][2][self.choice_indices[1]],
-            managers=POLICIES[2][2][self.choice_indices[2]],
-            inactive=POLICIES[3][2][self.choice_indices[3]],
+            **{
+                field: POLICIES[index][2][self.choice_indices[index]]
+                for index, field in enumerate(("cheaters", "suspects", "managers", "inactive"))
+            }
+        )
+
+    def table_options(self) -> TableOptions:
+        return TableOptions(
+            **{
+                field: TABLE[index][2][self.table_indices[index]]
+                for index, field in enumerate(("per_problem", "attempts", "times"))
+            }
         )
 
     def format_name(self) -> str:
-        return POLICIES[-1][2][self.choice_indices[-1]]
+        return str(TABLE[-1][2][self.table_indices[-1]])
+
+    def _indices(self, view_id: str) -> list[int]:
+        return self.choice_indices if view_id == "ranking-options" else self.table_indices
 
     def refresh_ranking(self) -> None:
         colors = ui.palette(self.app)
-        options = self.query_one("#ranking-options", ListView)
-        width = max(options.size.width - 4, 24)
-        for item, (name, titles, _), choice in zip(options.children, POLICIES, self.choice_indices):
-            value = Text("‹ ", style=colors.muted)
-            value.append(titles[choice], style=f"bold {colors.accent}")
-            value.append(" ›", style=colors.muted)
-            item.query_one(Label).update(
-                ui.table_row([name, value], (ui.Column(""), ui.Column("", 14, "right")), width)
-            )
+        for view_id, items in GROUPS.items():
+            view = self.query_one(f"#{view_id}", ListView)
+            width = max(view.size.width - 4, 24)
+            for item, (name, titles, _), choice in zip(
+                view.children, items, self._indices(view_id)
+            ):
+                value = Text("‹ ", style=colors.muted)
+                value.append(titles[choice], style=f"bold {colors.accent}")
+                value.append(" ›", style=colors.muted)
+                item.query_one(Label).update(
+                    ui.table_row([name, value], (ui.Column(""), ui.Column("", 14, "right")), width)
+                )
         warnings = pending_warnings(self.data)
         note = Text()
         for index, message in enumerate(warnings or ("暂无待处理项",)):
@@ -130,69 +182,82 @@ class RankingScreen(ShellScreen):
         note.append("\n不阻止导出", style=colors.muted)
         self.query_one("#ranking-warning", Static).update(note)
 
+        # 预览与导出用同一张表：列随「表格内容」变化，没有任何标记时不显示标记列。
+        policy = self.policy()
+        self.preview_rows = list(final_ranking(self.data, policy).rows)
+        table = ranking_table(self.data, policy, self.table_options())
+        columns = []
+        for header, kind in zip(table.headers, table.kinds):
+            if header == "姓名":
+                columns.append(ui.Column(header))
+                continue
+            if "用时" in header:
+                width, align = 8, "left"
+            else:
+                width, align = _WIDTHS.get(header, (max(cell_len(header), 5), "right"))
+            columns.append(ui.Column(header, width, "right" if kind != "text" else align))
         preview = self.query_one("#ranking-preview", ListView)
         total = max(self.query_one("#ranking-main").size.width - 6, 30)
         self.query_one("#ranking-main .thead", Static).update(
-            ui.table_header(PREVIEW_COLUMNS, total, colors.muted)
+            ui.table_header(columns, total, colors.muted)
         )
         selected = preview.index or 0
         preview.clear()
-        self.preview_rows = list(final_ranking(self.data, self.policy()).rows)
-        for row in self.preview_rows:
-            mark = row.get("person_mark", "")
-            label_text = {"manager": "管理", "suspect": "存疑", "cheater": "作弊者"}.get(mark, "")
-            color = {"manager": colors.muted}.get(mark, colors.mark(mark))
-            preview.append(
-                ListItem(
-                    Label(
-                        ui.table_row(
-                            [
-                                Text(str(row["rank"]), style=colors.muted),
-                                Text(
-                                    str(row["name"]),
-                                    style=colors.person(mark, mark == "manager"),
-                                ),
-                                f"{row['score']:g}",
-                                Text(label_text, style=color),
-                            ],
-                            PREVIEW_COLUMNS,
-                            total,
-                        )
-                    )
-                )
-            )
+        for cells, mark in zip(table.rows, table.marks):
+            styled: list[Text] = []
+            for header, value in zip(table.headers, cells):
+                if header == "姓名":
+                    styled.append(Text(str(value), style=colors.person(mark, mark == "manager")))
+                elif header == "标记":
+                    color = colors.muted if mark == "manager" else colors.mark(mark)
+                    styled.append(Text(str(value), style=color))
+                elif header in ("名次", "UID") or "用时" in header or "提交" in header:
+                    styled.append(Text(str(value), style=colors.muted))
+                else:
+                    styled.append(Text(str(value), style=colors.fg))
+            preview.append(ListItem(Label(ui.table_row(styled, columns, total))))
         if not preview.children:
             preview.append(ListItem(Label(Text("当前策略下无可展示人员", style=colors.muted))))
         preview.call_after_refresh(
             setattr, preview, "index", min(selected, len(preview.children) - 1)
         )
+        self.query_one(
+            "#ranking-main"
+        ).border_subtitle = f"{len(table.rows)} 人 · {len(table.headers)} 列 · {TABLE[-1][1][self.table_indices[-1]]}"
         self.refresh_chrome()
 
     def change(self, delta: int) -> None:
-        view = self.query_one("#ranking-options", ListView)
+        view = self.active_view()
+        if view.id not in GROUPS:
+            return
         index = view.index or 0
-        choices = POLICIES[index][1]
-        self.choice_indices[index] = (self.choice_indices[index] + delta) % len(choices)
+        indices = self._indices(str(view.id))
+        choices = GROUPS[str(view.id)][index][1]
+        indices[index] = (indices[index] + delta) % len(choices)
         self.refresh_ranking()
 
     def action_previous(self) -> None:
-        if self.active_view().id == "ranking-options":
-            self.change(-1)
+        self.change(-1)
 
     def action_next(self) -> None:
-        if self.active_view().id == "ranking-options":
-            self.change(1)
+        self.change(1)
 
     def active_view(self) -> ListView:
         view = self.app.focused
-        if isinstance(view, ListView) and view.id == "ranking-preview":
+        if isinstance(view, ListView) and view.id in self.PANELS:
             return view
         return self.query_one("#ranking-options", ListView)
 
+    def _cycle(self, step: int) -> None:
+        current = self.PANELS.index(str(self.active_view().id))
+        target = self.PANELS[(current + step) % len(self.PANELS)]
+        self.query_one(f"#{target}", ListView).focus()
+
     def action_focus_next(self) -> None:
-        view = self.active_view()
-        target = "#ranking-preview" if view.id == "ranking-options" else "#ranking-options"
-        self.query_one(target, ListView).focus()
+        self._cycle(1)
+
+    def action_focus_previous(self) -> None:
+        self._cycle(-1)
 
     def action_first(self) -> None:
         self.active_view().index = 0
@@ -230,11 +295,14 @@ class RankingScreen(ShellScreen):
 
     def action_export(self) -> None:
         try:
-            destination = export_ranking(self.data, self.policy(), self.format_name())
+            destination = export_ranking(
+                self.data, self.policy(), self.format_name(), table=self.table_options()
+            )
         except (OSError, ValueError) as exc:
             self.notify(f"导出失败：{exc}", severity="error")
-        else:
-            self.notify(f"已导出：{destination}")
+            return
+        copy_to_clipboard(self.app, str(destination))
+        self.notify(f"已导出，路径已复制：{destination}")
 
     def open_index(self, index: int) -> None:
         self.action_next()

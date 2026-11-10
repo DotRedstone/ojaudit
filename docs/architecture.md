@@ -15,7 +15,7 @@
 - core.reviews：线索复核状态与失效提示。
 - core.ranking：人员标记/隐藏名单策略与最终排名。
 - core.plugins：插件清单校验和发现；不隐式执行第三方代码。
-- core.pipeline：按明确顺序编排数据源和检测器。
+- core.analysis：一次比赛分析的完整流程（配置与参数校验、排除管理者、运行检测、写库），CLI 与 TUI 共用。
 - plugins/：内置或外部能力实现。
 - tui/：Textual Screen 栈与交互界面。
 

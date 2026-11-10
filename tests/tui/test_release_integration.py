@@ -2,9 +2,9 @@
 
 from types import SimpleNamespace
 
-from ojaudit.cli import _export, _rank_rows
+from ojaudit.cli import _export
 from ojaudit.core.config import data_dir
-from ojaudit.core.ranking import RankingOptions
+from ojaudit.core.ranking import RankingOptions, contest_ranking
 from ojaudit.core.schema import Contest
 from ojaudit.core.store import Store
 from ojaudit.tui.data import LocalContests
@@ -39,8 +39,11 @@ def test_cli_and_tui_rank_exports_match(tmp_path):
         store.connection.commit()
         local = LocalContests(db)
         data = ReviewData(local, Contest("nowcoder", "demo", "合成比赛"))
-        assert _rank_rows(store, "nowcoder", "demo") == derived_rows(data)
         policy = RankingOptions()
+        assert contest_ranking(store, "nowcoder", "demo", policy).rows == tuple(
+            final_ranking(data, policy).rows
+        )
+        assert derived_rows(data)[0]["uid"] == "u1"
         assert final_ranking(data, policy).rows
         tui_path = export_ranking(data, policy, "csv", tmp_path / "tui")
         cli_path = tmp_path / "cli.csv"

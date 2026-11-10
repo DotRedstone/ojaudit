@@ -1,45 +1,36 @@
-# CLI 与旧 JSON 数据迁移
+# CLI
 
-阶段 5 的 CLI 使用本地 SQLite，默认路径为 XDG_DATA_HOME/ojaudit/ojaudit.sqlite，可用全局 `--db` 指定路径。所有命令都支持 `--help`。
+数据库默认位于 `$XDG_DATA_HOME/ojaudit/ojaudit.sqlite`；优先级为全局 `--db PATH` > 配置 `[storage] sqlite_path` > 默认路径。所有命令支持 `--help`。不带子命令运行 `ojaudit` 进入 TUI。
 
-```bash
-ojaudit --db /tmp/synthetic.sqlite migrate synthetic.json
-ojaudit --db /tmp/synthetic.sqlite contests
-ojaudit --db /tmp/synthetic.sqlite hidden add --platform synthetic --uid staff
-ojaudit --db /tmp/synthetic.sqlite analyze synthetic c1
-ojaudit --db /tmp/synthetic.sqlite mark synthetic c1 u2 suspect --note "待核查"
-ojaudit --db /tmp/synthetic.sqlite export synthetic c1 --output /tmp/ranking.csv
-```
-
-`review` 命令需要分析输出的 run_id、双方 UID、题目序号、语言和状态。
-
-`migrate` 接收 JSON 对象，包含 `contest`（platform、contest_id、name）、`participants`（uid、name）和 `submissions`（submission_id、uid、problem_index、language、verdict、score、submit_time、phase、code）数组。重复导入按主键更新，不删除人工记录。当前仅支持此 JSON 格式，不对任意旧版 SQLite 数据库作兼容承诺。
-
-`export` 支持 `--cheaters drop|mark`、`--suspects keep|mark|drop`、`--managers drop|mark`。导出的是按本地提交最高分和 UID 排序的合成榜单；并非牛客官方排名，不适合作为官方名次使用。CSV 对公式前缀转义。
-
-比赛筛选读取用户 `config.toml` 中的 `contest_filter`；隐藏管理者名单全局按 platform + uid 存储，检测分组前剔除。
-
-CLI 默认不联网、不读取 Cookie，不操作 TUI。
-
-## 第 10 轮补充命令
+## 典型流程
 
 ```bash
-ojaudit migrate --from-nowcoder-collect --db ~/.dsh/nowcoder/nowcoder.db --reviews reviews.json
-ojaudit contests --all
-ojaudit login --platform nowcoder
-ojaudit collect 123456
-ojaudit analyze 123456 --json-out report.json
-ojaudit rank 123456 --cheaters drop --format md --output ranking.md
-ojaudit rank 123456 --format csv --output ranking.csv
-ojaudit rank 123456 --format html --output ranking.html
-ojaudit plugins list
-ojaudit plugins install /path/to/local-git-repo@<commit-sha>
-ojaudit plugins enable plugin-name
-ojaudit plugins disable plugin-name
+ojaudit login                      # 交互输入牛客 Cookie，保存为 0600 文件
+ojaudit collect 123456             # 只读采集（唯一联网的命令）
+ojaudit analyze 123456             # 本地检测，生成线索
+ojaudit                            # 在 TUI 中复核线索、标记选手
+ojaudit rank 123456 --format csv   # 导出本地推导榜单（非官方）
 ```
 
-- `migrate --from-nowcoder-collect` 从旧版 SQLite 的 contests/submissions 表只读导入；原数据库不修改、不删除。可选 `--reviews` 接收显式数组格式的复核 JSON（run_id、uid_a、uid_b、problem_index、language、status、updated_at，note 可选）；不支持未知 reviews.json 格式时会报错。
-- `login` 交互式读取 Cookie，保存至 XDG 配置目录 `nowcoder.cookie`，权限 0600，不在命令行传入。采集仅通过现有 NowcoderSource 的只读接口；测试不联网。
-- `plugins install` 当前只做 git commit 固定版本检出、plugin.toml 校验及登记，默认禁用。enable/disable 只更新登记状态，**不执行第三方插件**。
-- `rank` 通过现有 md/csv/html 导出插件。旧 `export` 保留为兼容入口。
-- 无子命令时尝试调用 `ojaudit.tui.app.main`，如 TUI 尚未就绪则给出提示，不在本阶段修改 TUI 实现。
+## 命令
+
+| 命令 | 说明 |
+| --- | --- |
+| `login` | 交互读取 Cookie（不经命令行参数），保存到 `$XDG_CONFIG_HOME/ojaudit/nowcoder.cookie`，权限 0600。 |
+| `collect <比赛ID>` | 用牛客数据源只读采集并在一个事务中入库；读取设置中的 `collect.*`，开启 `collect.auto_analyze` 时随后自动分析。 |
+| `contests [--all]` | 列出本地比赛；默认应用比赛筛选规则，`--all` 显示全部。 |
+| `analyze <比赛ID> [--platform P] [--threshold T] [--json-out F]` | 运行检测并写入新一轮分析。`--threshold` 为指纹相似度阈值，优先于设置。参数说明见 [检测](detection.md)。 |
+| `mark <平台> <比赛> <UID> normal\|suspect\|cheater [--note]` | 人工标记选手。 |
+| `review <run_id> <UID_A> <UID_B> <题号> <语言> <状态> [--note]` | 复核一条线索，状态为 已核查 / 无需跟进 / 需进一步核实。 |
+| `hidden add\|remove\|list [--platform --uid --nickname]` | 全局管理者名单；检测前剔除，排行榜按策略处理。 |
+| `rank <比赛ID> [--platform P] [--format md\|csv\|html] [--output F]` | 导出最终排名。策略 `--cheaters drop\|mark`、`--suspects keep\|mark\|drop`、`--managers drop\|mark`。默认写到 `$XDG_DATA_HOME/ojaudit/exports/<平台>/<比赛>/ranking.<格式>`，与 TUI 相同。 |
+| `export <平台> <比赛> [--output F] [--format]` | `rank` 的旧形式，保留兼容。 |
+| `migrate <file.json>` | 导入 JSON 包：`contest`（platform、contest_id、name）、`participants`（uid、name）、`submissions`（submission_id、uid、problem_index、language、verdict、score、submit_time、phase、code，可选 problem_title）。 |
+| `migrate --from-nowcoder-collect [--db 旧库] [--reviews F]` | 只读导入旧 nowcoder-collect SQLite（默认 `~/.dsh/nowcoder/nowcoder.db`），不修改原库；未知结构直接报错。`--reviews` 接收复核记录数组。 |
+| `plugins list\|install\|enable\|disable` | 第三方插件登记。`install <git-url>@<commit>` 只检出固定 commit 并校验 `plugin.toml`，**不执行插件代码**。 |
+
+## 说明
+
+- 榜单按每人每题赛中最高分推算，赛前与赛后补题提交不计分；数据库没有官方名次与罚时，结果始终标注非官方。CSV 对公式前缀转义。
+- 重复导入按主键更新，不删除人工记录；导入或迁移中途失败会整体回滚。
+- 题号可为数字或字母（A=0、Z=25、AA=26）；语言归入 cpp / python / java / other。

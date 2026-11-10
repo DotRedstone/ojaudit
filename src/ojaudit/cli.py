@@ -17,9 +17,12 @@ from ojaudit.core.analysis import run_analysis
 from ojaudit.core.config import data_dir, load_config
 from ojaudit.core.filters import filter_contests, load_contest_filter
 from ojaudit.core.ingest import import_bundle, import_json, migrate_nowcoder
-from ojaudit.core.people import HiddenPerson
-from ojaudit.core.ranking import RankingOptions, build_final_ranking
-from ojaudit.core.schema import Contest
+from ojaudit.core.ranking import (
+    RankingOptions,
+    contest_ranking,
+    default_export_path,
+    export_ranking,
+)
 from ojaudit.core.store import Store
 
 
@@ -54,39 +57,14 @@ def _analyze(
     return result.run_id
 
 
-def _rank_rows(store: Store, platform: str, cid: str) -> list[dict]:
-    """复用 TUI 的同一份本地推导算法，保证 CLI 与 TUI 榜单一致。"""
-    from ojaudit.tui.data import LocalContests
-    from ojaudit.tui.ranking_data import derived_rows
-    from ojaudit.tui.review_data import ReviewData
-
-    return derived_rows(ReviewData(LocalContests(store.path), Contest(platform, cid, cid)))
-
-
 def _export(store: Store, args: argparse.Namespace) -> Path:
-    if not store.contest_exists(args.platform, args.contest):
-        raise ValueError(f"比赛不存在：{args.platform}/{args.contest}；请先 collect 或 migrate")
-    marks = {
-        row["uid"]: row["mark"] for row in store.list_person_marks(args.platform, args.contest)
-    }
-    hidden = [HiddenPerson(**p) for p in store.list_hidden_people()]
     options = RankingOptions(cheaters=args.cheaters, suspects=args.suspects, managers=args.managers)
-    ranking = build_final_ranking(
-        _rank_rows(store, args.platform, args.contest), marks, hidden, options
-    )
-    from ojaudit.plugins.exporters.csv import export_csv
-    from ojaudit.plugins.exporters.html import export_html
-    from ojaudit.plugins.exporters.markdown import export_markdown
-
+    ranking = contest_ranking(store, args.platform, args.contest, options)
     fmt = getattr(args, "format", "csv")
-    path = Path(args.output) if args.output else Path(f"{args.contest}.{fmt}")
-    rows = list(ranking.rows)
-    if fmt == "csv":
-        export_csv(rows, path)
-    elif fmt == "md":
-        export_markdown(rows, path)
-    else:
-        export_html(rows, path)
+    path = (
+        Path(args.output) if args.output else default_export_path(args.platform, args.contest, fmt)
+    )
+    export_ranking(ranking, fmt, path)
     print(f"exported={path} rows={len(ranking.rows)}")
     return path
 
@@ -137,7 +115,7 @@ def _parser() -> argparse.ArgumentParser:
     export = sub.add_parser("export", help="导出本地最终排行榜（旧命令）")
     export.add_argument("platform")
     export.add_argument("contest")
-    export.add_argument("--output", type=Path, required=True)
+    export.add_argument("--output", type=Path)
     export.add_argument("--format", choices=["md", "csv", "html"], default="csv")
     rank = sub.add_parser("rank", help="生成最终排名")
     rank.add_argument("contest")

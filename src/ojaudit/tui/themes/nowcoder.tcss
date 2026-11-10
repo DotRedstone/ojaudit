@@ -6,7 +6,8 @@ Screen {
     color: $foreground;
 }
 #breadcrumb {
-    height: 1;
+    /* Single text line with a two-cell click target for mouse accessibility. */
+    height: 2;
     padding: 0 2;
     background: $background;
     color: $text-muted;

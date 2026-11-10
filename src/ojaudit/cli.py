@@ -23,10 +23,12 @@ from ojaudit.core.filters import filter_contests, load_contest_filter
 from ojaudit.core.ingest import import_bundle, import_json, migrate_nowcoder
 from ojaudit.core.ranking import (
     RankingOptions,
+    contest_layout,
     contest_ranking,
     default_export_path,
     export_ranking,
 )
+from ojaudit.core.ranking_table import TableOptions, build_table
 from ojaudit.core.store import Store
 
 
@@ -69,11 +71,23 @@ def _export(store: Store, args: argparse.Namespace) -> Path:
         inactive=getattr(args, "inactive", "keep"),
     )
     ranking = contest_ranking(store, args.platform, args.contest, options)
+    problems, start, name = contest_layout(store, args.platform, args.contest)
+    table = build_table(
+        ranking,
+        problems,
+        TableOptions(
+            per_problem=getattr(args, "per_problem", False),
+            attempts=getattr(args, "attempts", False),
+            times=getattr(args, "times", False),
+        ),
+        start,
+        f"{name} 排行榜",
+    )
     fmt = getattr(args, "format", "csv")
     path = (
         Path(args.output) if args.output else default_export_path(args.platform, args.contest, fmt)
     )
-    export_ranking(ranking, fmt, path)
+    export_ranking(table, fmt, path)
     print(f"exported={path} rows={len(ranking.rows)}")
     return path
 
@@ -141,6 +155,14 @@ def _parser() -> argparse.ArgumentParser:
     rank.add_argument(
         "--inactive", choices=["keep", "drop"], default="keep", help="drop：剔除一次都未提交的人"
     )
+    for command in (export, rank):
+        command.add_argument("--per-problem", action="store_true", help="表格展示各题得分")
+        command.add_argument(
+            "--attempts", action="store_true", help="展示提交次数（配合 --per-problem 时按题）"
+        )
+        command.add_argument(
+            "--times", action="store_true", help="展示用时（配合 --per-problem 时按题）"
+        )
     plugins = sub.add_parser("plugins", help="插件登记")
     plugins.add_argument("action", choices=["list", "install", "enable", "disable"])
     plugins.add_argument("spec", nargs="?")

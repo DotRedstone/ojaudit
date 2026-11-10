@@ -18,6 +18,7 @@ from ojaudit.core.ranking import (
     derive_rows,
 )
 from ojaudit.core.ranking import export_ranking as export_rows
+from ojaudit.core.ranking_table import RankingTable, TableOptions, build_table
 from ojaudit.tui.review_data import ReviewData
 
 
@@ -49,6 +50,19 @@ def final_ranking(data: ReviewData, policy: RankingOptions) -> FinalRanking:
     return build_final_ranking(derived_rows(data), marks, hidden, policy)
 
 
+def ranking_table(
+    data: ReviewData, policy: RankingOptions, table: TableOptions | None = None
+) -> RankingTable:
+    problems = [int(p["problem_index"]) for p in data.problems()]
+    # 开始时间以数据库为准（与 CLI 一致），列表传入的比赛对象可能不带时间。
+    rows = data._read(
+        "SELECT start_time, name FROM contests WHERE platform=? AND contest_id=?", *data.key
+    )
+    start = rows[0]["start_time"] if rows and rows[0]["start_time"] else None
+    name = rows[0]["name"] if rows else data.contest.name
+    return build_table(final_ranking(data, policy), problems, table, start, f"{name} 排行榜")
+
+
 def pending_warnings(data: ReviewData) -> tuple[str, ...]:
     messages = []
     pending = [
@@ -63,7 +77,11 @@ def pending_warnings(data: ReviewData) -> tuple[str, ...]:
 
 
 def export_ranking(
-    data: ReviewData, policy: RankingOptions, format_name: str, base_dir: str | Path | None = None
+    data: ReviewData,
+    policy: RankingOptions,
+    format_name: str,
+    base_dir: str | Path | None = None,
+    table: TableOptions | None = None,
 ) -> Path:
     destination = default_export_path(
         data.contest.platform,
@@ -71,4 +89,4 @@ def export_ranking(
         format_name,
         Path(base_dir) if base_dir is not None else None,
     )
-    return export_rows(final_ranking(data, policy), format_name, destination)
+    return export_rows(ranking_table(data, policy, table), format_name, destination)

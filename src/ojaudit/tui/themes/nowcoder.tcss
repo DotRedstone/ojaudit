@@ -153,7 +153,8 @@ ListView:focus > ListItem.-highlight {
 
 #ranking-columns { height: 1fr; }
 #ranking-side { width: 44; }
-#ranking-options { height: 9; }
+#ranking-options, #ranking-table { height: 6; }
+#ranking-table { margin-top: 1; }
 #ranking-warning { height: auto; margin-top: 1; padding: 0 1; }
 #ranking-main { width: 1fr; height: 1fr; }
 #ranking-main .thead { padding: 0 2; }

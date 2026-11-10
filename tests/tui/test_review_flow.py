@@ -9,6 +9,7 @@ Notes: 只使用合成比赛、选手与代码。
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 from textual.widgets import ListView, Static
 
@@ -307,3 +308,39 @@ def test_undo_review_restores_quick_resolved_findings(tmp_path):
     data.judge_finding(finding("a", "c", 2), "")
     assert finding("a", "c", 2)["status"] == "待复核"
     assert data.person("a")["mark"] == "" and data.person("c")["mark"] == ""
+
+
+def test_ranking_table_columns_and_export_copies_path(tmp_path, monkeypatch):
+    from ojaudit.tui import ranking_screen
+    from ojaudit.tui.ranking_screen import TABLE, RankingScreen
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    copied = []
+    monkeypatch.setattr(ranking_screen, "copy_to_clipboard", lambda app, text: copied.append(text))
+    local, data = _fixture(tmp_path)
+
+    async def scenario():
+        app = AuditApp(local)
+        async with app.run_test(size=(160, 40)) as pilot:
+            app.push_screen(RankingScreen(data))
+            await pilot.pause()
+            screen = app.screen
+            head = screen.query_one("#ranking-main .thead", Static)
+            assert "标记" not in str(head.render()), "没有任何标记时不显示标记列"
+            await pilot.press("tab")
+            assert app.focused.id == "ranking-table"
+            screen.query_one("#ranking-table", ListView).index = 0
+            await pilot.press("enter")
+            await pilot.pause()
+            assert screen.table_options().per_problem
+            assert " A " in f" {head.render()} " and "总分" in str(head.render())
+            formats = [name for name, _, _ in TABLE].index("导出格式")
+            screen.table_indices[formats] = 2  # CSV
+            await pilot.press("e")
+            await pilot.pause()
+            assert copied and copied[0].endswith("ranking.csv")
+            header = Path(copied[0]).read_text(encoding="utf-8-sig").splitlines()[0]
+            assert header.split(",")[:4] == ["名次", "姓名", "UID", "A"]
+
+    asyncio.run(scenario())

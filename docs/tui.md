@@ -79,3 +79,13 @@
 数据库路径的优先级为：命令行 `--db PATH` > 配置文件 `[storage] sqlite_path = "..."` > `$XDG_DATA_HOME/ojaudit/ojaudit.sqlite`（未设置 XDG 变量时为 `~/.local/share/ojaudit/ojaudit.sqlite`）。
 
 不带子命令启动 `ojaudit --db PATH` 时，TUI 会打开同一 SQLite 数据库，设置中的管理者名单也对应当前数据库。可在「账户 → SQLite 路径」保存下次启动使用的数据库位置；本次启动若指定了 `--db`，始终以命令行选项为准。数据库不存在时，可先 `ojaudit login`，再 `ojaudit collect 比赛ID`。
+
+## 壁纸主题与视觉风格（r18）
+
+默认主题为 `auto`，优先读取 `OJAUDIT_THEME_FILE` 指定的本地 JSON；未指定时依次查找 `~/.cache/wal/colors.json`、`~/.cache/matugen/colors.json`、`~/.config/matugen/colors.json`。支持 pywal 的 special/colors 和常见 matugen dark/default/color JSON。只读取经过十六进制校验的颜色，不执行 pywal/matugen 命令，不注入 JSON 内的 CSS；无效、过大（超过 256 KiB）和不可读文件自动忽略。
+
+外观主题可选 `auto`、`wallpaper`、`ansi-dark`、`catppuccin-mocha`、`nord`、`gruvbox`、`textual-dark`。无有效壁纸文件时回退深色内置主题；当选择 auto/wallpaper 时每四秒检查本地壁纸配色文件变化。旧配置中的 ansi/catppuccin 仍可读取。外观设置保留 Nerd Font 开关，并增加按键提示开关，默认紧凑列表。
+
+风格集中在 `src/ojaudit/tui/themes/nowcoder.tcss`：深色背景、单行面包屑、圆角框（聚焦变强调色）、半透明选中、淡色状态栏；状态栏左侧是 NORMAL 胶囊，中间是比赛与当前层，右侧是主题与本地时间。关闭 Nerd Font 时使用普通 `▌` 分隔符。一层一屏导航与现有按键行为未变，本分支不修复键位或数据功能。
+
+对照来源：`DotRedstone/nowcoder-collect` 的 `feat/hierarchical-review-workflow`，`rice_theme.py` 与 `review_tui.py` 的 Page/ReviewApp CSS。视觉截图冒烟与 JSON 校验见 `tests/tui/test_style.py`；SVG 均生成在测试临时目录，不提交用户数据。

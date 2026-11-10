@@ -27,7 +27,9 @@
 ## 标准化约束
 
 - 所有比赛内实体使用 platform + contest_id 作为归属范围。
-- 语言归一为 cpp / python / java / other。
+- 语言归一为 cpp / python / java / other（`schema.language_bucket`）。
+- 题号统一为从 0 开始的整数：数字原样，字母 A=0 … Z=25、AA=26（`schema.parse_problem_index`）。
+- 整场比赛经 `Store.import_contest()` 在一个事务中写入；提交中出现但未列出的选手以 UID 作姓名补齐，真实题目标题不会被占位标题「题 N」覆盖。
 - 提交阶段为 before / contest / after，时间戳统一使用毫秒。
 - 原始平台字段放入 JSON 文本 raw_meta，不得替代标准字段。
 - 样例和测试数据只能使用合成标识与代码。

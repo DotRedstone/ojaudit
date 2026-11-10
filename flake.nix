@@ -60,6 +60,7 @@
           ruff check --no-cache .
           ruff format --check .
           python scripts/check_todos.py
+          python scripts/check_headers.py
           pytest -q
           touch $out
         '';

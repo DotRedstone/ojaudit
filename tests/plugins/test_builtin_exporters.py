@@ -48,6 +48,7 @@ def test_xlsx_ranking_marks_or_drops_cheaters(tmp_path):
     from openpyxl import load_workbook
 
     from ojaudit.core.ranking import RankingOptions, build_final_ranking
+    from ojaudit.core.ranking_table import build_table
     from ojaudit.plugins.exporters.xlsx import export_xlsx
 
     rows = [
@@ -56,12 +57,13 @@ def test_xlsx_ranking_marks_or_drops_cheaters(tmp_path):
         {"platform": "p", "uid": "u3", "name": "丙", "score": 100, "rank": 3},
     ]
     marked = build_final_ranking(rows, {"u1": "cheater"}, options=RankingOptions(cheaters="mark"))
-    sheet = load_workbook(export_xlsx(marked.rows, tmp_path / "mark.xlsx")).active
-    assert [c.value for c in sheet[1]] == ["名次", "姓名", "UID", "得分", "标记"]
-    assert [c.value for c in sheet[2]] == [1, "甲", "u1", 300, "作弊"]
+    sheet = load_workbook(export_xlsx(build_table(marked), tmp_path / "mark.xlsx")).active
+    assert [c.value for c in sheet[1]] == ["名次", "姓名", "UID", "标记", "总分"]
+    assert [c.value for c in sheet[2]] == [1, "甲", "u1", "作弊", 300]
     assert sheet["A2"].fill.fgColor.rgb.endswith("F8D7DA")
     assert sheet["B3"].data_type == "s", "文本不会被当作公式"
     dropped = build_final_ranking(rows, {"u1": "cheater"}, options=RankingOptions(cheaters="drop"))
-    sheet = load_workbook(export_xlsx(dropped.rows, tmp_path / "drop.xlsx")).active
+    sheet = load_workbook(export_xlsx(build_table(dropped), tmp_path / "drop.xlsx")).active
+    assert [c.value for c in sheet[1]] == ["名次", "姓名", "UID", "总分"], "无标记时没有标记列"
     assert [row[1].value for row in sheet.iter_rows(min_row=2)] == ["=SUM(A1)", "丙"]
     assert [row[0].value for row in sheet.iter_rows(min_row=2)] == [1, 2], "除名后重新编号"

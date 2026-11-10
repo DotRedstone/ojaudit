@@ -1,5 +1,5 @@
 /* ojaudit 界面样式：唯一样式来源。
-   结构：左侧书脊(#pages，上层页面) / 内容(#body) / 底部提示栏(#status)。
+   结构：叠放的书页外框(#frame-*) / 内容(#body) / 底部提示栏(#status)。
    颜色全部使用主题变量，跟随壁纸或内置主题切换。 */
 
 Screen {
@@ -12,22 +12,15 @@ Popup, SearchLine { background: transparent; }
 
 /* ── 外壳 ───────────────────────────────────────── */
 
-/* 停靠的部件互相重叠：书脊让出最下面一行给提示栏。 */
-#pages {
-    dock: left;
-    height: 100%;
-    margin-bottom: 1;
-    padding: 1 0 0 1;
-}
+/* 叠放的书页外框：四条停靠的边，尺寸与外边距由 StackFrame 按层数设置。 */
+#frame-top { dock: top; height: 1; }
+#frame-left { dock: left; width: 1; height: 100%; }
+#frame-right { dock: right; width: 1; height: 100%; }
+#frame-bottom { dock: bottom; height: 1; margin-bottom: 1; }
 
 #body {
     height: 1fr;
     padding: 1 2 0 2;
-}
-
-#heading {
-    height: 2;
-    padding: 0 1;
 }
 
 #status {
@@ -87,13 +80,11 @@ ListView:focus > ListItem.-highlight {
 
 /* ── 首页 ───────────────────────────────────────── */
 
-#hero { height: 3; padding: 0 1; }
-#home-columns { height: auto; max-height: 12; }
-#home-menu { width: 46; height: 10; }
-#home-menu ListView { height: auto; }
-#home-overview { width: 1fr; height: 10; padding: 1 2; }
-#empty-guide { height: auto; margin-top: 1; padding: 0 1; color: $warning; }
-#home-recent { height: auto; max-height: 12; margin-top: 1; padding: 0 1; }
+#home-stats { height: 2; padding: 0 1; }
+#menu { height: auto; max-width: 64; margin-bottom: 1; }
+#empty-guide { height: auto; margin-bottom: 1; padding: 0 1; color: $warning; }
+#home-recent { height: auto; max-height: 9; padding: 0 1; }
+#home-db { dock: bottom; height: 1; padding: 0 1; }
 
 /* ── 比赛总览 ───────────────────────────────────── */
 

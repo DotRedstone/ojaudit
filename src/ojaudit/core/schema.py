@@ -8,7 +8,7 @@ Notes: 标准对象只描述数据，不包含平台会话或 I/O 行为。
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 Language = Literal["cpp", "python", "java", "other"]
 Phase = Literal["before", "contest", "after"]
 

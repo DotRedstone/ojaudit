@@ -13,13 +13,24 @@ import json
 from textual.widgets import ListView, Static
 
 from ojaudit.core.store import Store
+from ojaudit.tui.account_screen import AccountScreen
 from ojaudit.tui.app import AuditApp
 from ojaudit.tui.data import LocalContests
 from ojaudit.tui.ranking_screen import RankingScreen
 from ojaudit.tui.review_data import ReviewData
-from ojaudit.tui.review_screens import EvidenceScreen
+from ojaudit.tui.review_screens import (
+    CodeScreen,
+    EvidenceScreen,
+    FindingsScreen,
+    PeopleScreen,
+    PersonScreen,
+    ProblemScreen,
+    ProblemsScreen,
+    SubmissionScreen,
+)
 from ojaudit.tui.rice_theme import load_wallpaper_theme, theme_from_dict
-from ojaudit.tui.screens import ContestListScreen, ContestOverviewScreen
+from ojaudit.tui.screens import ContestListScreen, ContestOverviewScreen, MissingContestScreen
+from ojaudit.tui.pending_screen import PendingScreen
 from ojaudit.tui.settings_screen import SettingsScreen
 
 
@@ -143,6 +154,37 @@ def test_screenshots_with_synthetic_data(tmp_path, monkeypatch):
             app.save_screenshot(filename="evidence.svg", path=str(tmp_path))
             app.pop_screen()
             await pilot.pause()
+            more_pages = (
+                ("findings.svg", FindingsScreen(data, "首页 › 比赛列表")),
+                ("people.svg", PeopleScreen(data, "首页 › 比赛列表")),
+                ("person.svg", PersonScreen(data, "首页 › 比赛列表", "person-a")),
+                (
+                    "submissions.svg",
+                    SubmissionScreen(data, "首页 › 比赛列表", "person-a", 0),
+                ),
+                ("problems.svg", ProblemsScreen(data, "首页 › 比赛列表")),
+                (
+                    "problem.svg",
+                    ProblemScreen(data, "首页 › 比赛列表", 0, "合成测试题"),
+                ),
+                (
+                    "code.svg",
+                    CodeScreen(
+                        data,
+                        "首页 › 比赛列表",
+                        data.submissions("person-a", 0),
+                    ),
+                ),
+                ("account.svg", AccountScreen()),
+                ("pending.svg", PendingScreen()),
+                ("missing.svg", MissingContestScreen("404")),
+            )
+            for filename, screen in more_pages:
+                app.push_screen(screen)
+                await pilot.pause()
+                app.save_screenshot(filename=filename, path=str(tmp_path))
+                app.pop_screen()
+                await pilot.pause()
             app.push_screen(RankingScreen(data))
             await pilot.pause()
             app.save_screenshot(filename="ranking.svg", path=str(tmp_path))
@@ -165,6 +207,16 @@ def test_screenshots_with_synthetic_data(tmp_path, monkeypatch):
         "settings.svg",
         "evidence.svg",
         "ranking.svg",
+        "findings.svg",
+        "people.svg",
+        "person.svg",
+        "submissions.svg",
+        "problems.svg",
+        "problem.svg",
+        "code.svg",
+        "account.svg",
+        "pending.svg",
+        "missing.svg",
     ):
         data = (tmp_path / name).read_text(encoding="utf-8")
         assert "<svg" in data

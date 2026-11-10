@@ -22,6 +22,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, ScrollableContainer, Vertical, VerticalScroll
 from textual.widgets import ListView, Static
 
+from ojaudit.core.ranking_table import format_time
 from ojaudit.core.reviews import DEFAULT_REVIEW_STATUS
 from ojaudit.core.schema import is_accepted
 from ojaudit.tui import ui
@@ -966,26 +967,53 @@ class PeopleScreen(ReviewListScreen):
         self.notify(f"已把 {person['name']} {'设为' if manager else '移出'}管理者")
 
 
+def _short(seconds: int) -> str:
+    """紧凑的时长：45s、3:20、1:02:03。"""
+    if seconds < 60:
+        return f"{seconds}s"
+    hours, rest = divmod(seconds, 3600)
+    minutes, secs = divmod(rest, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
+
+
 class PersonScreen(ReviewListScreen):
     PAGE_ICON = "person"
     TITLE = "选手"
-    HINTS = (("↵", "复核"), ("→", "提交历史"), ("←", "返回"))
+    HINTS = (("↵", "复核"), ("→", "打开"), ("v", "按题/按提交"), ("←", "返回"))
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         *TableScreen.BINDINGS,
+        ("v", "toggle_mode", "按题 / 按提交 切换"),
     ]
-    COLUMNS = (
+    BY_PROBLEM = (
         ui.Column("题", 3),
         ui.Column("题目"),
         ui.Column("提交", 4, "right"),
         ui.Column("最终结果", 12),
         ui.Column("线索", 4, "right"),
     )
+    # 按提交：全部提交按时间排列，看清做题顺序、每次提交的用时与间隔。
+    BY_SUBMISSION = (
+        ui.Column("时间", 14),
+        ui.Column("用时", 8, "right"),
+        ui.Column("间隔", 7, "right"),
+        ui.Column("题", 3),
+        ui.Column("题目"),
+        ui.Column("结果", 12),
+        ui.Column("得分", 5, "right"),
+        ui.Column("语言", 7),
+    )
+    COLUMNS = BY_PROBLEM
 
     def __init__(self, data: ReviewData, path: str, uid: str) -> None:
         person = data.person(uid)
         super().__init__(data, f"{path} › {person['name']}")
         self.uid = uid
         self.TITLE = str(person["name"])
+        self.by_submission = False
+        rows = data._read(
+            "SELECT start_time FROM contests WHERE platform=? AND contest_id=?", *data.key
+        )
+        self.start = rows[0]["start_time"] if rows and rows[0]["start_time"] else None
 
     def heading(self) -> Text:
         colors = ui.palette(self.app)
@@ -1011,9 +1039,33 @@ class PersonScreen(ReviewListScreen):
             )
             mark = "待复核" if involved else "无线索 · 按正常处理"
         note = f" · {person['note']}" if person.get("note") else ""
-        return f"UID {self.uid} · {mark}{note}"
+        view = "按提交" if self.by_submission else "按题"
+        return f"UID {self.uid} · {mark}{note} · {view}（v 切换）"
+
+    def action_toggle_mode(self) -> None:
+        self.by_submission = not self.by_submission
+        self.COLUMNS = self.BY_SUBMISSION if self.by_submission else self.BY_PROBLEM
+        self.sort = None
+        self.query_one("#items", ListView).index = 0
+        self.reload()
+
+    def _submission_rows(self) -> list[dict[str, Any]]:
+        titles = self.titles()
+        rows = sorted(
+            self.data.submissions(self.uid),
+            key=lambda row: (int(row["submit_time"]), str(row["submission_id"])),
+        )
+        previous = None
+        for row in rows:
+            time = int(row["submit_time"])
+            row["title"] = titles.get(int(row["problem_index"]), "")
+            row["gap"] = None if previous is None else time - previous
+            previous = time
+        return rows
 
     def items(self) -> list[dict[str, Any]]:
+        if self.by_submission:
+            return self._submission_rows()
         history: dict[int, list[dict[str, Any]]] = defaultdict(list)
         for row in self.data.submissions(self.uid):
             history[int(row["problem_index"])].append(row)
@@ -1038,6 +1090,17 @@ class PersonScreen(ReviewListScreen):
         return rows
 
     def sort_key(self, row: dict[str, Any], column: int) -> Any:
+        if self.by_submission:
+            return {
+                0: int(row["submit_time"]),
+                1: int(row["submit_time"]),
+                2: row["gap"] if row["gap"] is not None else -1,
+                3: int(row["problem_index"]),
+                4: str(row["title"]),
+                5: str(row["verdict"]),
+                6: float(row["score"]),
+                7: str(row["language"]),
+            }.get(column)
         return {
             0: int(row["problem_index"]),
             1: str(row["title"]),
@@ -1048,6 +1111,22 @@ class PersonScreen(ReviewListScreen):
 
     def cells(self, row: dict[str, Any]) -> Sequence[str | Text]:
         colors = ui.palette(self.app)
+        if self.by_submission:
+            gap = row["gap"]
+            return [
+                Text(ui.clock(row["submit_time"]), style=colors.muted),
+                Text(format_time(int(row["submit_time"]), self.start), style=colors.fg)
+                if self.start
+                else Text("—", style=colors.muted),
+                Text("+" + _short(gap // 1000), style=colors.muted)
+                if gap is not None and gap >= 1000
+                else Text("·", style=colors.muted),
+                Text(ui.problem_label(row["problem_index"]), style=f"bold {colors.fg}"),
+                Text(str(row["title"]), style=colors.fg),
+                Text(str(row["verdict"]), style=ui.verdict_color(row["verdict"], colors)),
+                f"{float(row['score']):g}",
+                LANGUAGES.get(row["language"], row["language"]),
+            ]
         verdict = "通过" if row["solved"] else str(row["final"])
         return [
             Text(ui.problem_label(row["problem_index"]), style=f"bold {colors.fg}"),
@@ -1061,10 +1140,15 @@ class PersonScreen(ReviewListScreen):
 
     def open_index(self, index: int) -> None:
         item = self.selected_row(index)
-        if item:
-            self.app.push_screen(
-                SubmissionScreen(self.data, self.PATH, self.uid, int(item["problem_index"]))
-            )
+        if not item:
+            return
+        if self.by_submission:
+            # 代码页里 ↑↓ 按时间顺序翻这个人的每一次提交。
+            self.app.push_screen(CodeScreen(self.data, self.PATH, self.rows, index))
+            return
+        self.app.push_screen(
+            SubmissionScreen(self.data, self.PATH, self.uid, int(item["problem_index"]))
+        )
 
     def action_activate(self) -> None:
         review_person(self, self.uid, self.reload)

@@ -26,7 +26,7 @@ ojaudit rank 123456 --format csv   # 导出本地推导榜单（非官方）
 | `rank <比赛ID> [--platform P] [--format md\|csv\|html] [--output F]` | 导出最终排名。策略 `--cheaters drop\|mark`、`--suspects keep\|mark\|drop`、`--managers drop\|mark`。默认写到 `$XDG_DATA_HOME/ojaudit/exports/<平台>/<比赛>/ranking.<格式>`，与 TUI 相同。 |
 | `export <平台> <比赛> [--output F] [--format]` | `rank` 的旧形式，保留兼容。 |
 | `migrate <file.json>` | 导入 JSON 包：`contest`（platform、contest_id、name）、`participants`（uid、name）、`submissions`（submission_id、uid、problem_index、language、verdict、score、submit_time、phase、code，可选 problem_title）。 |
-| `migrate --from-nowcoder-collect [--db 旧库] [--reviews F]` | 只读导入旧 nowcoder-collect SQLite（默认 `~/.dsh/nowcoder/nowcoder.db`），不修改原库；未知结构直接报错。`--reviews` 接收复核记录数组。 |
+| `migrate --from-nowcoder-collect [--db 旧库] [--reviews F]` | 只读导入旧 nowcoder-collect SQLite（默认 `~/.dsh/nowcoder/nowcoder.db`），不修改原库；未知结构直接报错。`--reviews` 接收复核记录数组（run_id、uid_a、uid_b、problem_index、language、status、updated_at，note 可选）；记录不含比赛 ID，按双方 UID、题号、语言在旧库提交中定位比赛，无法唯一确定的逐条列在标准错误输出中，不导入。导入的复核在 TUI 中先显示为历史记录，重新分析出同一线索后自动沿用。 |
 | `plugins list\|install\|enable\|disable` | 第三方插件登记。`install <git-url>@<commit>` 只检出固定 commit 并校验 `plugin.toml`，**不执行插件代码**。 |
 
 ## 说明

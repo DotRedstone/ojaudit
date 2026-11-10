@@ -32,7 +32,7 @@ class PendingScreen(ShellScreen):
         self.reload()
 
     def reload(self) -> None:
-        from textual.widgets import Label
+        from textual.widgets import Label, ListView
 
         self.entries = pending_entries(self.app.contests)
         view = self.query_one("#pending-items", ListView)

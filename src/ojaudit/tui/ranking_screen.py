@@ -11,7 +11,7 @@ from typing import ClassVar
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
-from textual.widgets import Label, ListView, Static
+from textual.widgets import ListView, Static
 
 from ojaudit.core.ranking import RankingOptions
 from ojaudit.tui.icons import label as label_icon
@@ -99,12 +99,10 @@ class RankingScreen(ShellScreen):
         for index, (label, titles, _) in enumerate(POLICIES):
             view.append(
                 StatusRow(
-                    Label(
-                        label_icon(
-                            ("cheater", "suspect", "manager", "export")[index],
-                            f"{label}   ‹ {titles[self.choice_indices[index]]} ›",
-                            self.app.nerd_font,
-                        )
+                    label_icon(
+                        ("cheater", "suspect", "manager", "export")[index],
+                        f"{label}   ‹ {titles[self.choice_indices[index]]} ›",
+                        self.app.nerd_font,
                     )
                 )
             )

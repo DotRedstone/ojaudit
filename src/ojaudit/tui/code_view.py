@@ -16,8 +16,9 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
+from rich.style import Style
 from rich.syntax import Syntax
-from rich.text import Text
+from rich.text import Span, Text
 
 from ojaudit.plugins.detectors.tokens import _KEYWORDS
 
@@ -104,20 +105,59 @@ def _join(tokens: list[str], language: str) -> str:
     return "".join(parts)
 
 
-def format_lines(code: str, language: str, hide_boilerplate: bool = True) -> list[str]:
-    """规范化：去注释与空行，忽略头文件与 IO 样板，统一空格与 4 空格缩进。"""
-    text = strip_comments(code, language).expandtabs(4)
-    boilerplate = _BOILERPLATE.get(language)
+@dataclass(frozen=True, slots=True)
+class ViewOptions:
+    """对照视图的处理开关，可任意组合；全部关闭即原始代码。"""
+
+    normalize: bool = True  # 统一空格、缩进与大括号位置
+    comments: bool = True  # 去掉注释
+    boilerplate: bool = True  # 忽略头文件、import 与 IO 加速样板
+    rename: bool = True  # 把 B 的变量名对齐成 A 的名字
+
+
+def _split_comment(line: str, language: str) -> tuple[str, str]:
+    """把一行拆成代码与行尾注释（忽略字符串里的 // 与 #）。"""
+    pattern = _PY_COMMENT if language == "python" else _C_COMMENT
+    for match in pattern.finditer(line):
+        if match.group(1) is None:
+            return line[: match.start()], line[match.start() :].strip()
+    return line, ""
+
+
+def prepare_lines(code: str, language: str, options: ViewOptions | None = None) -> list[str]:
+    """按开关处理代码：去注释、去样板、规范化格式；关闭规范化时保留原始空格与缩进。"""
+    options = options or ViewOptions()
+    text = (code or "").expandtabs(4)
+    if options.comments:
+        text = strip_comments(text, language)
+    boilerplate = _BOILERPLATE.get(language) if options.boilerplate else None
+    raw_lines = [
+        line.rstrip()
+        for line in text.splitlines()
+        if not (boilerplate is not None and boilerplate.match(line))
+    ]
+    if options.comments:
+        raw_lines = [line for line in raw_lines if line.strip()]
+    if not options.normalize:
+        return raw_lines
     result: list[str] = []
     depth = 0
     indents: list[int] = [0]
-    for raw in text.splitlines():
+    in_block = False
+    for raw in raw_lines:
         if not raw.strip():
             continue
-        if hide_boilerplate and boilerplate is not None and boilerplate.match(raw):
+        stripped = raw.strip()
+        # 保留注释时，块注释原样放在当前缩进下，行尾注释接在格式化后的代码后。
+        if in_block or (language != "python" and stripped.startswith("/*")):
+            in_block = "*/" not in stripped or stripped.endswith("/*")
+            result.append("    " * depth + stripped)
             continue
-        tokens = _TOKEN.findall(raw.strip())
-        body = _join(tokens, language)
+        code_part, comment = _split_comment(raw, language)
+        if not code_part.strip():
+            result.append("    " * depth + comment)
+            continue
+        body = _join(_TOKEN.findall(code_part.strip()), language)
         if language == "python":
             width = len(raw) - len(raw.lstrip())
             while indents and width < indents[-1]:
@@ -129,11 +169,15 @@ def format_lines(code: str, language: str, hide_boilerplate: bool = True) -> lis
             leading = len(body) - len(body.lstrip("}"))
             level = max(depth - leading, 0)
             depth = max(depth + body.count("{") - body.count("}"), 0)
-        if body == "{" and result and language != "python":
+        if body == "{" and result and language != "python" and not comment:
             result[-1] += " {"  # 统一大括号风格：单独一行的 { 并入上一行
             continue
-        result.append("    " * level + body)
+        result.append("    " * level + body + (f"  {comment}" if comment else ""))
     return result
+
+
+def format_lines(code: str, language: str, hide_boilerplate: bool = True) -> list[str]:
+    return prepare_lines(code, language, ViewOptions(boilerplate=hide_boilerplate))
 
 
 def _identifier_spans(line: str) -> list[tuple[int, int, str]]:
@@ -199,8 +243,12 @@ class Row:
     kind: str
 
 
-def align(lines_a: list[str], lines_b: list[str]) -> list[Row]:
-    key = lambda line: re.sub(r"\s+", "", line)
+def align(lines_a: list[str], lines_b: list[str], ignore_space: bool = True) -> list[Row]:
+    """按行对齐；ignore_space 为真时只比较非空白字符（统一格式时使用）。"""
+
+    def key(line: str) -> str:
+        return re.sub(r"\s+", "", line) if ignore_space else line
+
     matcher = SequenceMatcher(None, [key(x) for x in lines_a], [key(x) for x in lines_b], False)
     rows: list[Row] = []
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
@@ -237,11 +285,18 @@ def _highlighted(lines: list[str], language: str, theme: str) -> list[Text]:
     syntax = Syntax("\n".join(lines), LEXERS.get(language, "text"), theme=theme)
     text = syntax.highlight("\n".join(lines))
     text.rstrip()
-    parts = text.split("\n", allow_blank=True)
+    parts = list(text.split("\n", allow_blank=True))
     parts += [Text("")] * (len(lines) - len(parts))
     for part in parts:
         part.style = ""
+        # 只保留语法颜色与字形，去掉主题自带的背景，差异底色才能显示出来。
+        part.spans = [Span(span.start, span.end, _foreground(span.style)) for span in part.spans]
     return parts[: len(lines)]
+
+
+def _foreground(style: str | Style) -> Style:
+    parsed = Style.parse(style) if isinstance(style, str) else style
+    return Style(color=parsed.color, bold=parsed.bold, italic=parsed.italic)
 
 
 def render_side(

@@ -176,9 +176,27 @@ def test_contest_list_description_and_ui(tmp_path, monkeypatch):
 def test_findings_filter_all_high_pending_reviewed():
     data = SimpleNamespace(
         findings=lambda: [
-            {"is_stale": False, "verdict_level": "high", "status": "待复核"},
-            {"is_stale": False, "verdict_level": "low", "status": "已核查"},
-            {"is_stale": True, "verdict_level": "high", "status": "已核查"},
+            {
+                "is_stale": False,
+                "verdict_level": "high",
+                "status": "待复核",
+                "uid_a": "a",
+                "uid_b": "b",
+            },
+            {
+                "is_stale": False,
+                "verdict_level": "low",
+                "status": "已核查",
+                "uid_a": "a",
+                "uid_b": "c",
+            },
+            {
+                "is_stale": True,
+                "verdict_level": "high",
+                "status": "已核查",
+                "uid_a": "b",
+                "uid_b": "c",
+            },
         ]
     )
     screen = FindingsScreen(data, "首页 › 虚构比赛")

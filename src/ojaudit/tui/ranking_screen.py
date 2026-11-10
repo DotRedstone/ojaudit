@@ -24,10 +24,10 @@ from ojaudit.tui.screens import ShellScreen
 from ojaudit.tui.splitter import Splitter
 
 POLICIES = (
-    ("作弊者", ("剔除", "标记"), ("drop", "mark")),
+    ("作弊者", ("除名", "标记"), ("drop", "mark")),
     ("存疑者", ("照常", "标记", "剔除"), ("keep", "mark", "drop")),
     ("管理者", ("剔除", "标记"), ("drop", "mark")),
-    ("导出格式", ("Markdown", "CSV", "HTML"), ("md", "csv", "html")),
+    ("导出格式", ("Excel", "Markdown", "CSV", "HTML"), ("xlsx", "md", "csv", "html")),
 )
 PREVIEW_COLUMNS = (
     ui.Column("名次", 4, "right"),
@@ -144,7 +144,10 @@ class RankingScreen(ShellScreen):
                         ui.table_row(
                             [
                                 Text(str(row["rank"]), style=colors.muted),
-                                Text(str(row["name"]), style=colors.fg),
+                                Text(
+                                    str(row["name"]),
+                                    style=colors.person(mark, mark == "manager"),
+                                ),
                                 f"{row['score']:g}",
                                 Text(label_text, style=color),
                             ],

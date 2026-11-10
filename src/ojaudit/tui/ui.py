@@ -33,6 +33,46 @@ _LEVELS: dict[str, tuple[str, int]] = {
 MARK_NAMES = {"normal": "正常", "suspect": "存疑", "cheater": "作弊者"}
 
 
+class Reversed:
+    """排序辅助：在降序排序中让次级键仍按升序比较。"""
+
+    __slots__ = ("value",)
+
+    def __init__(self, value: Any) -> None:
+        self.value = value
+
+    def __lt__(self, other: Reversed) -> bool:
+        return other.value < self.value
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Reversed) and other.value == self.value
+
+    def __hash__(self) -> int:
+        return hash(self.value)
+
+
+def problem_label(index: object) -> str:
+    """题号显示为 A、B、…、Z、AA（与比赛页面一致）。"""
+    try:
+        number = int(index)  # type: ignore[call-overload]
+    except (TypeError, ValueError):
+        return str(index)
+    label = ""
+    number += 1
+    while number > 0:
+        number, rest = divmod(number - 1, 26)
+        label = chr(ord("A") + rest) + label
+    return label
+
+
+LEVEL_WEIGHT = {0: 3, 1: 2, 2: 1}
+
+
+def level_weight(level: object) -> int:
+    """人物对嫌疑度的计分：实锤 3、中偏强 2、存疑 1。"""
+    return LEVEL_WEIGHT.get(level_rank(level), 0)
+
+
 def level_rank(level: object) -> int:
     return _LEVELS.get(str(level).strip().lower(), _LEVELS.get(str(level), ("", 9)))[1]
 
@@ -68,6 +108,17 @@ class Palette:
             return self.muted
         return {"cheater": self.danger, "suspect": self.caution, "normal": self.ok}.get(
             mark, self.muted
+        )
+
+    def person(self, mark: str, hidden: bool = False) -> str:
+        """人名颜色：按标记着色，但与前景色混合，避免纯色过于刺眼；未标记用前景色。"""
+        if hidden:
+            return self.muted
+        base = {"cheater": self.danger, "suspect": self.caution, "normal": self.ok}.get(mark)
+        if base is None:
+            return self.fg
+        return (
+            _mix(base, self.fg, 0.72) if base.startswith("#") and self.fg.startswith("#") else base
         )
 
 
@@ -154,10 +205,42 @@ def table_row(cells: Iterable[str | Text], columns: Sequence[Column], total: int
     return row
 
 
-def table_header(columns: Sequence[Column], total: int, color: str) -> Text:
-    header = table_row([c.title for c in columns], columns, total)
-    header.stylize(f"bold {color}")
-    return header
+def table_header(
+    columns: Sequence[Column],
+    total: int,
+    color: str,
+    sort: tuple[int, bool] | None = None,
+    accent: str = "",
+) -> Text:
+    """表头；正在排序的列标出 ▲（升序）或 ▼（降序）并用强调色。"""
+    titles: list[str | Text] = []
+    for index, column in enumerate(columns):
+        if sort is not None and sort[0] == index:
+            titles.append(Text(column.title + (" ▼" if sort[1] else " ▲"), style=f"bold {accent}"))
+        else:
+            titles.append(Text(column.title, style=f"bold {color}"))
+    return table_row(titles, columns, total)
+
+
+def column_at(columns: Sequence[Column], total: int, x: int) -> int | None:
+    """表格中第 x 列（单元格）属于哪一栏。"""
+    position = 0
+    for index, width in enumerate(layout(columns, total)):
+        if position <= x < position + width + 2:
+            return index
+        position += width + 2
+    return None
+
+
+def person_text(
+    name: str, uid: str, mark: str, hidden: bool, colors: Palette, show_uid: bool = True
+) -> Text:
+    text = Text(name or uid, style=colors.person(mark, hidden))
+    if mark == "cheater":
+        text.stylize("bold")
+    if show_uid and name and name != uid:
+        text.append(f" {uid}", style=colors.muted)
+    return text
 
 
 def chip(label: str, color: str) -> Text:

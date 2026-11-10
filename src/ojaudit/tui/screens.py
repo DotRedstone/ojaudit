@@ -3,7 +3,7 @@ Module: TUI / screens
 Description: 统一页面外壳、表格列表基类，以及首页、比赛列表与比赛总览。
 Scope: TUI
 Notes:
-- 每个页面由「左侧书脊 + 标题 + 内容 + 按键提示栏」组成，提示栏只列本页关键操作。
+- 每个页面由「叠放的书页外框（标题边写页名）+ 内容 + 按键提示栏」组成，提示栏只列本页关键操作。
 - 导航：→ 进入下一层，← 返回上一层，↑↓ 在同一层中移动；回车默认同 →，可复核的页面为复核。
 - 详情页由 review_screens 实现；本模块不写数据库。
 """
@@ -13,7 +13,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, ClassVar
 
-from rich.cells import cell_len
 from rich.text import Text
 from textual import events, on
 from textual.app import ComposeResult
@@ -29,7 +28,7 @@ from ojaudit.tui.icons import glyph, label
 from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView as NavigationListView
 from ojaudit.tui.popup import ConfirmPopup, InputPopup, SearchLine
-from ojaudit.tui.splitter import Splitter, start_drag
+from ojaudit.tui.splitter import start_drag
 
 NAV_HINTS: tuple[tuple[str, str], ...] = (("↵", "打开"), ("←", "返回"), ("/", "搜索"))
 
@@ -98,68 +97,100 @@ class KeyBar(Static):
                 return
 
 
-class PageEdges(Static):
-    """书页式层级：上层页面像压在下面的书页，只露出一条竖排标题的书脊。
+class StackFrame(Static):
+    """叠放的书页：每一层页面是一张带边框的纸，上层页面依次向右下错开压在下面，只露出
+    标题边与左边线；当前页在最前，标题边上写页名与副标题。
 
-    越靠右越接近当前页；点击某条书脊直接翻回那一页。首页没有书脊。
+    整个外框由四个停靠的部件拼成（top / left / right / bottom），内容区不再另画边框。
+    点击露出的标题边或左边线直接翻回那一页。
     """
 
-    SPINE = 3  # 两格宽的字 + 一格书页边线
-
-    def __init__(self, **kwargs: Any) -> None:
-        super().__init__("", **kwargs)
+    def __init__(self, part: str, **kwargs: Any) -> None:
+        super().__init__("", classes="frame", **kwargs)
+        self.part = part
         self.hover: int | None = None
 
     def pages(self) -> list[Any]:
         stack = [screen for screen in self.app.screen_stack if isinstance(screen, Chrome)]
-        return stack[: stack.index(self.screen)] if self.screen in stack else []
+        return stack[: stack.index(self.screen) + 1] if self.screen in stack else [self.screen]
 
-    def refresh_edges(self) -> None:
+    def _color(self, index: int, colors: ui.Palette) -> str:
+        return colors.accent if index == self.hover else colors.line
+
+    def redraw(self) -> None:
         pages = self.pages()
-        self.display = bool(pages)
-        if not pages:
-            return
+        depth = len(pages)
         colors = ui.palette(self.app)
-        height = max(self.size.height, 3)
-        self.styles.width = len(pages) * self.SPINE + 1
-        columns = []
-        for page in pages:
-            mark = glyph(page.PAGE_ICON, self.app.nerd_font)
-            head = [mark + " ", "  "] if mark else []
-            columns.append(head + _vertical(page.page_title(), height - 2 - len(head)))
+        # 停靠部件互相重叠，靠外边距让出位置：左右两条边线夹在标题边与底边之间。
+        if self.part == "top":
+            self.styles.height = depth
+        elif self.part in ("left", "right"):
+            self.styles.margin = (depth, 0, 2, 0)
+            if self.part == "left":
+                self.styles.width = depth
+        width = max(self.screen.size.width, 10)
         text = Text(no_wrap=True)
-        for row in range(height):
-            if row:
-                text.append("\n")
-            for index, cells in enumerate(columns):
-                nearest = index == len(columns) - 1
-                color = (
-                    colors.accent
-                    if index == self.hover
-                    else (colors.fg if nearest else colors.muted)
-                )
-                char = cells[row - 1] if 0 < row <= len(cells) else "  "
-                text.append(char, style=f"bold {color}" if nearest else color)
-                text.append("▕", style=colors.accent if index == self.hover else colors.line)
+        if self.part == "top":
+            for row, page in enumerate(pages):
+                if row:
+                    text.append("\n")
+                for column in range(row):
+                    text.append("│", style=self._color(column, colors))
+                color = self._color(row, colors)
+                text.append("╭─ ", style=color)
+                current = row == depth - 1
+                if current:
+                    title = self.screen.heading()
+                else:
+                    title = Text(
+                        page.page_title(),
+                        style=colors.accent if row == self.hover else colors.muted,
+                    )
+                room = width - row - 5
+                title.truncate(max(room, 1), overflow="ellipsis")
+                text.append_text(title)
+                text.append(" " + "─" * max(room - title.cell_len, 0), style=color)
+                text.append("╮", style=color)
+        elif self.part == "left":
+            rows = max(self.size.height, 1)
+            line = Text(no_wrap=True)
+            for column in range(depth):
+                line.append("│", style=self._color(column, colors))
+            text = Text("\n").join([line] * rows)
+        elif self.part == "right":
+            text = Text("\n".join(["│"] * max(self.size.height, 1)), style=colors.line)
+        else:
+            text.append("╰", style=self._color(0, colors))
+            for column in range(1, depth):
+                text.append("┴", style=self._color(column, colors))
+            text.append("─" * max(width - depth - 1, 0) + "╯", style=colors.line)
         self.update(text)
 
-    def _index(self, x: int) -> int | None:
-        index = (x - 1) // self.SPINE
-        return index if x >= 1 and 0 <= index < len(self.pages()) else None
+    def _index(self, event: events.MouseEvent) -> int | None:
+        depth = len(self.pages())
+        if self.part == "top":
+            index = min(event.y, event.x) if event.x < event.y else event.y
+        elif self.part in ("left", "bottom"):
+            index = event.x
+        else:
+            return None
+        # 当前页（最后一层）不必翻。
+        return index if 0 <= index < depth - 1 else None
+
+    def _set_hover(self, index: int | None) -> None:
+        if index != self.hover:
+            for part in self.screen.query(StackFrame):
+                part.hover = index
+                part.redraw()
 
     def on_mouse_move(self, event: events.MouseMove) -> None:
-        index = self._index(event.x)
-        if index != self.hover:
-            self.hover = index
-            self.refresh_edges()
+        self._set_hover(self._index(event))
 
     def on_leave(self, _event: events.Leave) -> None:
-        if self.hover is not None:
-            self.hover = None
-            self.refresh_edges()
+        self._set_hover(None)
 
     def on_click(self, event: events.Click) -> None:
-        index = self._index(event.x)
+        index = self._index(event)
         if index is None:
             return
         event.stop()
@@ -168,31 +199,35 @@ class PageEdges(Static):
             self.app.pop_screen()
 
 
-def _vertical(title: str, rows: int) -> list[str]:
-    """把标题竖排：每行一个两格宽的字符；英文数字占半格补空格；过长时以 ⋮ 收尾。"""
-    cells = []
-    for char in title:
-        if char.isspace():
-            continue
-        cells.append(char if cell_len(char) == 2 else char + " ")
-    if len(cells) > rows:
-        cells = cells[: max(rows - 1, 0)] + ["⋮ "]
-    return cells
-
-
 class Chrome:
-    """所有全屏页面共用的外壳：左侧书脊（上层页面）与底部提示栏。"""
+    """所有全屏页面共用的外壳：叠放的书页外框与底部提示栏。"""
 
     PATH = "首页"
     PAGE_ICON = "open"
+    TITLE = ""
     HINTS: ClassVar[Sequence[tuple[str, str]]] = NAV_HINTS
 
     def page_title(self) -> str:
         return str(getattr(self, "TITLE", "")) or "·"
 
+    def subtitle(self) -> str:
+        return ""
+
+    def heading(self) -> Text:
+        """当前页写在书页标题边上的文字：粗体页名 + 弱化的副标题。"""
+        app: Any = self.app  # type: ignore[attr-defined]
+        colors = ui.palette(app)
+        text = Text(
+            label(self.PAGE_ICON, self.page_title(), app.nerd_font), style=f"bold {colors.fg}"
+        )
+        subtitle = self.subtitle()
+        if subtitle:
+            text.append("  " + subtitle, style=colors.muted)
+        return text
+
     def chrome_top(self) -> ComposeResult:
-        # 底栏横跨整个宽度，书脊占据其上方的整个高度（Textual 中后停靠的部件优先占边）。
-        yield PageEdges(id="pages")
+        for part in ("top", "left", "right", "bottom"):
+            yield StackFrame(part, id=f"frame-{part}")
         yield KeyBar(id="status")
 
     def chrome_bottom(self) -> ComposeResult:
@@ -217,7 +252,8 @@ class Chrome:
         if not app.key_hints:
             hints = [("?", "帮助")]
         self.query_one("#status", KeyBar).show(hints, right)  # type: ignore[attr-defined]
-        self.query_one("#pages", PageEdges).refresh_edges()  # type: ignore[attr-defined]
+        for part in self.query(StackFrame):  # type: ignore[attr-defined]
+            part.redraw()
 
 
 class ShellScreen(Chrome, Screen):
@@ -231,29 +267,13 @@ class ShellScreen(Chrome, Screen):
         ("enter,space", "activate", "打开 / 复核"),
         ("slash", "search", "搜索"),
     ]
-    TITLE = ""
 
     def on_mouse_down(self, event: events.MouseDown) -> None:
         start_drag(self, event)
 
-    def heading(self) -> Text:
-        """页面标题行：粗体标题 + 弱化的副标题。"""
-        colors = ui.palette(self.app)
-        text = Text(
-            label(self.PAGE_ICON, self.TITLE, self.app.nerd_font), style=f"bold {colors.fg}"
-        )
-        subtitle = self.subtitle()
-        if subtitle:
-            text.append("   " + subtitle, style=colors.muted)
-        return text
-
-    def subtitle(self) -> str:
-        return ""
-
     def shell(self, content: list[object]) -> ComposeResult:
         yield from self.chrome_top()
         with Vertical(id="body"):
-            yield Static("", id="heading")
             yield from content  # type: ignore[misc]
         yield from self.chrome_bottom()
 
@@ -264,8 +284,6 @@ class ShellScreen(Chrome, Screen):
             break
 
     def refresh_chrome(self) -> None:
-        for heading in self.query("#heading"):
-            heading.update(self.heading())  # type: ignore[attr-defined]
         self._update_status()
 
     def on_resize(self, _event: events.Resize) -> None:
@@ -452,8 +470,8 @@ class TableScreen(ShellScreen):
         view = self.query_one("#items", ListView)
         if view.size.width:
             return max(view.size.width - 4, 40)
-        edges = len(self.query_one("#pages", PageEdges).pages()) * PageEdges.SPINE + 1
-        return max(self.app.size.width - 8 - edges, 40)
+        depth = len(self.query_one("#frame-left", StackFrame).pages())
+        return max(self.app.size.width - 6 - depth, 40)
 
     def reload(self) -> None:
         colors = ui.palette(self.app)
@@ -509,41 +527,46 @@ def _menu_row(icon: str, name: str, detail: str, width: int, app: Any) -> Text:
 
 
 class HomeScreen(ShellScreen):
+    """最底下的一页（目录）：一行概况、入口菜单与最近比赛。"""
+
     PAGE_ICON = "home"
-    TITLE = "首页"
+    TITLE = "ojaudit"
     PATH = "首页"
-    HINTS = (("↵", "打开"), ("q", "退出"), ("t", "主题"))
-    OPTIONS = ("比赛列表", "打开比赛 ID", "账户与登录", "设置", "待复核", "采集新比赛")
-    ICON_KEYS = ("list", "open", "login", "settings", "pending", "collect")
+    HINTS = (("↵", "打开"), ("c", "采集"), ("p", "待复核"), ("q", "退出"), ("t", "主题"))
+    OPTIONS = ("比赛列表", "待复核", "采集新比赛", "打开比赛 ID", "账户与登录", "设置")
+    ICON_KEYS = ("list", "pending", "collect", "open", "login", "settings")
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         *ShellScreen.BINDINGS,
         ("c", "collect", "采集新比赛"),
         ("o", "open_id", "打开比赛 ID"),
+        ("p", "pending", "待复核"),
     ]
+
+    def page_title(self) -> str:
+        return "首页"
+
+    def heading(self) -> Text:
+        colors = ui.palette(self.app)
+        text = Text(label("home", "ojaudit", self.app.nerd_font), style=f"bold {colors.accent}")
+        text.append("  训练赛代码审查工作台", style=colors.fg)
+        text.append("  ·  检测结果只是复核线索，不等于违规认定", style=colors.muted)
+        return text
 
     def compose(self) -> ComposeResult:
         yield from self.chrome_top()
         with Vertical(id="body"):
-            yield Static("", id="hero")
-            with Horizontal(id="home-columns"):
-                with Vertical(id="home-menu", classes="panel"):
-                    yield NavigationListView(
-                        *(ListItem(Label(name)) for name in self.OPTIONS), id="menu"
-                    )
-                yield Splitter("home-menu", "home", minimum=24)
-                yield Static("", id="home-overview", classes="panel")
-            yield Static("", id="home-recent")
+            yield Static("", id="home-stats")
+            yield NavigationListView(*(ListItem(Label(name)) for name in self.OPTIONS), id="menu")
             if not self.app.contests.list_contests(show_all=True):
                 yield Static(
-                    "首次使用：ojaudit login → ojaudit collect <比赛ID> "
-                    "→ ojaudit analyze <比赛ID> → ojaudit",
+                    "首次使用：在「账户与登录」扫码，回到比赛列表按 S 同步你参加过的比赛，"
+                    "回车即可采集并检测（命令行：ojaudit login → ojaudit collect <比赛ID>）",
                     id="empty-guide",
                 )
-        yield from self.chrome_bottom()
+            yield Static("", id="home-recent")
+            yield Static("", id="home-db")
 
     def on_mount(self) -> None:
-        self.query_one("#home-menu").border_title = "开始"
-        self.query_one("#home-overview").border_title = "概况"
         self.refresh_home()
         super().on_mount()
 
@@ -567,48 +590,38 @@ class HomeScreen(ShellScreen):
         pending = pending_entries(self.app.contests) if contests else []
         findings = sum(entry.kind == "finding" for entry in pending)
         suspects = len(pending) - findings
+        logged_in = logged_in_locally()
 
-        hero = Text("ojaudit", style=f"bold {colors.accent}")
-        hero.append("  训练赛代码审查工作台\n", style=colors.fg)
-        hero.append("检测结果只是复核线索，不等于违规认定。", style=colors.muted)
-        self.query_one("#hero", Static).update(hero)
+        stats = Text()
+        for index, (value, name, color) in enumerate(
+            (
+                (len(contests), "场比赛", colors.fg),
+                (findings, "条待复核", colors.warn if findings else colors.fg),
+                (suspects, "名存疑", colors.caution if suspects else colors.fg),
+            )
+        ):
+            if index:
+                stats.append("   ")
+            stats.append(str(value), style=f"bold {color}")
+            stats.append(" " + name, style=colors.muted)
+        stats.append("   ")
+        stats.append_text(
+            ui.dot("已登录", colors.ok) if logged_in else ui.dot("未登录", colors.muted)
+        )
+        self.query_one("#home-stats", Static).update(stats)
 
         details = (
-            f"{len(contests)} 场" if contests else "",
+            f"{len(contests)} 场" if contests else "按 S 同步",
+            f"{findings} 条" if findings else "无",
+            "输入比赛 ID",
             "",
-            "",
-            "",
-            f"{findings} 条" if findings else "",
+            "已登录" if logged_in else "扫码登录",
             "",
         )
         menu = self.query_one("#menu", ListView)
-        width = max(menu.size.width - 4, 24)
+        width = max(min(menu.size.width, 64) - 4, 30)
         for item, icon, name, detail in zip(menu.children, self.ICON_KEYS, self.OPTIONS, details):
             item.query_one(Label).update(_menu_row(icon, name, detail, width, self.app))
-
-        db = self.app.contests.db_path
-        try:
-            shown = "~/" + str(db.relative_to(db.home()))
-        except ValueError:
-            shown = str(db)
-        rows = (
-            ("本地比赛", str(len(contests)), colors.fg),
-            ("待复核线索", str(findings), colors.warn if findings else colors.fg),
-            ("存疑选手", str(suspects), colors.caution if suspects else colors.fg),
-            (
-                "牛客登录",
-                "已保存 Cookie" if logged_in_locally() else "未登录",
-                colors.ok if logged_in_locally() else colors.muted,
-            ),
-            ("数据库", shown if db.is_file() else "尚未创建", colors.muted),
-        )
-        overview = Text()
-        for index, (name, value, color) in enumerate(rows):
-            if index:
-                overview.append("\n")
-            overview.append_text(ui.fit(Text(name, style=colors.muted), 12))
-            overview.append(value, style=color)
-        self.query_one("#home-overview", Static).update(overview)
 
         recent = Text()
         if contests:
@@ -618,9 +631,9 @@ class HomeScreen(ShellScreen):
                 ui.Column("实锤 强 疑", 10),
                 ui.Column("复核", 14),
             )
-            total = max(self.app.size.width - 10, 60)
+            total = max(self.query_one("#home-recent").size.width - 2, 60)
             recent.append_text(ui.table_header(columns, total, colors.muted))
-            for entry in contests[:8]:
+            for entry in contests[:6]:
                 summary = contest_summary(self.app.contests, entry.contest)
                 recent.append("\n")
                 recent.append_text(
@@ -637,26 +650,39 @@ class HomeScreen(ShellScreen):
                 )
         self.query_one("#home-recent", Static).update(recent)
 
+        db = self.app.contests.db_path
+        try:
+            shown = "~/" + str(db.relative_to(db.home()))
+        except ValueError:
+            shown = str(db)
+        self.query_one("#home-db", Static).update(
+            Text("数据库 " + (shown if db.is_file() else "尚未创建"), style=colors.muted)
+        )
+
     def open_index(self, index: int) -> None:
-        if index == 0:
+        name = self.OPTIONS[index] if 0 <= index < len(self.OPTIONS) else ""
+        if name == "比赛列表":
             self.app.push_screen(ContestListScreen(self.app.contests))
-        elif index == 1:
+        elif name == "待复核":
+            self.action_pending()
+        elif name == "采集新比赛":
+            self.action_collect()
+        elif name == "打开比赛 ID":
             self.action_open_id()
-        elif index == 2:
+        elif name == "账户与登录":
             from ojaudit.tui.account_screen import AccountScreen
 
             self.app.push_screen(AccountScreen())
-        elif index == 3:
+        elif name == "设置":
             from ojaudit.tui.settings_model import SettingsModel
             from ojaudit.tui.settings_screen import SettingsScreen
 
             self.app.push_screen(SettingsScreen(SettingsModel(db_path=self.app.contests.db_path)))
-        elif index == 4:
-            from ojaudit.tui.pending_screen import PendingScreen
 
-            self.app.push_screen(PendingScreen())
-        elif index == 5:
-            self.action_collect()
+    def action_pending(self) -> None:
+        from ojaudit.tui.pending_screen import PendingScreen
+
+        self.app.push_screen(PendingScreen())
 
     def action_open_id(self) -> None:
         self.app.push_screen(EntryDialog(), self.open_contest_id)

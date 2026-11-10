@@ -76,13 +76,13 @@ def test_mouse_single_then_double_click(tmp_path):
             await pilot.press("enter")
             await pilot.pause()
             assert isinstance(app.screen, ContestOverviewScreen)
-            # 书脊：第一条是首页、第二条是比赛列表，点击直接翻回那一页。
-            await pilot.click("#pages", offset=(4, 3))
+            # 叠放的书页：第一行是首页、第二行是比赛列表的标题边，点击直接翻回那一页。
+            await pilot.click("#frame-top", offset=(6, 1))
             await pilot.pause()
             assert isinstance(app.screen, ContestListScreen)
             await pilot.press("enter")
             await pilot.pause()
-            await pilot.click("#pages", offset=(1, 3))
+            await pilot.click("#frame-left", offset=(0, 2))
             await pilot.pause()
             assert isinstance(app.screen, HomeScreen)
 
@@ -93,7 +93,7 @@ def test_entry_dialog_esc_and_enter(tmp_path):
     async def scenario():
         app = AuditApp(LocalContests(tmp_path / "empty.sqlite"))
         async with app.run_test() as pilot:
-            app.screen.query_one(ListView).index = 1
+            app.screen.query_one(ListView).index = HomeScreen.OPTIONS.index("打开比赛 ID")
             await pilot.press("enter")
             await pilot.pause()
             assert isinstance(app.screen, EntryDialog)
@@ -101,7 +101,7 @@ def test_entry_dialog_esc_and_enter(tmp_path):
             await pilot.press("escape")
             await pilot.pause()
             assert isinstance(app.screen, HomeScreen)
-            app.screen.query_one(ListView).index = 1
+            app.screen.query_one(ListView).index = HomeScreen.OPTIONS.index("打开比赛 ID")
             await pilot.press("enter")
             await pilot.pause()
             assert isinstance(app.screen, EntryDialog)

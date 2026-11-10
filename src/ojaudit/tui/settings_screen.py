@@ -92,18 +92,16 @@ class SettingsScreen(Chrome, Screen):
 
     def compose(self) -> ComposeResult:
         yield from self.chrome_top()
-        with Vertical(id="body"):
-            yield Static("", id="heading")
-            with Horizontal(id="settings-columns"):
-                yield NavigateListView(
-                    *(ListItem(Label(category)) for category in CATEGORIES),
-                    id="categories",
-                    classes="panel",
-                )
-                yield Splitter("categories", "settings", minimum=14)
-                with Vertical(id="options-pane", classes="panel"):
-                    yield NavigateListView(id="settings-values")
-                    yield Static("", id="settings-detail")
+        with Vertical(id="body"), Horizontal(id="settings-columns"):
+            yield NavigateListView(
+                *(ListItem(Label(category)) for category in CATEGORIES),
+                id="categories",
+                classes="panel",
+            )
+            yield Splitter("categories", "settings", minimum=14)
+            with Vertical(id="options-pane", classes="panel"):
+                yield NavigateListView(id="settings-values")
+                yield Static("", id="settings-detail")
         yield from self.chrome_bottom()
 
     def on_mount(self) -> None:
@@ -135,14 +133,16 @@ class SettingsScreen(Chrome, Screen):
 
     # ── 渲染 ────────────────────────────────────────────
 
-    def status(self) -> None:
+    def heading(self) -> Text:
         colors = ui.palette(self.app)
-        heading = Text("设置", style=f"bold {colors.fg}")
+        heading = Text(label("settings", "设置", self.app.nerd_font), style=f"bold {colors.fg}")
         if self.model.dirty:
-            heading.append("   * 有未保存的修改  ctrl+s 保存", style=colors.warn)
+            heading.append("  * 有未保存的修改  ctrl+s 保存", style=colors.warn)
         else:
-            heading.append("   已保存", style=colors.muted)
-        self.query_one("#heading", Static).update(heading)
+            heading.append("  已保存", style=colors.muted)
+        return heading
+
+    def status(self) -> None:
         self._update_status()
 
     def _row(self, option: Option, width: int) -> Text:

@@ -19,7 +19,7 @@ from typing import Any, Literal
 from ojaudit.core.config import data_dir
 from ojaudit.core.people import HiddenPerson, hidden_person_keys
 
-EXPORT_FORMATS = ("md", "csv", "html")
+EXPORT_FORMATS = ("xlsx", "md", "csv", "html")
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,8 +165,9 @@ def export_ranking(ranking: FinalRanking, format_name: str, destination: Path) -
     from ojaudit.plugins.exporters.csv import export_csv
     from ojaudit.plugins.exporters.html import export_html
     from ojaudit.plugins.exporters.markdown import export_markdown
+    from ojaudit.plugins.exporters.xlsx import export_xlsx
 
-    exporters = {"md": export_markdown, "csv": export_csv, "html": export_html}
+    exporters = {"md": export_markdown, "csv": export_csv, "html": export_html, "xlsx": export_xlsx}
     if format_name not in exporters:
-        raise ValueError("仅支持 md/csv/html")
+        raise ValueError("仅支持 xlsx/md/csv/html")
     return exporters[format_name](list(ranking.rows), destination)

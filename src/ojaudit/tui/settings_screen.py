@@ -25,7 +25,7 @@ from ojaudit.tui.interaction import NavigateListView
 from ojaudit.tui.popup import ConfirmPopup, InputPopup, MenuPopup
 from ojaudit.tui.screens import Chrome
 from ojaudit.tui.settings_model import CATEGORIES, Option, SettingsModel
-from ojaudit.tui.splitter import Splitter
+from ojaudit.tui.splitter import Splitter, start_drag
 
 
 class EditValue(InputPopup):
@@ -110,6 +110,9 @@ class SettingsScreen(Chrome, Screen):
         self.query_one("#categories", ListView).index = 0
         self.reload()
         self.query_one("#categories", ListView).focus()
+
+    def on_mouse_down(self, event: events.MouseDown) -> None:
+        start_drag(self, event)
 
     def on_resize(self, _event: object) -> None:
         self.call_after_refresh(self.reload)
@@ -408,6 +411,11 @@ class SettingsScreen(Chrome, Screen):
             placeholder="正则，例如 ^新生|练习赛",
             note="Python 正则，匹配比赛名称",
             validate=self._rule_note,
+            info=lambda pattern: (
+                f"命中本地 {self.model.rule_hits(pattern)} 场比赛"
+                if pattern
+                else "Python 正则，匹配比赛名称"
+            ),
             input_id="rule-value",
         )
 
@@ -421,16 +429,6 @@ class SettingsScreen(Chrome, Screen):
                 return
             self._after_change(select=f"rules.{position}")
 
-        def live(pattern: str) -> str | None:
-            # 输入时在下边框实时显示命中的本地比赛数。
-            error = self._rule_note(pattern)
-            footer = "enter 确定  esc 取消"
-            if pattern and not error:
-                footer = f"命中 {self.model.rule_hits(pattern)} 场  {footer}"
-            popup.query_one(".popup").border_subtitle = f" {footer} "
-            return error
-
-        popup.validate = live
         self.app.push_screen(popup, done)
 
     def _edit_manager(self, index: int | None) -> None:

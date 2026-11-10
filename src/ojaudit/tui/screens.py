@@ -28,7 +28,7 @@ from ojaudit.tui.interaction import Breadcrumb
 from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView as NavigationListView
 from ojaudit.tui.popup import ConfirmPopup, InputPopup, SearchLine
-from ojaudit.tui.splitter import Splitter
+from ojaudit.tui.splitter import Splitter, start_drag
 
 NAV_HINTS: tuple[tuple[str, str], ...] = (("↵", "打开"), ("esc", "返回"), ("/", "搜索"))
 
@@ -147,6 +147,9 @@ class ShellScreen(Chrome, Screen):
     ]
     TITLE = ""
 
+    def on_mouse_down(self, event: events.MouseDown) -> None:
+        start_drag(self, event)
+
     def heading(self) -> Text:
         """页面标题行：粗体标题 + 弱化的副标题。"""
         colors = ui.palette(self.app)
@@ -257,18 +260,39 @@ class ShellScreen(Chrome, Screen):
         self.open_index(event.index)
 
 
+class SortHeader(Static):
+    """可点击的表头：点击某列按该列排序，再点切换升降序（与文件管理器一致）。"""
+
+    def on_click(self, event: events.Click) -> None:
+        screen = self.screen
+        if isinstance(screen, TableScreen):
+            column = ui.column_at(screen.COLUMNS, screen.row_width(), event.x - 2)
+            if column is not None:
+                event.stop()
+                screen.sort_by(column)
+
+
 class TableScreen(ShellScreen):
-    """带表头的单列表页：子类声明列与每行单元格，基类负责对齐和保持选中位置。"""
+    """带表头的单列表页：子类声明列与每行单元格，基类负责对齐、排序和保持选中位置。
+
+    子类实现 sort_key(row, 列号) 返回可比较的值即可让该列可排序（None 表示不可排序）。
+    """
 
     COLUMNS: ClassVar[Sequence[ui.Column]] = ()
+    DEFAULT_SORT: ClassVar[tuple[int, bool] | None] = None
     EMPTY = "暂无数据"
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+        *ShellScreen.BINDINGS,
+        ("s", "cycle_sort", "切换排序列 / 升降序"),
+    ]
 
     def __init__(self) -> None:
         super().__init__()
         self.rows: list[Any] = []
+        self.sort = self.DEFAULT_SORT
 
     def table(self) -> list[object]:
-        return [Static("", classes="thead"), NavigationListView(id="items")]
+        return [SortHeader("", classes="thead"), NavigationListView(id="items")]
 
     def compose(self) -> ComposeResult:
         yield from self.shell(self.table())
@@ -291,16 +315,56 @@ class TableScreen(ShellScreen):
     def cells(self, row: Any) -> Sequence[str | Text]:
         return [str(row)]
 
+    def sort_key(self, row: Any, column: int) -> Any:
+        return None
+
+    def sortable(self, column: int) -> bool:
+        return bool(self.rows) and self.sort_key(self.rows[0], column) is not None
+
+    def sort_by(self, column: int) -> None:
+        if not self.sortable(column):
+            return
+        if self.sort is not None and self.sort[0] == column:
+            self.sort = (column, not self.sort[1])
+        else:
+            self.sort = (column, False)
+        self.reload()
+
+    def action_cycle_sort(self) -> None:
+        """s：当前列升序 → 降序 → 下一可排序列。"""
+        columns = [i for i in range(len(self.COLUMNS)) if self.sortable(i)]
+        if not columns:
+            return
+        if self.sort is None or self.sort[0] not in columns:
+            self.sort = (columns[0], False)
+        elif not self.sort[1]:
+            self.sort = (self.sort[0], True)
+        else:
+            self.sort = (columns[(columns.index(self.sort[0]) + 1) % len(columns)], False)
+        self.reload()
+
+    def ordered(self, rows: list[Any]) -> list[Any]:
+        if self.sort is None:
+            return rows
+        column, descending = self.sort
+        keyed = [(self.sort_key(row, column), row) for row in rows]
+        present = [pair for pair in keyed if pair[0] is not None]
+        missing = [row for key, row in keyed if key is None]
+        present.sort(key=lambda pair: pair[0], reverse=descending)
+        return [row for _, row in present] + missing
+
     def row_width(self) -> int:
         return max(self.app.size.width - 8, 40)
 
     def reload(self) -> None:
         colors = ui.palette(self.app)
         width = self.row_width()
-        self.query_one(".thead", Static).update(ui.table_header(self.COLUMNS, width, colors.muted))
         view = self.query_one("#items", ListView)
         previous = view.index or 0
-        self.rows = self.items()
+        self.rows = self.ordered(self.items())
+        self.query_one(".thead", Static).update(
+            ui.table_header(self.COLUMNS, width, colors.muted, self.sort, colors.accent)
+        )
         view.clear()
         for row in self.rows:
             view.append(ListItem(Label(ui.table_row(self.cells(row), self.COLUMNS, width))))

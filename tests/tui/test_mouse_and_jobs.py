@@ -207,8 +207,10 @@ def test_key_bar_and_popup_actions_work_with_mouse(tmp_path, monkeypatch):
             await pilot.double_click("ContestListScreen ListItem", offset=(3, 0))
             await pilot.pause()
             assert isinstance(app.screen, ConfirmPopup)
-            row = app.screen.query_one(".popup-actions")
-            await pilot.click(row, offset=(row.size.width - 2, 0))
+            row = app.screen.query_one(".popup-hints")
+            total = row.spans[-1][1]
+            start, _end, _action = next(span for span in row.spans if span[2] == "answer(False)")
+            await pilot.click(row, offset=(row.size.width - total + start + 1, 0))
             await pilot.pause()
             assert isinstance(app.screen, ContestListScreen), "点击「否」"
 

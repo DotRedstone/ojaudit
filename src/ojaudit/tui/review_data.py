@@ -18,7 +18,7 @@ from ojaudit.core.reviews import DEFAULT_REVIEW_STATUS, finding_key
 from ojaudit.core.schema import Contest, is_accepted
 from ojaudit.core.store import Store
 from ojaudit.tui.data import LocalContests
-from ojaudit.tui.ui import level_rank
+from ojaudit.tui.ui import level_rank, level_weight
 
 
 def _items(rows: Any) -> list[dict[str, Any]]:
@@ -248,3 +248,22 @@ def _decode(value: Any) -> Any:
         return json.loads(value)
     except (ValueError, TypeError):
         return value
+
+
+def pair_key(row: dict[str, Any]) -> tuple[str, str]:
+    left, right = sorted((str(row["uid_a"]), str(row["uid_b"])))
+    return left, right
+
+
+def pair_scores(findings: list[dict[str, Any]]) -> dict[tuple[str, str], tuple[int, int]]:
+    """每对选手的总嫌疑度（实锤 3、中偏强 2、存疑 1）与涉及的线索数，只计当前轮次。
+
+    同一对选手在多道题上相似时嫌疑叠加，便于把他们的线索排在一起优先处理。
+    """
+    totals: dict[tuple[str, str], tuple[int, int]] = {}
+    for row in findings:
+        if row.get("is_stale"):
+            continue
+        score, count = totals.get(pair_key(row), (0, 0))
+        totals[pair_key(row)] = (score + level_weight(row["verdict_level"]), count + 1)
+    return totals

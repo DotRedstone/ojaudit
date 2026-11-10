@@ -66,6 +66,13 @@ def _import_json(store: Store, source: Path) -> tuple[str, str]:
         )
         validate_submission(row)
         parsed.append(row)
+    problem_titles = {}
+    for item in submissions:
+        index = int(item["problem_index"])
+        title = str(item.get("problem_title") or "").strip()
+        problem_titles.setdefault(index, title or f"题 {index}")
+        if title:
+            problem_titles[index] = title
     names = {str(p["uid"]): str(p.get("name", p["uid"])) for p in people}
     for row in parsed:
         names.setdefault(row.uid, row.uid)
@@ -77,6 +84,15 @@ def _import_json(store: Store, source: Path) -> tuple[str, str]:
                    VALUES (?, ?, ?, ?)
                    ON CONFLICT(platform, contest_id, uid) DO UPDATE SET name=excluded.name""",
                 (platform, cid, uid, person_name),
+            )
+        for index, title in sorted(problem_titles.items()):
+            store.execute(
+                """INSERT INTO problems(platform,contest_id,problem_index,problem_id,title,full_score)
+                   VALUES (?,?,?,?,?,NULL)
+                   ON CONFLICT(platform,contest_id,problem_index) DO UPDATE SET
+                   title=CASE WHEN problems.title='' OR problems.title=('题 ' || problems.problem_index)
+                              THEN excluded.title ELSE problems.title END""",
+                (platform, cid, index, str(index), title),
             )
         for row in parsed:
             store.execute(

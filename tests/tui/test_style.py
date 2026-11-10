@@ -67,7 +67,7 @@ def test_auto_theme_and_change(tmp_path, monkeypatch):
             assert app.theme_name == "auto"
             assert app.theme == "wallpaper"
             assert app.wallpaper_source == str(path)
-            assert "" not in str(app.status_line("首页"))
+            assert "" not in str(app.screen.query_one("#status").render())
             path.write_text(json.dumps(fake_colors("#182634")), encoding="utf-8")
             app.poll_wallpaper()
             assert app.theme == "wallpaper"

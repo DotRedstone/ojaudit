@@ -7,7 +7,10 @@ Notes: 独立入口，不改变现有 CLI 的行为。
 
 from __future__ import annotations
 
+import asyncio
+import sqlite3
 from pathlib import Path
+from threading import Event
 from typing import ClassVar
 
 from textual.app import App
@@ -15,6 +18,7 @@ from textual.app import App
 from ojaudit.core.config import data_dir, load_config
 from ojaudit.tui.data import LocalContests
 from ojaudit.tui.screens import HomeScreen
+from ojaudit.tui.workflow import analyze_local, persist_bundle
 
 
 class AuditApp(App[None]):
@@ -65,10 +69,81 @@ class AuditApp(App[None]):
         appearance = load_config().get("appearance", {})
         self.theme_name = str(appearance.get("theme", "ansi"))
         self.nerd_font = bool(appearance.get("nerd_font", False))
+        self.job_status = "空闲"
+        self._job_task: asyncio.Task[None] | None = None
+        self._cancel_job = Event()
+        self.source_factory = None
 
     def on_mount(self) -> None:
         self._apply_theme()
         self.push_screen(HomeScreen())
+
+    @property
+    def job_running(self) -> bool:
+        return self._job_task is not None and not self._job_task.done()
+
+    def _publish_job(self, message: str, finished: bool = False) -> None:
+        self.job_status = message
+        if not self.screen_stack:
+            return
+        screen = self.screen
+        if hasattr(screen, "_update_status"):
+            screen._update_status()
+        if finished and hasattr(screen, "on_workflow_finished"):
+            screen.on_workflow_finished()
+
+    def start_workflow(self, contest_id: str, mode: str, platform: str = "nowcoder") -> None:
+        if self.job_running:
+            self.notify("已有任务执行中；请先完成或取消", severity="warning")
+            return
+        if mode not in {"collect", "collect_analyze", "analyze"}:
+            raise ValueError("未知工作流模式")
+        if not contest_id.strip():
+            self.notify("比赛 ID 不能为空", severity="warning")
+            return
+        self._cancel_job.clear()
+        self._job_task = asyncio.create_task(
+            self._perform_workflow(contest_id.strip(), mode, platform)
+        )
+
+    def cancel_workflow(self) -> None:
+        if not self.job_running:
+            self.notify("没有正在运行的任务")
+            return
+        self._cancel_job.set()
+        self._publish_job("已请求取消，等待当前步骤安全结束")
+
+    async def _perform_workflow(self, contest_id: str, mode: str, platform: str) -> None:
+        from ojaudit.cli_operations import nowcoder_source
+        from ojaudit.core.schema import Contest
+
+        try:
+            contest = Contest(platform, contest_id, contest_id)
+            if mode != "analyze":
+                self._publish_job(f"{contest_id} · 正在采集")
+                source = (
+                    self.source_factory() if self.source_factory is not None else nowcoder_source()
+                )
+                bundle = await asyncio.to_thread(source.fetch_contest, None, contest_id)
+                if self._cancel_job.is_set():
+                    self._publish_job("采集后已取消", finished=True)
+                    return
+                self._publish_job(f"{contest_id} · 正在保存提交")
+                contest = await asyncio.to_thread(persist_bundle, self.contests.db_path, bundle)
+            if self._cancel_job.is_set():
+                self._publish_job("任务已取消", finished=True)
+                return
+            if mode != "collect":
+                self._publish_job(f"{contest.contest_id} · 正在分析")
+                await asyncio.to_thread(analyze_local, self.contests.db_path, contest)
+            self._publish_job(f"{contest.contest_id} · 任务完成", finished=True)
+            self.notify(f"比赛 {contest.contest_id} 已更新")
+        except (OSError, RuntimeError, ValueError, TypeError, sqlite3.Error) as exc:
+            # 异常文本可能带请求参数，因此界面不回显异常内容或 Cookie。
+            self._publish_job(f"任务失败（{type(exc).__name__}）", finished=True)
+            self.notify("采集或分析失败，请检查比赛 ID、登录状态和检测配置", severity="error")
+        finally:
+            self._job_task = None
 
     def _apply_theme(self) -> None:
         name = self.THEME_IDS.get(self.theme_name)

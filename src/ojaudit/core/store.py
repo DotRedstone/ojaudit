@@ -266,8 +266,11 @@ class Store:
             )
         return len(stale)
 
-    def delete_contest(self, platform: str, contest_id: str) -> None:
-        """删除一场比赛在本地的全部数据：比赛、题目、选手、提交、分析结果与人工复核。"""
+    def clear_contest_data(self, platform: str, contest_id: str) -> None:
+        """清空一场比赛的本地数据：题目、选手、提交、分析结果与人工复核。
+
+        比赛条目本身（名称、时间）保留，列表中显示为「未采集」，可以直接重新采集。
+        """
         key = (platform, contest_id)
         runs = "SELECT run_id FROM analysis_runs WHERE platform=? AND contest_id=?"
         with self.transaction():
@@ -284,7 +287,6 @@ class Store:
                 "submissions",
                 "participants",
                 "problems",
-                "contests",
             ):
                 self.connection.execute(
                     f"DELETE FROM {table} WHERE platform=? AND contest_id=?", key

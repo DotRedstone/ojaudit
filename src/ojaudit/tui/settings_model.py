@@ -827,5 +827,5 @@ class SettingsModel:
 
     def delete_contest(self, platform: str, contest_id: str) -> None:
         with Store(self.db_path) as store:
-            store.delete_contest(platform, contest_id)
+            store.clear_contest_data(platform, contest_id)
         self.contests = self._read_contests()

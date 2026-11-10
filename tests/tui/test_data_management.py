@@ -162,7 +162,7 @@ def test_delete_contest_data_from_settings(tmp_path, monkeypatch):
 
     asyncio.run(scenario())
     with Store(db) as store:
-        tables = ("contests", "submissions", "participants", "analysis_runs", "person_marks")
+        tables = ("submissions", "participants", "analysis_runs", "person_marks")
         left = {
             table: store.connection.execute(
                 f"SELECT COUNT(*) FROM {table} WHERE contest_id='2'"
@@ -172,3 +172,12 @@ def test_delete_contest_data_from_settings(tmp_path, monkeypatch):
         assert set(left.values()) == {0}, json.dumps(left)
         assert store.connection.execute("SELECT COUNT(*) FROM findings").fetchone()[0] == 0
         assert store.contest_exists("nowcoder", "1"), "其他比赛不受影响"
+        assert store.contest_exists("nowcoder", "2"), "比赛条目保留在列表中"
+    entry = next(e for e in LocalContests(db).list_contests() if e.contest.contest_id == "2")
+    assert entry.contest.name == "新生练习"
+    from ojaudit.tui.contest_list_data import contest_summary
+
+    assert contest_summary(LocalContests(db), entry.contest).state == "未采集"
+    assert [
+        o.title for o in SettingsModel(db_path=db).options_for("数据") if o.kind == "contest"
+    ] == ["正式赛"]

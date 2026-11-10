@@ -605,13 +605,13 @@ class SettingsScreen(Chrome, Screen):
                 self.notify(f"删除失败：{exc}", severity="error")
                 return
             self.reload()
-            self.notify(f"已删除「{option.title}」的本地数据")
+            self.notify(f"已清空「{option.title}」的本地数据，比赛仍在列表中，可重新采集")
 
         self.app.push_screen(
             ConfirmPopup(
                 "删除比赛数据",
                 f"删除「{option.title}」在本地的选手、提交、检测线索与人工复核？\n"
-                "此操作不可撤销；之后可以重新采集。",
+                "此操作不可撤销；比赛仍保留在列表中（显示未采集），可以重新采集。",
             ),
             apply,
         )

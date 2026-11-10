@@ -10,8 +10,9 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from textual.containers import Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Footer, ListView, Static
+from textual.widgets import Footer, Label, ListView, Static
 
 from ojaudit.core.store import Store
 from ojaudit.tui.app import AuditApp
@@ -175,5 +176,57 @@ def test_compact_modal_sizing_and_escape(tmp_path, monkeypatch):
                 await pilot.press("escape")
                 await pilot.pause()
                 assert isinstance(app.screen, HomeScreen)
+
+    asyncio.run(scenario())
+
+
+
+def test_status_row_has_exactly_one_accent_marker(tmp_path, monkeypatch):
+    """accent 只由 TCSS 的左边框绘制，不额外输出文本竖条。"""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    css = (
+        Path(__file__).resolve().parents[2] / "src/ojaudit/tui/themes/nowcoder.tcss"
+    ).read_text(encoding="utf-8")
+    assert ".status-row { border-left: solid $accent; }" in css
+
+    async def scenario():
+        app = AuditApp(LocalContests(tmp_path / "missing.sqlite"))
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            rows = list(app.screen.query(".status-row"))
+            assert rows
+            for row in rows:
+                assert isinstance(row, StatusRow)
+                text = str(row.query_one(Label).render())
+                assert not text.startswith(("▎", "│", "┃", "▏"))
+                assert text
+                assert row.styles.border_left is not None
+
+    asyncio.run(scenario())
+
+
+def test_settings_count_tracks_right_pane_category(tmp_path, monkeypatch):
+    """外框项目数随分类切换更新，不将左栏 9 个分类误计为设置项。"""
+    from ojaudit.tui.settings_model import CATEGORIES, SettingsModel
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    model = SettingsModel(tmp_path / "settings.toml", [], db_path=tmp_path / "missing.sqlite")
+
+    async def scenario():
+        app = AuditApp(LocalContests(tmp_path / "missing.sqlite"))
+        async with app.run_test() as pilot:
+            screen = SettingsScreen(model)
+            app.push_screen(screen)
+            await pilot.pause()
+            categories = screen.query_one("#categories", NavigateListView)
+            pane = screen.query_one("#pane", Vertical)
+            for category in ("账户", "采集", "快捷键"):
+                categories.index = CATEGORIES.index(category)
+                await pilot.pause()
+                count = len(model.options_for(category))
+                assert screen.category_index == CATEGORIES.index(category)
+                assert len(screen.rows) == count
+                assert pane.border_subtitle == f"{count} 项"
+            assert len(model.options_for("快捷键")) != len(CATEGORIES)
 
     asyncio.run(scenario())

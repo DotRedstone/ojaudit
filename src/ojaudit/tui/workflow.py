@@ -1,4 +1,9 @@
-"""TUI 采集检测工作流与跨比赛待复核数据，保持核心业务接口复用。"""
+"""
+Module: TUI / workflow
+Description: 后台采集、入库与分析的同步步骤，以及跨比赛待复核条目。
+Scope: TUI
+Notes: 在后台线程中运行；每步独立打开 Store，不跨线程共享连接。
+"""
 
 from __future__ import annotations
 

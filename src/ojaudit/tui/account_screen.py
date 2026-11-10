@@ -63,9 +63,7 @@ class UidDialog(ModalScreen[str | None]):
     @on(Button.Pressed)
     def pressed(self, event: Button.Pressed) -> None:
         self.dismiss(
-            self.query_one("#uid-value", Input).value
-            if event.button.id == "uid-save"
-            else None
+            self.query_one("#uid-value", Input).value if event.button.id == "uid-save" else None
         )
 
 
@@ -79,8 +77,10 @@ class AccountScreen(ShellScreen):
         rows = [
             Static("", id="account-state"),
             NavigateListView(
-                *(ListItem(Label(label(key, name, self.app.nerd_font)))
-                  for key, name in zip(self.ICON_KEYS, self.OPTIONS)),
+                *(
+                    ListItem(Label(label(key, name, self.app.nerd_font)))
+                    for key, name in zip(self.ICON_KEYS, self.OPTIONS)
+                ),
                 id="account-options",
             ),
         ]

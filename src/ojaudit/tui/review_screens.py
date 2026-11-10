@@ -183,19 +183,14 @@ class FindingsScreen(ReviewListScreen):
         mode = self.FILTERS[self.filter_index]
         if mode == "高优先级":
             return [
-                row for row in rows
+                row
+                for row in rows
                 if not row["is_stale"] and str(row["verdict_level"]).lower() == "high"
             ]
         if mode == "未处理":
-            return [
-                row for row in rows
-                if not row["is_stale"] and row["status"] == "待复核"
-            ]
+            return [row for row in rows if not row["is_stale"] and row["status"] == "待复核"]
         if mode == "已处理":
-            return [
-                row for row in rows
-                if not row["is_stale"] and row["status"] != "待复核"
-            ]
+            return [row for row in rows if not row["is_stale"] and row["status"] != "待复核"]
         return rows
 
     def action_cycle_filter(self) -> None:

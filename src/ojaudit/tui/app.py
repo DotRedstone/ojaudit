@@ -11,6 +11,7 @@ from typing import ClassVar
 
 from textual.app import App
 
+from ojaudit.core.config import load_config
 from ojaudit.tui.data import LocalContests
 from ojaudit.tui.screens import HomeScreen
 
@@ -40,18 +41,42 @@ class AuditApp(App[None]):
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         ("q", "quit", "退出"),
         ("question_mark", "help", "帮助"),
+        ("t", "cycle_theme", "切换主题"),
     ]
-    theme_name = "终端默认"
+    THEMES: ClassVar[tuple[str, ...]] = ("ansi", "catppuccin", "nord", "gruvbox")
+    THEME_IDS: ClassVar[dict[str, str]] = {
+        "catppuccin": "catppuccin-mocha",
+        "nord": "nord",
+        "gruvbox": "gruvbox",
+    }
+    theme_name = "ansi"
 
     def __init__(self, contests: LocalContests | None = None) -> None:
         super().__init__()
         self.contests = contests if contests is not None else LocalContests()
+        appearance = load_config().get("appearance", {})
+        self.theme_name = str(appearance.get("theme", "ansi"))
+        self.nerd_font = bool(appearance.get("nerd_font", False))
 
     def on_mount(self) -> None:
+        self._apply_theme()
         self.push_screen(HomeScreen())
 
+    def _apply_theme(self) -> None:
+        name = self.THEME_IDS.get(self.theme_name)
+        if name is not None and name in self.available_themes:
+            self.theme = name
+        elif "textual-ansi" in self.available_themes:
+            self.theme = "textual-ansi"
+
+    def action_cycle_theme(self) -> None:
+        index = self.THEMES.index(self.theme_name) if self.theme_name in self.THEMES else 0
+        self.theme_name = self.THEMES[(index + 1) % len(self.THEMES)]
+        self._apply_theme()
+        self.notify(f"主题：{self.theme_name}（设置页可保存）")
+
     def action_help(self) -> None:
-        self.notify("j/k 移动 · g/G 首尾 · Enter/l 进入 · Esc/h 返回 · a 全部 · q 退出")
+        self.notify("j/k 移动 · g/G 首尾 · Enter/l 进入 · Esc/h 返回 · a 全部 · t 主题 · q 退出")
 
 
 def main() -> None:

@@ -5,3 +5,19 @@ api_version = 1
 description = "牛客旧检测器三口径相似度与稀有 n-gram"
 languages = ["cpp", "python", "java"]
 module = "ojaudit.plugins.detectors.similarity"
+
+[params]
+
+[params.ngram_size]
+type = "int"
+label = "n-gram 窗口长度"
+description = "n-gram 窗口长度"
+default = 5
+min = 1
+
+[params.rare_threshold]
+type = "int"
+label = "稀有 n-gram 的最多用户数"
+description = "稀有 n-gram 的最多用户数"
+default = 3
+min = 1

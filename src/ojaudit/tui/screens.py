@@ -50,8 +50,11 @@ class ShellScreen(Screen):
         app = self.app
         current = getattr(self, "CURRENT", self.TITLE)
         self.query_one("#status", Static).update(
-            f" NORMAL  ❯  {current}   │  任务: 空闲   │  主题: {app.theme_name} "
+            f" NORMAL  ❯  {current}   │  任务: {app.job_status}   │  主题: {app.theme_name} "
         )
+
+    def on_screen_resume(self) -> None:
+        self._update_status()
 
     def action_back(self) -> None:
         if len(self.app.screen_stack) > 1:
@@ -136,7 +139,7 @@ class EntryDialog(ModalScreen[str | None]):
 class HomeScreen(ShellScreen):
     TITLE = "ojaudit · 首页"
     PATH = "首页"
-    OPTIONS = ("比赛列表", "打开比赛 ID", "账户 / 登录", "设置")
+    OPTIONS = ("比赛列表", "打开比赛 ID", "账户 / 登录", "设置", "待复核", "采集比赛 ID")
 
     def compose(self) -> ComposeResult:
         hint = (
@@ -160,6 +163,16 @@ class HomeScreen(ShellScreen):
             from ojaudit.tui.settings_screen import SettingsScreen
 
             self.app.push_screen(SettingsScreen(SettingsModel(db_path=self.app.contests.db_path)))
+        elif index == 4:
+            from ojaudit.tui.pending_screen import PendingScreen
+
+            self.app.push_screen(PendingScreen())
+        elif index == 5:
+            self.app.push_screen(EntryDialog(), self.collect_contest_id)
+
+    def collect_contest_id(self, raw: str | None) -> None:
+        if raw is not None and raw.strip():
+            self.app.start_workflow(raw.strip(), "collect_analyze")
 
     def open_contest_id(self, raw: str | None) -> None:
         if raw is None:
@@ -178,11 +191,7 @@ class HomeScreen(ShellScreen):
         elif len(matches) > 1:
             self.notify("多个平台存在该 ID，请从比赛列表选择", severity="warning")
         else:
-            self.notify(
-                f"本地没有比赛 {cid}；请先运行 ojaudit collect {cid} 采集",
-                severity="warning",
-                timeout=8,
-            )
+            self.app.push_screen(MissingContestScreen(cid))
 
     def save_login(self, value: str | None) -> None:
         if value is None:
@@ -212,7 +221,14 @@ class ContestListScreen(ShellScreen):
         self.entries = []
 
     def compose(self) -> ComposeResult:
-        yield from self.shell([ListView(id="contests")])
+        yield from self.shell(
+            [
+                Button("采集比赛 ID", id="collect-contest"),
+                Button("分析当前选中比赛", id="analyze-contest"),
+                Button("取消当前后台任务", id="cancel-task"),
+                ListView(id="contests"),
+            ]
+        )
 
     def on_mount(self) -> None:
         self.refresh_entries()
@@ -234,6 +250,32 @@ class ContestListScreen(ShellScreen):
             self.PATH + (" › 全部" if self.show_all else " › 已筛选")
         )
 
+    @on(Button.Pressed, "#collect-contest")
+    def collect_pressed(self, _event: Button.Pressed) -> None:
+        self.app.push_screen(EntryDialog(), self.collect_id)
+
+    def collect_id(self, cid: str | None) -> None:
+        if cid is not None and cid.strip():
+            self.app.start_workflow(cid.strip(), "collect_analyze")
+
+    @on(Button.Pressed, "#analyze-contest")
+    def analyze_pressed(self, _event: Button.Pressed) -> None:
+        view = self.query_one("#contests", ListView)
+        index = view.index if view.index is not None else 0
+        if not 0 <= index < len(self.entries):
+            self.notify("请先选择已有比赛", severity="warning")
+            return
+        contest = self.entries[index].contest
+        self.app.start_workflow(contest.contest_id, "analyze", contest.platform)
+
+    @on(Button.Pressed, "#cancel-task")
+    def cancel_pressed(self, _event: Button.Pressed) -> None:
+        self.app.cancel_workflow()
+
+    def on_workflow_finished(self) -> None:
+        self.refresh_entries()
+        self._update_status()
+
     def action_toggle_all(self) -> None:
         self.show_all = not self.show_all
         self.refresh_entries()
@@ -245,7 +287,7 @@ class ContestListScreen(ShellScreen):
 
 class ContestOverviewScreen(ShellScreen):
     TITLE = "比赛总览"
-    OPTIONS = ("线索", "选手", "题目", "排行榜")
+    OPTIONS = ("线索", "选手", "题目", "排行榜", "采集并检测", "本地分析")
 
     def __init__(self, contest: Contest, contests: LocalContests):
         super().__init__()
@@ -255,35 +297,63 @@ class ContestOverviewScreen(ShellScreen):
         self.CURRENT = f"{contest.platform}/{contest.contest_id}"
 
     def compose(self) -> ComposeResult:
-        stats = self.contests.stats(self.contest)
         with Vertical():
             yield Static(self.PATH, id="breadcrumb")
             with Vertical(id="pane"):
-                yield Static(
-                    f"线索 {stats.findings}   选手 {stats.participants}   "
-                    f"题目 {stats.problems}   提交 {stats.submissions}",
-                    id="summary",
-                )
-                yield ListView(
-                    *(
-                        ListItem(Label(f"{name} · {count}"))
-                        for name, count in zip(
-                            self.OPTIONS,
-                            (
-                                stats.findings,
-                                stats.participants,
-                                stats.problems,
-                                stats.participants,
-                            ),
-                        )
-                    ),
-                )
+                yield Static("", id="summary")
+                yield ListView(id="overview-options")
+                yield Button("取消当前后台任务", id="cancel-overview-job")
             yield Static("", id="status")
+
+    def on_mount(self) -> None:
+        self.refresh_overview()
+        super().on_mount()
+
+    def on_workflow_finished(self) -> None:
+        self.refresh_overview()
+        self._update_status()
+
+    def on_screen_resume(self) -> None:
+        self.refresh_overview()
+        super().on_screen_resume()
+
+    def refresh_overview(self) -> None:
+        stats = self.contests.stats(self.contest)
+        self.query_one("#summary", Static).update(
+            f"线索 {stats.findings}   选手 {stats.participants}   "
+            f"题目 {stats.problems}   提交 {stats.submissions}"
+        )
+        counts = (
+            stats.findings,
+            stats.participants,
+            stats.problems,
+            stats.participants,
+            "运行",
+            "运行",
+        )
+        view = self.query_one("#overview-options", ListView)
+        index = view.index or 0
+        view.clear()
+        for name, count in zip(self.OPTIONS, counts):
+            view.append(ListItem(Label(f"{name} · {count}")))
+        view.call_after_refresh(setattr, view, "index", index)
+
+    @on(Button.Pressed, "#cancel-overview-job")
+    def cancel_pressed(self) -> None:
+        self.app.cancel_workflow()
 
     def open_index(self, index: int) -> None:
         from ojaudit.tui.review_data import ReviewData
         from ojaudit.tui.review_screens import FindingsScreen, PeopleScreen, ProblemsScreen
 
+        if index == 4:
+            self.app.start_workflow(self.contest.contest_id, "collect_analyze")
+            return
+        if index == 5:
+            self.app.start_workflow(self.contest.contest_id, "analyze", self.contest.platform)
+            return
+        if index not in (0, 1, 2, 3):
+            return
         if index == 3:
             from ojaudit.tui.ranking_screen import RankingScreen
 
@@ -292,3 +362,34 @@ class ContestOverviewScreen(ShellScreen):
         data = ReviewData(self.contests, self.contest)
         screen_type = (FindingsScreen, PeopleScreen, ProblemsScreen)[index]
         self.app.push_screen(screen_type(data, self.PATH))
+
+
+class MissingContestScreen(ShellScreen):
+    """没有本地数据时保留可操作的采集引导。"""
+
+    TITLE = "本地缺少比赛"
+    OPTIONS = ("采集并检测", "仅采集", "返回")
+
+    def __init__(self, contest_id: str) -> None:
+        super().__init__()
+        self.contest_id = contest_id
+        self.PATH = f"首页 › 比赛 {contest_id} › 未采集"
+
+    def compose(self) -> ComposeResult:
+        yield from self.shell(
+            [
+                Static(
+                    f"比赛 {self.contest_id} 尚未在本地数据库中。"
+                    f"可选择采集，或运行 ojaudit collect {self.contest_id}。",
+                ),
+                ListView(*(ListItem(Label(item)) for item in self.OPTIONS)),
+            ]
+        )
+
+    def open_index(self, index: int) -> None:
+        if index == 0:
+            self.app.start_workflow(self.contest_id, "collect_analyze")
+        elif index == 1:
+            self.app.start_workflow(self.contest_id, "collect")
+        else:
+            self.app.pop_screen()

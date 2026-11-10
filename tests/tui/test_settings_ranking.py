@@ -178,7 +178,8 @@ def test_ranking_policy_warning_and_exports(tmp_path, monkeypatch):
     marked = final_ranking(data, RankingOptions(cheaters="mark", suspects="mark", managers="mark"))
     assert len(marked.rows) == 3
     assert marked.rows[1]["person_mark"] == "cheater"
-    assert len(pending_warnings(data)) == 2
+    # 只提醒检测筛出的人：未标记但没有线索的选手不算待处理。
+    assert pending_warnings(data) == ("仍有 1 条线索待复核（涉及 2 人）",)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "xdg"))
     for extension in ("md", "csv", "html"):
         target = export_ranking(data, RankingOptions(), extension)

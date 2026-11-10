@@ -68,11 +68,10 @@ def pending_warnings(data: ReviewData) -> tuple[str, ...]:
     pending = [
         item for item in data.findings() if not item["is_stale"] and item["status"] == "待复核"
     ]
+    # 只有检测算法筛出来的人需要人工复核；没有线索的人默认正常，不提醒。
     if pending:
-        messages.append(f"仍有 {len(pending)} 条线索待复核")
-    unmarked = [person for person in data.people() if not person["hidden"] and not person["mark"]]
-    if unmarked:
-        messages.append(f"仍有 {len(unmarked)} 名选手未人工标记")
+        people = {str(item[key]) for item in pending for key in ("uid_a", "uid_b")}
+        messages.append(f"仍有 {len(pending)} 条线索待复核（涉及 {len(people)} 人）")
     return tuple(messages)
 
 

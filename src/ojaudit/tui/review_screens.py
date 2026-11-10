@@ -23,7 +23,6 @@ from textual.widgets import Button, Input, Label, ListView, Select, Static
 from ojaudit.core.reviews import REVIEW_STATUSES
 from ojaudit.tui.icons import breadcrumb, label
 from ojaudit.tui.interaction import Breadcrumb
-from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView as NavigationListView
 from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.screens import ShellScreen

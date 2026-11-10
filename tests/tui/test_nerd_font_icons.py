@@ -117,7 +117,7 @@ def test_all_major_screens_render_with_icon_mode(tmp_path, enabled):
                 app.push_screen(screen)
                 await pilot.pause()
                 svg = app.export_screenshot()
-                assert _private(svg) is enabled
+                assert _private(svg) is enabled, type(screen).__name__
                 app.pop_screen()
                 await pilot.pause()
             assert isinstance(app.screen, HomeScreen)

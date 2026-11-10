@@ -55,7 +55,7 @@ class LocalContests:
         try:
             rows = connection.execute(
                 "SELECT platform, contest_id, name, start_time, end_time "
-                "FROM contests ORDER BY name, platform, contest_id"
+                "FROM contests ORDER BY start_time IS NULL, start_time DESC, name, contest_id"
             ).fetchall()
         except sqlite3.OperationalError:
             # 后台任务刚创建数据库、尚未完成迁移时，按空库处理。

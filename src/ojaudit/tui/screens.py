@@ -15,19 +15,20 @@ from typing import Any, ClassVar
 from rich.text import Text
 from textual import events, on
 from textual.app import ComposeResult
-from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen, Screen
-from textual.widgets import Button, Input, Label, ListView, Static
+from textual.screen import Screen
+from textual.widgets import Label, ListView, Static
 
 from ojaudit.core.schema import Contest
 from ojaudit.tui import ui
 from ojaudit.tui.contest_list_data import ContestSummary, contest_summary
 from ojaudit.tui.data import LocalContests
 from ojaudit.tui.icons import breadcrumb, glyph, label
-from ojaudit.tui.interaction import Breadcrumb, SearchDialog
+from ojaudit.tui.interaction import Breadcrumb
 from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView as NavigationListView
+from ojaudit.tui.popup import ConfirmPopup, InputPopup, SearchLine
+from ojaudit.tui.splitter import Splitter
 
 NAV_HINTS: tuple[tuple[str, str], ...] = (("↵", "打开"), ("esc", "返回"), ("/", "搜索"))
 
@@ -164,19 +165,31 @@ class ShellScreen(Chrome, Screen):
             self.open_index(view.index if view.index is not None else 0)
 
     def action_search(self) -> None:
-        if self._list() is not None:
-            self.app.push_screen(SearchDialog(), self._search_result)
-
-    def _search_result(self, query: str | None) -> None:
         view = self._list()
-        if view is None or not query:
+        if view is None:
             return
+        self._search_origin = view.index
+        self.app.push_screen(SearchLine(self._jump_to), self._search_result)
+
+    def _jump_to(self, query: str) -> bool:
+        view = self._list()
+        if view is None:
+            return False
         for index, item in enumerate(view.children):
             if query.casefold() in str(item.query_one(Label).render()).casefold():
                 view.index = index
-                view.focus()
-                return
-        self.notify("未找到匹配项", severity="warning")
+                return True
+        return False
+
+    def _search_result(self, query: str | None) -> None:
+        view = self._list()
+        if view is None:
+            return
+        if query is None:
+            view.index = getattr(self, "_search_origin", view.index)
+        elif query and not self._jump_to(query):
+            self.notify(f"未找到：{query}", severity="warning")
+        view.focus()
 
     def open_index(self, index: int) -> None:
         raise NotImplementedError
@@ -242,79 +255,25 @@ class TableScreen(ShellScreen):
         return self.rows[index] if 0 <= index < len(self.rows) else None
 
 
-class Dialog(ModalScreen[Any]):
-    """所有弹窗共用的外框：标题、正文、右对齐按钮；Esc 始终取消。"""
-
-    BINDINGS: ClassVar[list[Binding]] = [
-        Binding("escape", "cancel", "取消", priority=True),
-    ]
-    DEFAULT_CSS = """
-    Dialog { align: center middle; background: $background 60%; }
-    """
-
-    def action_cancel(self) -> None:
-        self.dismiss(None)
-
-
-def dialog_buttons(confirm: tuple[str, str], cancel: tuple[str, str], icons: bool) -> Horizontal:
-    return Horizontal(
-        Button(label("cancel", cancel[1], icons), id=cancel[0]),
-        Button(label("save", confirm[1], icons), id=confirm[0], variant="primary"),
-        classes="dialog-buttons",
-    )
-
-
-class EntryDialog(Dialog):
-    """比赛 ID / Cookie 输入框；Cookie 仅通过密码输入控件传递。"""
-
-    BINDINGS: ClassVar[list[Binding]] = [
-        Binding("escape", "cancel", "取消", priority=True),
-        Binding("h", "cancel", "取消"),
-    ]
+class EntryDialog(InputPopup):
+    """比赛 ID / Cookie 输入；Cookie 仅经密码输入框传递。"""
 
     def __init__(self, *, login: bool = False, title: str = "") -> None:
-        super().__init__()
-        self.login = login
-        self.title_text = title or ("粘贴牛客 Cookie" if login else "打开本地比赛")
-
-    def compose(self) -> ComposeResult:
-        icons = self.app.nerd_font
-        with Vertical(id="entry-dialog", classes="dialog"):
-            yield Label(
-                label("login" if self.login else "contest", self.title_text, icons),
-                classes="dialog-title",
-            )
-            yield Label(
-                "输入内容隐藏，仅保存到本机配置目录（0600）"
-                if self.login
-                else "输入比赛 ID，例如 90001",
-                classes="dialog-hint",
-            )
-            yield Input(
-                placeholder="Cookie" if self.login else "比赛 ID",
-                password=self.login,
-                id="entry-value",
-            )
-            yield dialog_buttons(
-                ("entry-confirm", "保存" if self.login else "确定"),
-                ("entry-cancel", "取消"),
-                icons,
-            )
-
-    def on_mount(self) -> None:
-        self.query_one("#entry-value", Input).focus()
-
-    @on(Input.Submitted)
-    def submit_input(self, event: Input.Submitted) -> None:
-        self.dismiss(event.value)
-
-    @on(Button.Pressed)
-    def press_button(self, event: Button.Pressed) -> None:
-        self.dismiss(
-            self.query_one("#entry-value", Input).value
-            if event.button.id == "entry-confirm"
-            else None
+        super().__init__(
+            title or ("粘贴牛客 Cookie" if login else "打开本地比赛"),
+            placeholder="Cookie" if login else "比赛 ID，例如 90001",
+            password=login,
+            note="只保存到本机配置目录（0600），界面不显示" if login else "",
+            validate=None if login else _validate_contest_id,
+            input_id="entry-value",
         )
+
+
+def _validate_contest_id(value: str) -> str | None:
+    text = value.strip()
+    if text and not text.replace("-", "").replace("_", "").isalnum():
+        return "比赛 ID 只能包含字母、数字、- 和 _"
+    return None
 
 
 def _menu_row(icon: str, name: str, detail: str, width: int, app: Any) -> Text:
@@ -349,6 +308,7 @@ class HomeScreen(ShellScreen):
                     yield NavigationListView(
                         *(ListItem(Label(name)) for name in self.OPTIONS), id="menu"
                     )
+                yield Splitter("home-menu", "home", minimum=24)
                 yield Static("", id="home-overview", classes="panel")
             yield Static("", id="home-recent")
             if not self.app.contests.list_contests(show_all=True):
@@ -525,13 +485,21 @@ def state_text(summary: ContestSummary, colors: ui.Palette) -> Text:
 class ContestListScreen(TableScreen):
     TITLE = "比赛列表"
     PATH = "首页 › 比赛列表"
-    HINTS = (("↵", "打开"), ("a", "全部/已筛选"), ("c", "采集"), ("R", "重新分析"), ("/", "搜索"))
+    HINTS = (
+        ("↵", "打开"),
+        ("c", "采集"),
+        ("R", "重新分析"),
+        ("S", "同步"),
+        ("a", "显示被过滤的"),
+        ("/", "搜索"),
+    )
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         *ShellScreen.BINDINGS,
         ("a", "toggle_all", "显示全部 / 仅筛选"),
         ("c", "collect", "采集新比赛"),
         ("R", "analyze", "重新分析所选比赛"),
         ("x", "cancel_job", "取消后台任务"),
+        ("S", "sync", "同步已参加的比赛"),
     ]
     COLUMNS = (
         ui.Column("比赛"),
@@ -542,12 +510,13 @@ class ContestListScreen(TableScreen):
         ui.Column("实锤 强 疑", 10),
         ui.Column("复核", 14),
     )
-    EMPTY = "暂无比赛：按 c 采集，或运行 ojaudit collect <比赛ID>"
+    EMPTY = "暂无比赛：登录后按 S 同步你参加过的比赛，或按 c 输入比赛 ID 采集"
 
     def __init__(self, contests: LocalContests):
         super().__init__()
         self.contests = contests
         self.show_all = False
+        self.hidden_count = 0
         self.summaries: dict[tuple[str, str], ContestSummary] = {}
 
     @property
@@ -555,11 +524,22 @@ class ContestListScreen(TableScreen):
         return self.rows
 
     def subtitle(self) -> str:
-        mode = "全部" if self.show_all else "按规则筛选"
-        return f"{mode} · {len(self.rows)} 场"
+        hidden = self.hidden_count
+        if self.show_all:
+            return f"{len(self.rows)} 场 · 含被过滤的 {hidden} 场"
+        return f"{len(self.rows)} 场" + (f" · 已过滤 {hidden} 场（a 显示）" if hidden else "")
+
+    def on_mount(self) -> None:
+        super().on_mount()
+        self.app.sync_joined()
+
+    def action_sync(self) -> None:
+        self.app.sync_joined(force=True)
 
     def items(self) -> list[Any]:
-        entries = self.contests.list_contests(self.show_all)
+        everything = self.contests.list_contests(show_all=True)
+        self.hidden_count = sum(not entry.visible for entry in everything)
+        entries = everything if self.show_all else [e for e in everything if e.visible]
         self.summaries = {
             (e.contest.platform, e.contest.contest_id): contest_summary(self.contests, e.contest)
             for e in entries
@@ -613,8 +593,24 @@ class ContestListScreen(TableScreen):
 
     def open_index(self, index: int) -> None:
         row = self.selected_row(index)
-        if row is not None:
-            self.app.push_screen(ContestOverviewScreen(row.contest, self.contests))
+        if row is None:
+            return
+        summary = self.summaries.get((row.contest.platform, row.contest.contest_id))
+        if summary is not None and summary.state == "未采集":
+            contest = row.contest
+            self.app.push_screen(
+                ConfirmPopup(
+                    "采集比赛", f"「{contest.name}」还没有采集。\n现在采集并检测？", default=True
+                ),
+                lambda ok: (
+                    ok
+                    and self.app.start_workflow(
+                        contest.contest_id, "collect_analyze", contest.platform
+                    )
+                ),
+            )
+            return
+        self.app.push_screen(ContestOverviewScreen(row.contest, self.contests))
 
 
 class ContestOverviewScreen(ShellScreen):

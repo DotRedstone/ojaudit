@@ -136,6 +136,7 @@ def _parser() -> argparse.ArgumentParser:
     plugins.add_argument("spec", nargs="?")
     login = sub.add_parser("login", help="保存牛客 Cookie 到权限 600 的本地文件")
     login.add_argument("--platform", choices=["nowcoder"], default="nowcoder")
+    login.add_argument("--qr", action="store_true", help="在终端显示二维码，用微信扫码登录")
     collect = sub.add_parser("collect", help="使用牛客 Source 只读采集")
     collect.add_argument("contest")
     return parser
@@ -175,6 +176,15 @@ def _run(args: argparse.Namespace) -> None:
         entry(db_path=args.db)
         return
     if args.command == "login":
+        if args.qr:
+            from ojaudit.tui.account_service import detect_and_save_uid, login_with_qr
+
+            login_with_qr()
+            try:
+                print(f"牛客 UID：{detect_and_save_uid()}")
+            except (OSError, RuntimeError, ValueError):
+                print("未能自动识别 UID，可用 TUI 设置页填写", file=sys.stderr)
+            return
         import getpass
 
         save_cookie(getpass.getpass("Nowcoder Cookie: "))

@@ -7,15 +7,9 @@ Notes: 不修改任何业务层、采集或检测逻辑。
 
 from __future__ import annotations
 
-from typing import ClassVar
-
-from textual import events, on
-from textual.app import ComposeResult
-from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual import events
 from textual.message import Message
-from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, ListItem, ListView, Static
+from textual.widgets import ListItem, ListView, Static
 
 
 class NavigateListView(ListView):
@@ -60,39 +54,10 @@ class Breadcrumb(Static):
             back()
 
 
-class SearchDialog(ModalScreen[str | None]):
-    """当前列表的轻量文本搜索；Esc 永远可取消。"""
+def __getattr__(name: str):
+    # 旧名称兼容：搜索改为底部 / 行。
+    if name == "SearchDialog":
+        from ojaudit.tui.popup import SearchLine
 
-    BINDINGS: ClassVar[list[Binding]] = [
-        Binding("escape", "cancel", "取消搜索", priority=True),
-    ]
-    DEFAULT_CSS = """
-    SearchDialog { align: center middle; background: $background 60%; }
-    """
-
-    def compose(self) -> ComposeResult:
-        with Vertical(id="search-dialog", classes="dialog"):
-            yield Label("搜索", classes="dialog-title")
-            yield Label("跳到第一条包含该文字的行", classes="dialog-hint")
-            yield Input(placeholder="输入关键字后回车", id="search-text")
-            with Horizontal(classes="dialog-buttons"):
-                yield Button("取消", id="search-cancel")
-                yield Button("查找", id="search-confirm", variant="primary")
-
-    def on_mount(self) -> None:
-        self.query_one("#search-text", Input).focus()
-
-    @on(Input.Submitted)
-    def submit(self, event: Input.Submitted) -> None:
-        self.dismiss(event.value)
-
-    @on(Button.Pressed)
-    def pressed(self, event: Button.Pressed) -> None:
-        self.dismiss(
-            self.query_one("#search-text", Input).value
-            if event.button.id == "search-confirm"
-            else None
-        )
-
-    def action_cancel(self) -> None:
-        self.dismiss(None)
+        return SearchLine
+    raise AttributeError(name)

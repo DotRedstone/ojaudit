@@ -95,37 +95,59 @@ class NowcoderSource:
             raise TypeError("牛客接口返回结构无效")
         return value
 
-    def list_recent(self, uid: str | None = None) -> list[dict[str, Any]]:
+    def detect_uid(self) -> str:
+        """从当前登录态读取自己的牛客 UID（ac.nowcoder.com 首页中的个人主页链接）。"""
+        page = self._get(f"{BASE_URL}/", self._cookie())
+        match = re.search(r"/acm/contest/profile/(\d+)", page)
+        if match is None:
+            raise RuntimeError("无法从登录态识别牛客 UID：Cookie 可能已失效")
+        return match.group(1)
+
+    def list_joined(self, uid: str | None = None, max_pages: int = 50) -> list[dict[str, Any]]:
+        """列出该用户参加过且已结束的全部比赛（自动翻页）。"""
         user_id = str(uid or self.config.get("uid") or os.environ.get("NOWCODER_UID", ""))
+        if not user_id:
+            user_id = self.detect_uid()
         if not user_id.isdigit():
-            raise ValueError("牛客 UID 必须从配置或 NOWCODER_UID 环境变量提供")
+            raise ValueError("牛客 UID 必须是数字")
         cookie = self._cookie()
-        query = urllib.parse.urlencode(
-            {
-                "uid": user_id,
-                "page": 1,
-                "pageSize": 30,
-                "onlyJoinedFilter": "true",
-                "searchContestName": "",
-                "onlyRatingFilter": "false",
-                "contestEndFilter": "true",
-            }
-        )
-        payload = self._json(
-            f"{BASE_URL}/acm-heavy/acm/contest/profile/contest-joined-history?{query}",
-            cookie,
-        )
-        data = payload.get("data") or {}
-        rows = data.get("dataList") or data.get("data") or []
-        return [
-            {
-                "contest_id": str(row.get("contestId", "")),
-                "name": str(row.get("contestName", "")),
-                "start_time": row.get("startTime"),
-                "end_time": row.get("endTime"),
-            }
-            for row in rows
-        ]
+        result: list[dict[str, Any]] = []
+        for page in range(1, max_pages + 1):
+            query = urllib.parse.urlencode(
+                {
+                    "uid": user_id,
+                    "page": page,
+                    "pageSize": 30,
+                    "onlyJoinedFilter": "true",
+                    "searchContestName": "",
+                    "onlyRatingFilter": "false",
+                    "contestEndFilter": "true",
+                }
+            )
+            payload = self._json(
+                f"{BASE_URL}/acm-heavy/acm/contest/profile/contest-joined-history?{query}",
+                cookie,
+            )
+            data = payload.get("data") or {}
+            rows = data.get("dataList") or []
+            for row in rows:
+                if not str(row.get("contestId", "")).isdigit():
+                    continue
+                result.append(
+                    {
+                        "contest_id": str(row["contestId"]),
+                        "name": str(row.get("contestName") or row["contestId"]),
+                        "start_time": row.get("startTime"),
+                        "end_time": row.get("endTime"),
+                    }
+                )
+            info = data.get("pageInfo") or {}
+            total = info.get("totalCount") if isinstance(info, dict) else None
+            if not rows or (isinstance(total, int) and len(result) >= total):
+                break
+        return result
+
+    list_recent = list_joined
 
     def _fetch_after_submissions(self, contest_id: str, cookie: str) -> list[dict[str, Any]]:
         collected = []

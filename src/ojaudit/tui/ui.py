@@ -71,20 +71,30 @@ class Palette:
         )
 
 
+def _rich_color(value: str) -> str:
+    """Textual 的 ansi_xxx 写法转为 Rich 颜色名（ansi_default → default）。"""
+    return value.removeprefix("ansi_")
+
+
 def palette(app: Any) -> Palette:
     theme = getattr(app, "current_theme", None)
 
     def pick(name: str, fallback: str) -> str:
         value = getattr(theme, name, None) if theme is not None else None
-        return str(value) if value else fallback
+        return _rich_color(str(value)) if value else fallback
 
     fg = pick("foreground", "#cdd6f4")
+    bg = pick("background", "#1e1e2e")
+    if getattr(app, "transparent", False):
+        bg = "default"
+    hexed = fg.startswith("#") and bg.startswith("#")
+    surface = pick("surface", "#313244")
     return Palette(
         accent=pick("primary", "#89b4fa"),
-        muted=_mix(fg, pick("background", "#1e1e2e"), 0.5),
+        muted=_mix(fg, bg, 0.5) if hexed else "bright_black",
         fg=fg,
-        bg=pick("background", "#1e1e2e"),
-        surface=pick("surface", "#313244"),
+        bg=bg,
+        surface=surface if surface != "default" else "bright_black",
         danger=pick("error", "#f38ba8"),
         warn=pick("warning", "#fab387"),
         caution=pick("accent", "#f9e2af"),

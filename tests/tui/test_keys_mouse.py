@@ -11,6 +11,7 @@ import asyncio
 
 from textual.widgets import Input, ListView
 
+from ojaudit.core.schema import Contest, Submission
 from ojaudit.core.store import Store
 from ojaudit.tui.app import AuditApp
 from ojaudit.tui.data import LocalContests
@@ -33,7 +34,7 @@ def test_empty_home_focus_and_navigation(tmp_path):
             await pilot.pause()
             assert isinstance(app.screen, ContestListScreen)
             assert not app.screen.entries
-            assert "ojaudit collect" in str(
+            assert "按 c" in str(
                 app.screen.query_one(ListView).children[0].query_one("Label").render()
             )
             await pilot.press("q")
@@ -54,7 +55,12 @@ def test_empty_home_focus_and_navigation(tmp_path):
 def test_mouse_single_then_double_click(tmp_path):
     db = tmp_path / "demo.sqlite"
     with Store(db) as store:
-        store.put_contest("synthetic", "101", "虚构比赛")
+        store.import_contest(
+            Contest("synthetic", "101", "虚构比赛"),
+            submissions=[
+                Submission("synthetic", "101", "s1", "u1", 0, "cpp", "AC", 100, 1, "contest", "x")
+            ],
+        )
 
     async def scenario():
         app = AuditApp(LocalContests(db))
@@ -93,7 +99,10 @@ def test_entry_dialog_esc_and_enter(tmp_path):
             await pilot.press("enter")
             await pilot.pause()
             assert isinstance(app.screen, EntryDialog)
-            await pilot.click("#entry-cancel")
+            await pilot.press("a", "space", "b", "enter")
+            await pilot.pause()
+            assert isinstance(app.screen, EntryDialog), "非法 ID 时 enter 不关闭"
+            await pilot.press("escape")
             await pilot.pause()
             assert isinstance(app.screen, HomeScreen)
 
@@ -126,7 +135,6 @@ def test_choice_dialog_and_settings_confirmation(tmp_path):
 
             app.push_screen(ConfirmLeave())
             await pilot.pause()
-            assert app.focused is app.screen.query_one("#stay")
             await pilot.press("enter")
             await pilot.pause()
             assert isinstance(app.screen, HomeScreen)

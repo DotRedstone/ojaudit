@@ -21,7 +21,7 @@ from ojaudit.tui.data import LocalContests
 from ojaudit.tui.ranking_data import export_ranking, final_ranking, pending_warnings
 from ojaudit.tui.ranking_screen import RankingScreen
 from ojaudit.tui.review_data import ReviewData
-from ojaudit.tui.settings_model import SettingsModel
+from ojaudit.tui.settings_model import CATEGORIES, SettingsModel
 from ojaudit.tui.settings_screen import ConfirmLeave, SettingsScreen
 
 
@@ -126,7 +126,9 @@ def test_option_types_defaults_and_persistence(tmp_path):
     assert SettingsModel(path, [manifest]).values["plugins.fake_detector.params.mode"] == "exact"
 
 
-def test_settings_pilot_controls_and_unsaved_confirm(tmp_path):
+def test_settings_pilot_controls_and_unsaved_confirm(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.setenv("OJAUDIT_THEME_FILE", str(tmp_path / "no-wallpaper.json"))
     model = SettingsModel(tmp_path / "config.toml", [fake_manifest()])
 
     async def scenario():
@@ -135,31 +137,37 @@ def test_settings_pilot_controls_and_unsaved_confirm(tmp_path):
             app.push_screen(SettingsScreen(model))
             await pilot.pause()
             screen = app.screen
-            assert isinstance(screen, SettingsScreen)
-            screen.category_index = 6
-            screen.reload()
-            screen.action_focus_next()
+            screen.query_one("#categories", ListView).index = CATEGORIES.index("外观")
+            await pilot.pause()
             await pilot.press("l")
             await pilot.pause()
+            before = app.theme
+            await pilot.press("space", "space")
+            await pilot.pause()
             assert model.dirty
-            assert "●" in str(
+            assert app.theme != before, "外观修改应立即预览"
+            assert "*" in str(
                 screen.query_one("#settings-values", ListView).children[0].query_one(Label).render()
             )
             await pilot.press("escape")
             await pilot.pause()
             assert isinstance(app.screen, ConfirmLeave)
-            app.screen.dismiss(False)
+            await pilot.press("n")
             await pilot.pause()
             assert isinstance(app.screen, SettingsScreen)
             await pilot.press("r")
             assert not model.dirty
-            screen.category_index = 3
-            screen.reload()
-            option = model.options_for("采集")[0]
-            screen.apply_input(option, "contest")
-            screen.action_focus_next()
+            assert app.theme == before
+            option = model.options_for("采集")[1]
+            screen.apply_input(option, "8")
             screen.action_save()
             assert not model.dirty
+            assert load_config(tmp_path / "config.toml")["collect"]["threads"] == 8
+            await pilot.press("space")
+            await pilot.press("escape", "y")
+            await pilot.pause()
+            assert not isinstance(app.screen, SettingsScreen)
+            assert app.theme == before, "放弃修改后恢复原外观"
 
     asyncio.run(scenario())
 
@@ -202,23 +210,46 @@ def test_ranking_pilot_preview_changes(tmp_path):
     asyncio.run(scenario())
 
 
-def test_real_filter_rules_and_manager_list(tmp_path):
+def test_filter_rules_page_add_rule_and_manager(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     local, _data = example(tmp_path)
     config_file = tmp_path / "settings.toml"
     model = SettingsModel(config_file, [], db_path=local.db_path)
-    fields = {option.key: option for option in model.options}
-    model.change(fields["people.platform"], "synthetic")
-    model.save()
-    model.change(fields["people.manager_uids"], "a,c")
-    model.change(fields["contest_filter.whitelist_pattern"], "^虚构")
-    model.save()
+
+    async def scenario():
+        app = AuditApp(local)
+        async with app.run_test() as pilot:
+            app.push_screen(SettingsScreen(model))
+            await pilot.pause()
+            screen = app.screen
+            screen.query_one("#categories", ListView).index = CATEGORIES.index("过滤规则")
+            await pilot.pause()
+            await pilot.press("a")
+            await pilot.pause()
+            await pilot.press(*"[", "enter")
+            await pilot.pause()
+            assert model.rules == [], "非法正则不会被加入"
+            await pilot.press("backspace", *"^虚构", "enter")
+            await pilot.pause()
+            assert model.rules == [{"pattern": "^虚构", "enabled": True}]
+            assert model.rule_hits("^虚构") == 1
+            await pilot.press("space")
+            assert model.rules[0]["enabled"] is False
+            await pilot.press("space")
+            screen.query_one("#settings-values", ListView).index = len(screen.rows) - 1
+            await pilot.press("enter")
+            await pilot.pause()
+            await pilot.press(*"a 管理", "enter")
+            await pilot.pause()
+            assert model.managers == [{"uid": "a", "nickname": "管理"}]
+            await pilot.press("ctrl+s")
+            await pilot.pause()
+            assert not model.dirty
+
+    asyncio.run(scenario())
     with Store(local.db_path) as store:
-        assert {
-            row["uid"] for row in store.list_hidden_people() if row["platform"] == "synthetic"
-        } == {"a", "c"}
-    config = load_config(config_file)
-    assert config["contest_filter"]["whitelist"] == [{"pattern": "^虚构", "enabled": True}]
-    assert load_contest_filter(config_file).whitelist[0].pattern == "^虚构"
-    again = SettingsModel(config_file, [], db_path=local.db_path)
-    assert again.values["people.manager_uids"] == "a,c"
-    assert not again.dirty
+        assert [
+            row["uid"] for row in store.list_hidden_people() if row["platform"] == "nowcoder"
+        ] == ["a"]
+    filt = load_contest_filter(config_file)
+    assert (filt.mode, filt.rules[0].pattern) == ("blacklist", "^虚构")

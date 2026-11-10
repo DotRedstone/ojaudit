@@ -17,6 +17,7 @@ from textual.widgets import Button, Input, Label, ListItem, ListView, Static
 
 from ojaudit.core.schema import Contest
 from ojaudit.tui.data import LocalContests
+from ojaudit.tui.icons import breadcrumb, label
 
 
 class ShellScreen(Screen):
@@ -34,13 +35,15 @@ class ShellScreen(Screen):
     PATH = "首页"
 
     def shell(self, content: list[object]) -> ComposeResult:
-        yield Static(self.PATH, id="breadcrumb")
+        yield Static(breadcrumb(self.PATH, self.app.nerd_font), id="breadcrumb")
         with Vertical(id="pane"):
             yield from content
         yield Static("", id="status")
 
     def on_mount(self) -> None:
-        self.query_one("#pane", Vertical).border_title = self.TITLE
+        self.query_one("#pane", Vertical).border_title = label(
+            "open", self.TITLE, self.app.nerd_font
+        )
         self._update_status()
         for view in self.query(ListView):
             view.focus()
@@ -50,7 +53,9 @@ class ShellScreen(Screen):
         app = self.app
         current = getattr(self, "CURRENT", self.TITLE)
         self.query_one("#status", Static).update(
-            f" NORMAL  ❯  {current}   │  任务: 空闲   │  主题: {app.theme_name} "
+            f" NORMAL  {label('next', '>', app.nerd_font)}  {current}"
+            f"   │  {label('idle', '任务: 空闲', app.nerd_font)}"
+            f"   │  {label('theme', '主题: ' + app.theme_name, app.nerd_font)} "
         )
 
     def action_back(self) -> None:
@@ -105,7 +110,13 @@ class EntryDialog(ModalScreen[str | None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="entry-dialog"):
-            yield Label("牛客 Cookie（输入内容隐藏）" if self.login else "比赛 ID（本地查找）")
+            yield Label(
+                label(
+                    "login" if self.login else "contest",
+                    "牛客 Cookie（输入内容隐藏）" if self.login else "比赛 ID（本地查找）",
+                    self.app.nerd_font,
+                )
+            )
             yield Input(
                 placeholder="粘贴 Cookie" if self.login else "输入比赛 ID",
                 password=self.login,
@@ -113,9 +124,15 @@ class EntryDialog(ModalScreen[str | None]):
             )
             with Horizontal(id="entry-buttons"):
                 yield Button(
-                    "保存" if self.login else "打开", id="entry-confirm", variant="primary"
+                    label(
+                        "save" if self.login else "open",
+                        "保存" if self.login else "打开",
+                        self.app.nerd_font,
+                    ),
+                    id="entry-confirm",
+                    variant="primary",
                 )
-                yield Button("取消", id="entry-cancel")
+                yield Button(label("cancel", "取消", self.app.nerd_font), id="entry-cancel")
 
     def on_mount(self) -> None:
         self.query_one("#entry-value", Input).focus()
@@ -137,9 +154,19 @@ class HomeScreen(ShellScreen):
     TITLE = "ojaudit · 首页"
     PATH = "首页"
     OPTIONS = ("比赛列表", "打开比赛 ID", "账户 / 登录", "设置")
+    ICON_KEYS = ("list", "open", "login", "settings")
 
     def compose(self) -> ComposeResult:
-        yield from self.shell([ListView(*(ListItem(Label(item)) for item in self.OPTIONS))])
+        yield from self.shell(
+            [
+                ListView(
+                    *(
+                        ListItem(Label(label(key, item, self.app.nerd_font)))
+                        for key, item in zip(self.ICON_KEYS, self.OPTIONS)
+                    )
+                )
+            ]
+        )
 
     def open_index(self, index: int) -> None:
         if index == 0:
@@ -215,15 +242,18 @@ class ContestListScreen(ShellScreen):
         view = self.query_one("#contests", ListView)
         view.clear()
         for entry in self.entries:
-            label = f"{entry.contest.name}  [{entry.contest.platform}/{entry.contest.contest_id}]"
+            text = f"{entry.contest.name}  [{entry.contest.platform}/{entry.contest.contest_id}]"
+            label_text = label("contest", text, self.app.nerd_font)
             if not entry.visible:
-                label += "  · 规则外"
-            view.append(ListItem(Label(label)))
+                label_text += "  · " + label("hidden", "规则外", self.app.nerd_font)
+            view.append(ListItem(Label(label_text)))
         if not self.entries:
             view.append(ListItem(Label("暂无比赛（本地存储为空或均被规则过滤）")))
         view.call_after_refresh(setattr, view, "index", 0)
         self.query_one("#breadcrumb", Static).update(
-            self.PATH + (" › 全部" if self.show_all else " › 已筛选")
+            breadcrumb(
+                self.PATH + (" › 全部" if self.show_all else " › 已筛选"), self.app.nerd_font
+            )
         )
 
     def action_toggle_all(self) -> None:
@@ -238,6 +268,7 @@ class ContestListScreen(ShellScreen):
 class ContestOverviewScreen(ShellScreen):
     TITLE = "比赛总览"
     OPTIONS = ("线索", "选手", "题目", "排行榜")
+    ICON_KEYS = ("findings", "people", "problems", "ranking")
 
     def __init__(self, contest: Contest, contests: LocalContests):
         super().__init__()
@@ -249,17 +280,24 @@ class ContestOverviewScreen(ShellScreen):
     def compose(self) -> ComposeResult:
         stats = self.contests.stats(self.contest)
         with Vertical():
-            yield Static(self.PATH, id="breadcrumb")
+            yield Static(breadcrumb(self.PATH, self.app.nerd_font), id="breadcrumb")
             with Vertical(id="pane"):
                 yield Static(
-                    f"线索 {stats.findings}   选手 {stats.participants}   "
-                    f"题目 {stats.problems}   提交 {stats.submissions}",
+                    "   ".join(
+                        (
+                            label("findings", f"线索 {stats.findings}", self.app.nerd_font),
+                            label("people", f"选手 {stats.participants}", self.app.nerd_font),
+                            label("problems", f"题目 {stats.problems}", self.app.nerd_font),
+                            label("submissions", f"提交 {stats.submissions}", self.app.nerd_font),
+                        )
+                    ),
                     id="summary",
                 )
                 yield ListView(
                     *(
-                        ListItem(Label(f"{name} · {count}"))
-                        for name, count in zip(
+                        ListItem(Label(label(key, f"{name} · {count}", self.app.nerd_font)))
+                        for key, name, count in zip(
+                            self.ICON_KEYS,
                             self.OPTIONS,
                             (
                                 stats.findings,

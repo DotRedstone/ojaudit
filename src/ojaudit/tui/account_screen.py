@@ -26,9 +26,9 @@ from ojaudit.tui.account_service import (
     set_uid,
 )
 from ojaudit.tui.icons import label
-from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView
 from ojaudit.tui.screens import ShellScreen
+from ojaudit.tui.ui_components import StatusRow
 
 
 class UidDialog(ModalScreen[str | None]):
@@ -75,7 +75,7 @@ class AccountScreen(ShellScreen):
             Static("", id="account-state"),
             NavigateListView(
                 *(
-                    ListItem(Label(label(key, name, self.app.nerd_font)))
+                    StatusRow(label(key, name, self.app.nerd_font))
                     for key, name in zip(self.ICON_KEYS, self.OPTIONS)
                 ),
                 id="account-options",

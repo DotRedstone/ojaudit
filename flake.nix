@@ -35,6 +35,7 @@
             pkgs.python312Packages.pytest
             pkgs.python312Packages.tomli-w
             pkgs.python312Packages.textual
+            pkgs.python312Packages.qrcode
             pkgs.ruff
             pkgs.uv
           ];
@@ -43,7 +44,7 @@
       checks = forAllSystems (system: pkgs: {
         default = pkgs.runCommand "ojaudit-check" {
           nativeBuildInputs = [
-            (pkgs.python312.withPackages (ps: [ ps.pytest ps.tomli-w ps.textual ]))
+            (pkgs.python312.withPackages (ps: [ ps.pytest ps.tomli-w ps.textual ps.qrcode ]))
             pkgs.ruff
           ];
         } ''

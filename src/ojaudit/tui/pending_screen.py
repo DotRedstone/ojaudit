@@ -1,4 +1,9 @@
-"""跨比赛待复核入口：线索与存疑人员均回到原比赛的详情页面。"""
+"""
+Module: TUI / pending screen
+Description: 跨比赛列出待复核线索和存疑人员并返回原比赛详情。
+Scope: TUI
+Notes: 只读取本地分析与人工标记，不执行网络请求。
+"""
 
 from __future__ import annotations
 

@@ -154,7 +154,7 @@ class SettingsScreen(Screen):
 
     def status(self) -> None:
         self.query_one("#status", Static).update(
-            " NORMAL  ›  设置 · " + ("● 未保存" if self.model.dirty else "已保存")
+            self.app.status_line("设置 · " + ("● 未保存" if self.model.dirty else "已保存"))
         )
 
     def active_option(self) -> Option | None:

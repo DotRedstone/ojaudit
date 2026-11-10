@@ -232,11 +232,39 @@ class Store:
                 """INSERT INTO contests(platform, contest_id, name, start_time, end_time)
                    VALUES (?, ?, ?, ?, ?)
                    ON CONFLICT(platform, contest_id) DO UPDATE SET
+                   name=CASE WHEN EXISTS (SELECT 1 FROM participants p
+                            WHERE p.platform=contests.platform
+                            AND p.contest_id=contests.contest_id)
+                        THEN contests.name ELSE excluded.name END,
                    start_time=COALESCE(contests.start_time, excluded.start_time),
                    end_time=COALESCE(contests.end_time, excluded.end_time)""",
                 (platform, contest_id, name, start_time, end_time),
             )
         return not exists
+
+    def prune_listings(self, platform: str, keep: set[str]) -> int:
+        """删除只登记过、没有任何采集或分析数据、且不在 keep 中的比赛。返回删除数。"""
+        with self.transaction():
+            rows = self.connection.execute(
+                """SELECT contest_id FROM contests c WHERE platform=?
+                   AND NOT EXISTS (SELECT 1 FROM participants p
+                       WHERE p.platform=c.platform AND p.contest_id=c.contest_id)
+                   AND NOT EXISTS (SELECT 1 FROM submissions s
+                       WHERE s.platform=c.platform AND s.contest_id=c.contest_id)
+                   AND NOT EXISTS (SELECT 1 FROM problems q
+                       WHERE q.platform=c.platform AND q.contest_id=c.contest_id)
+                   AND NOT EXISTS (SELECT 1 FROM analysis_runs a
+                       WHERE a.platform=c.platform AND a.contest_id=c.contest_id)
+                   AND NOT EXISTS (SELECT 1 FROM person_marks m
+                       WHERE m.platform=c.platform AND m.contest_id=c.contest_id)""",
+                (platform,),
+            ).fetchall()
+            stale = [row["contest_id"] for row in rows if row["contest_id"] not in keep]
+            self.connection.executemany(
+                "DELETE FROM contests WHERE platform=? AND contest_id=?",
+                [(platform, contest_id) for contest_id in stale],
+            )
+        return len(stale)
 
     def put_participants(self, people: Iterable[Participant], *, keep_names: bool = False) -> None:
         """keep_names=True 时只补缺失的人员，不覆盖已有姓名（用于提交里出现的 UID）。"""

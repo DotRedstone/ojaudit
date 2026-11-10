@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any, ClassVar
 
 from rich.text import Text
-from textual import on
+from textual import events, on
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
@@ -57,7 +57,7 @@ class SettingsScreen(Chrome, Screen):
     TITLE = "设置"
     PATH = "首页 › 设置"
     HINTS = (
-        ("h/l", "切换栏"),
+        ("tab", "切换栏"),
         ("↵", "编辑"),
         ("space", "开关"),
         ("a/d", "添加/删除"),
@@ -253,6 +253,12 @@ class SettingsScreen(Chrome, Screen):
             self.category_index = event.list_view.index
             self.query_one("#settings-values", ListView).index = 0
             self.reload()
+
+    def on_descendant_focus(self, event: events.DescendantFocus) -> None:
+        # 鼠标点击某一栏时同步当前栏，键盘与鼠标操作一致。
+        if isinstance(event.widget, ListView):
+            self.focus_values = event.widget.id == "settings-values"
+            self._update_status()
 
     @on(ListView.Highlighted, "#settings-values")
     def option_changed(self, _event: ListView.Highlighted) -> None:

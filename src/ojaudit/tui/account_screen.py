@@ -59,6 +59,7 @@ class QrLoginScreen(Popup):
     ]
     WIDTH = 50
     ICON = "login"
+    ACTIONS = (("刷新二维码", "retry"), ("取消", "cancel"))
 
     def __init__(self, login: Callable[..., None] | None = None) -> None:
         super().__init__("微信扫码登录牛客", "esc 取消")

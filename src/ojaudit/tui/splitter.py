@@ -1,6 +1,6 @@
 """
 Module: TUI / splitter
-Description: 可用鼠标拖拽调整相邻两栏宽度的分隔条；双击恢复默认，宽度按名称记入配置。
+Description: 两栏之间不可见的拖拽区：按住拖动调整左栏宽度，双击恢复默认，宽度按名称记入配置。
 Scope: TUI
 Notes: 只调整左侧目标栏的宽度，右侧栏用 1fr 自动填满。
 """
@@ -10,8 +10,6 @@ from __future__ import annotations
 from rich.text import Text
 from textual import events
 from textual.widget import Widget
-
-from ojaudit.tui import ui
 
 
 def saved_width(name: str) -> int | None:
@@ -49,7 +47,6 @@ class Splitter(Widget):
         self.minimum = minimum
         self.keep_right = keep_right
         self.dragging = False
-        self.hovered = False
 
     def on_mount(self) -> None:
         width = saved_width(self.name or "")
@@ -67,17 +64,8 @@ class Splitter(Widget):
         return width
 
     def render(self) -> Text:
-        colors = ui.palette(self.app)
-        color = colors.accent if (self.dragging or self.hovered) else colors.surface
-        return Text("\n".join("│" for _ in range(max(self.size.height, 1))), style=color)
-
-    def on_enter(self, _event: events.Enter) -> None:
-        self.hovered = True
-        self.refresh()
-
-    def on_leave(self, _event: events.Leave) -> None:
-        self.hovered = False
-        self.refresh()
+        # 不画分隔线：拖动两栏之间的空隙即可调整宽度（与 nvim / lazygit 一致）。
+        return Text("")
 
     def on_click(self, event: events.Click) -> None:
         if event.chain >= 2:

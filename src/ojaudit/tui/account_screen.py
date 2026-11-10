@@ -18,7 +18,13 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Static
 
 from ojaudit.cli_operations import save_cookie
-from ojaudit.tui.account_service import current_uid, logged_in_locally, login_with_qr, logout, set_uid
+from ojaudit.tui.account_service import (
+    current_uid,
+    logged_in_locally,
+    login_with_qr,
+    logout,
+    set_uid,
+)
 from ojaudit.tui.icons import label
 from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView

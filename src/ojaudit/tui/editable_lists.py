@@ -1,6 +1,6 @@
 """
 Module: TUI / editable settings lists
-Description: Stage per-rule and per-manager edits without touching navigation bindings.
+Description: 暂存逐条比赛筛选规则及管理者名单修改，不影响现有导航键位。
 Scope: TUI
 """
 

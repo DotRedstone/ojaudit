@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ojaudit.tui.interaction import NavigateListItem as ListItem
+from ojaudit.tui.interaction import NavigateListView as NavigationListView
 from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.review_screens import EvidenceScreen, PersonScreen
 from ojaudit.tui.screens import ShellScreen
@@ -17,9 +19,7 @@ class PendingScreen(ShellScreen):
         self.entries: list[PendingEntry] = []
 
     def compose(self):
-        from textual.widgets import ListView
-
-        yield from self.shell([ListView(id="pending-items")])
+        yield from self.shell([NavigationListView(id="pending-items")])
 
     def on_mount(self) -> None:
         self.reload()
@@ -32,7 +32,7 @@ class PendingScreen(ShellScreen):
         self.reload()
 
     def reload(self) -> None:
-        from textual.widgets import Label, ListItem, ListView
+        from textual.widgets import Label
 
         self.entries = pending_entries(self.app.contests)
         view = self.query_one("#pending-items", ListView)

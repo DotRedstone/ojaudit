@@ -23,7 +23,7 @@ from textual.widgets import Label, ListView, Static
 from ojaudit.tui import ui
 from ojaudit.tui.icons import label
 from ojaudit.tui.interaction import NavigateListItem as ListItem
-from ojaudit.tui.interaction import NavigateListView, restore_index
+from ojaudit.tui.interaction import NavigateListView, refill
 from ojaudit.tui.popup import ConfirmPopup, InfoPopup, InputPopup, MenuPopup
 from ojaudit.tui.screens import Chrome
 from ojaudit.tui.settings_model import CATEGORIES, Option, SettingsModel
@@ -219,18 +219,14 @@ class SettingsScreen(Chrome, Screen):
         pane = self.query_one("#options-pane", Vertical)
         pane.border_title = label("settings", self.category, self.app.nerd_font)
         view = self.query_one("#settings-values", ListView)
-        previous = view.index or 0
         width = max(pane.size.width - 6, 30)
-        view.clear()
-        for option in self.rows:
-            item = ListItem(Label(self._row(option, width)))
-            if option.kind == "header":
-                item.add_class("section")
-            view.append(item)
-        if select is not None:
-            keys = [option.key for option in self.rows]
-            previous = keys.index(select) if select in keys else previous
-        restore_index(view, max(0, min(previous, len(self.rows) - 1)))
+        keys = [option.key for option in self.rows]
+        refill(
+            view,
+            [self._row(option, width) for option in self.rows],
+            index=keys.index(select) if select in keys else None,
+            classes=["section" if option.kind == "header" else "" for option in self.rows],
+        )
         self.detail()
         self.status()
 

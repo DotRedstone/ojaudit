@@ -136,6 +136,8 @@ ListView:focus > ListItem.-highlight {
 .source-pane:focus { border: $border-style $primary; }
 #code-left, #code-right, #code-body { width: auto; }
 #code-meta { height: 2; padding: 0 1; }
+#compare-panes { height: 1fr; overflow-x: auto; }
+.compare-pane { width: 1fr; min-width: 36; height: 1fr; }
 
 /* ── 设置 ───────────────────────────────────────── */
 

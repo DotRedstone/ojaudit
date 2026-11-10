@@ -186,3 +186,58 @@ def test_confirm_popup_left_right_enter(tmp_path):
 
     asyncio.run(scenario())
     assert results == [False, True, False, True, False]
+
+
+def test_popups_left_goes_back_right_confirms(tmp_path):
+    from textual.widgets import Input
+
+    from ojaudit.tui.popup import MenuPopup
+    from ojaudit.tui.review_screens import ReviewPopup
+
+    results = []
+
+    async def scenario():
+        app = AuditApp(LocalContests(tmp_path / "empty.sqlite"))
+        async with app.run_test() as pilot:
+            options = [("甲", "a"), ("乙", "b")]
+            app.push_screen(MenuPopup("合成菜单", options), results.append)
+            await pilot.pause()
+            await pilot.press("left")
+            await pilot.pause()
+            assert isinstance(app.screen, HomeScreen), "← 关闭弹窗"
+            app.push_screen(MenuPopup("合成菜单", options), results.append)
+            await pilot.pause()
+            await pilot.press("j", "right")
+            await pilot.pause()
+            app.push_screen(ReviewPopup("合成复核", options), results.append)
+            await pilot.pause()
+            await pilot.press("tab", "h", "l", "left", "left", "j")
+            await pilot.pause()
+            assert isinstance(app.screen, ReviewPopup), "备注框里方向键和字母用于编辑"
+            # ← 在输入框里移动光标：j 插到了最前面。
+            assert app.screen.query_one("#note", Input).value == "jhl"
+            await pilot.press("tab", "l")
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert results == [None, "b", ("a", "jhl")]
+
+
+def test_refilled_list_keeps_visible_highlight(tmp_path):
+    """重填列表后高亮落在新条目上（以前单条比赛时高亮会消失）。"""
+    db = tmp_path / "one.sqlite"
+    with Store(db) as store:
+        store.put_contest_listing("nowcoder", "1", "唯一的比赛", 1)
+
+    async def scenario():
+        app = AuditApp(LocalContests(db))
+        async with app.run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            app.screen.refresh_home()
+            await pilot.pause()
+            view = app.screen.query_one("#recent", ListView)
+            assert view.index == 0
+            assert view.highlighted_child is not None
+            assert view.highlighted_child.has_class("-highlight")
+
+    asyncio.run(scenario())

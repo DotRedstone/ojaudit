@@ -344,3 +344,76 @@ def test_ranking_table_columns_and_export_copies_path(tmp_path, monkeypatch):
             assert header.split(",")[:4] == ["名次", "姓名", "UID", "A"]
 
     asyncio.run(scenario())
+
+
+def test_people_multi_select_opens_comparison(tmp_path, monkeypatch):
+    from ojaudit.tui.review_screens import CompareScreen, PeopleScreen
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    local, data = _fixture(tmp_path)
+
+    async def scenario():
+        app = AuditApp(local)
+        async with app.run_test(size=(150, 36)) as pilot:
+            app.push_screen(PeopleScreen(data, "首页"))
+            await pilot.pause()
+            screen = app.screen
+            uids = [row["uid"] for row in screen.rows]
+            view = screen.query_one("#items", ListView)
+            view.index = uids.index("a")
+            await pilot.press("space")
+            view.index = uids.index("b")
+            await pilot.press("space")
+            await pilot.pause()
+            assert screen.picked == ["a", "b"]
+            assert "已选 2 人" in screen.subtitle()
+            await pilot.press("enter")
+            await pilot.pause()
+            compare = app.screen
+            assert isinstance(compare, CompareScreen)
+            assert compare.uids == ["a", "b"]
+            assert len(compare.query(".compare-pane")) == 2
+            first = compare.query_one("#compare-0")
+            assert "相同" in str(first.border_subtitle)
+            problem = compare.position
+            await pilot.press("down")
+            assert compare.position == (problem + 1) % len(compare.problems)
+            await pilot.press("left")
+            await pilot.pause()
+            assert app.screen is screen
+            await pilot.press("x")
+            assert screen.picked == []
+
+    asyncio.run(scenario())
+
+
+def test_person_page_by_submission_timeline(tmp_path, monkeypatch):
+    from ojaudit.tui.review_screens import CodeScreen, PersonScreen
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    local, data = _fixture(tmp_path)
+
+    async def scenario():
+        app = AuditApp(local)
+        async with app.run_test(size=(140, 30)) as pilot:
+            app.push_screen(PersonScreen(data, "首页", "a"))
+            await pilot.pause()
+            screen = app.screen
+            assert [row["problem_index"] for row in screen.rows] == [0, 1, 2]
+            await pilot.press("v")
+            await pilot.pause()
+            assert screen.by_submission and "按提交" in screen.subtitle()
+            times = [int(row["submit_time"]) for row in screen.rows]
+            assert times == sorted(times) and len(times) == 3
+            assert screen.rows[0]["gap"] is None and screen.rows[1]["gap"] == times[1] - times[0]
+            header = str(screen.query_one(".thead").render())
+            assert "间隔" in header and "用时" in header
+            await pilot.press("right")
+            await pilot.pause()
+            assert isinstance(app.screen, CodeScreen)
+            assert app.screen.current["submission_id"] == screen.rows[0]["submission_id"]
+            await pilot.press("left", "v")
+            await pilot.pause()
+            assert not screen.by_submission
+
+    asyncio.run(scenario())

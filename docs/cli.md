@@ -5,7 +5,7 @@
 ## 典型流程
 
 ```bash
-ojaudit login                      # 交互输入牛客 Cookie，保存为 0600 文件
+ojaudit login --qr                 # 微信扫码登录（或在 TUI 的「账户与登录」里扫码）
 ojaudit collect 123456             # 只读采集（唯一联网的命令）
 ojaudit analyze 123456             # 本地检测，生成线索
 ojaudit                            # 在 TUI 中复核线索、标记选手
@@ -16,7 +16,7 @@ ojaudit rank 123456 --format csv   # 导出本地推导榜单（非官方）
 
 | 命令 | 说明 |
 | --- | --- |
-| `login` | 交互读取 Cookie（不经命令行参数），保存到 `$XDG_CONFIG_HOME/ojaudit/nowcoder.cookie`，权限 0600。 |
+| `login [--qr]` | `--qr` 在终端显示二维码，用微信扫码登录并自动识别 UID；不带参数时交互粘贴 Cookie（不经命令行参数）。保存到 `$XDG_CONFIG_HOME/ojaudit/nowcoder.cookie`，权限 0600。 |
 | `collect <比赛ID>` | 用牛客数据源只读采集并在一个事务中入库；读取设置中的 `collect.*`，开启 `collect.auto_analyze` 时随后自动分析。 |
 | `contests [--all]` | 列出本地比赛；默认应用比赛筛选规则，`--all` 显示全部。 |
 | `analyze <比赛ID> [--platform P] [--threshold T] [--json-out F]` | 运行检测并写入新一轮分析。`--threshold` 为指纹相似度阈值，优先于设置。参数说明见 [检测](detection.md)。 |

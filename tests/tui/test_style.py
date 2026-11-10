@@ -139,7 +139,7 @@ def test_screenshots_with_synthetic_data(tmp_path, monkeypatch):
         async with app.run_test(size=(110, 35)) as pilot:
             await pilot.pause()
             app.save_screenshot(filename="home.svg", path=str(tmp_path))
-            await pilot.press("enter")
+            await pilot.press("1")
             await pilot.pause()
             assert isinstance(app.screen, ContestListScreen)
             app.save_screenshot(filename="contests.svg", path=str(tmp_path))

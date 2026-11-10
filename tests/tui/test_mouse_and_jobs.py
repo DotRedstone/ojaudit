@@ -33,7 +33,7 @@ def test_clicking_status_bar_on_home_does_not_pop_it(tmp_path, monkeypatch):
         app = AuditApp(LocalContests(tmp_path / "none.sqlite"))
         async with app.run_test() as pilot:
             await pilot.pause()
-            await pilot.click("#status", offset=(70, 0))
+            await pilot.click("#status", offset=(78, 0))
             await pilot.pause()
             assert isinstance(app.screen, HomeScreen)
             await pilot.press("q")

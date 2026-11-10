@@ -27,6 +27,8 @@ class RankingOptions:
     cheaters: Literal["drop", "mark"] = "drop"
     suspects: Literal["keep", "mark", "drop"] = "keep"
     managers: Literal["drop", "mark"] = "drop"
+    # 一次都没有提交（只报名没做题）的人：保留或剔除。
+    inactive: Literal["keep", "drop"] = "keep"
 
     def __post_init__(self) -> None:
         if self.cheaters not in {"drop", "mark"}:
@@ -35,6 +37,8 @@ class RankingOptions:
             raise ValueError("suspects 必须为 keep、mark 或 drop")
         if self.managers not in {"drop", "mark"}:
             raise ValueError("managers 必须为 drop 或 mark")
+        if self.inactive not in {"keep", "drop"}:
+            raise ValueError("inactive 必须为 keep 或 drop")
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +68,8 @@ def build_final_ranking(
     for _, source in ordered:
         row = dict(source)
         uid = str(row.get("uid", ""))
+        if policy.inactive == "drop" and row.get("submissions", 1) == 0:
+            continue  # 只报名、一次都没提交
         is_manager = (str(row.get("platform", "")), uid) in hidden
         mark = marks.get(uid, "normal")
         if mark not in {"normal", "suspect", "cheater"}:
@@ -102,7 +108,9 @@ def derive_rows(
     每人每题取赛中最高分（同分取最早），总分降序；同分时最后一次得分越早越靠前。
     """
     best: dict[tuple[str, int], tuple[float, int]] = {}
+    counts: dict[str, int] = {}
     for uid, problem, score, time, phase in submissions:
+        counts[str(uid)] = counts.get(str(uid), 0) + 1
         if phase != "contest":
             continue
         key = (str(uid), int(problem))
@@ -122,9 +130,18 @@ def derive_rows(
                 "name": name,
                 "score": sum(record[0] for record in records),
                 "submit_time": max((record[1] for record in records), default=0),
+                "submissions": counts.get(str(uid), 0),
             }
         )
-    rows.sort(key=lambda row: (-row["score"], row["submit_time"], row["uid"]))
+    # 同分时最后一次得分越早越靠前；0 分时有提交的排在只报名的人前面。
+    rows.sort(
+        key=lambda row: (
+            -row["score"],
+            row["submit_time"] if row["score"] else 0,
+            row["submissions"] == 0,
+            row["uid"],
+        )
+    )
     return [{**row, "rank": index} for index, row in enumerate(rows, 1)]
 
 

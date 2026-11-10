@@ -7,51 +7,43 @@ Notes: 独立入口，不改变现有 CLI 的行为。
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import ClassVar
 
+from rich.text import Text
 from textual.app import App
 
 from ojaudit.core.config import data_dir, load_config
 from ojaudit.tui.data import LocalContests
 from ojaudit.tui.icons import label
+from ojaudit.tui.rice_theme import load_wallpaper_theme, wallpaper_signature
 from ojaudit.tui.screens import HomeScreen
 
 
 class AuditApp(App[None]):
-    CSS = """
-    Screen { layout: vertical; background: $surface; }
-    #breadcrumb { height: 3; padding: 1 2; background: $panel; color: $text; }
-    #pane { height: 1fr; margin: 1 2; border: round $panel; border-title-color: $accent; }
-    #pane:focus-within { border: round $accent; }
-    .pane-title { height: 3; padding: 1 2; text-style: bold; color: $accent; }
-    #summary { height: 3; padding: 1 2; }
-    ListView { height: 1fr; border: none; }
-    ListItem { padding: 0 2; }
-    ListItem.--highlight { background: $accent; color: $background; text-style: bold; }
-    #status { dock: bottom; height: 1; background: $primary; color: $background; text-style: bold; }
-    #evidence-meta { height: 6; padding: 0 1; }
-    #code-pair { height: 1fr; }
-    .source-pane { width: 1fr; height: 1fr; margin: 0 1; border: round $panel;
-                   overflow: auto; padding: 0 1; }
-    .source-pane:focus { border: round $accent; }
-    #code-meta { height: 3; padding: 0 1; }
-    #code-body { height: 1fr; overflow: auto; padding: 0 1; }
-    #settings-columns { min-height: 12; }
-    #ranking-note { height: 2; padding: 0 1; color: $warning; }
-    """
+    TITLE = "ojaudit · 审核工作台"
+    CSS_PATH = "themes/nowcoder.tcss"
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
-        ("q", "quit", "退出"),
+        ("q", "context_quit", "返回/退出"),
         ("question_mark", "help", "帮助"),
         ("t", "cycle_theme", "切换主题"),
     ]
-    THEMES: ClassVar[tuple[str, ...]] = ("ansi", "catppuccin", "nord", "gruvbox")
+    THEMES: ClassVar[tuple[str, ...]] = (
+        "auto",
+        "wallpaper",
+        "ansi-dark",
+        "catppuccin-mocha",
+        "nord",
+        "gruvbox",
+        "textual-dark",
+    )
     THEME_IDS: ClassVar[dict[str, str]] = {
         "catppuccin": "catppuccin-mocha",
-        "nord": "nord",
-        "gruvbox": "gruvbox",
+        "ansi": "ansi-dark",
+        "ansi-dark": "textual-dark",
     }
-    theme_name = "ansi"
+    theme_name = "auto"
 
     def __init__(
         self, contests: LocalContests | None = None, db_path: str | Path | None = None
@@ -64,19 +56,71 @@ class AuditApp(App[None]):
         )
         self.contests = contests if contests is not None else LocalContests(selected)
         appearance = load_config().get("appearance", {})
-        self.theme_name = str(appearance.get("theme", "ansi"))
+        self.theme_name = str(appearance.get("theme", "auto"))
         self.nerd_font = bool(appearance.get("nerd_font", False))
+        self.key_hints = bool(appearance.get("key_hints", True))
+        self.wallpaper_source = ""
+        self.wallpaper_signature: tuple[int, int] | None = None
 
     def on_mount(self) -> None:
         self._apply_theme()
         self.push_screen(HomeScreen())
+        self.set_interval(4, self.poll_wallpaper)
+
+    def _fallback_theme(self) -> str:
+        if "catppuccin-mocha" in self.available_themes:
+            return "catppuccin-mocha"
+        return "textual-dark"
 
     def _apply_theme(self) -> None:
-        name = self.THEME_IDS.get(self.theme_name)
-        if name is not None and name in self.available_themes:
-            self.theme = name
-        elif "textual-ansi" in self.available_themes:
-            self.theme = "textual-ansi"
+        choice = self.THEME_IDS.get(self.theme_name, self.theme_name)
+        if choice in ("auto", "wallpaper"):
+            wallpaper, path = load_wallpaper_theme()
+            if wallpaper is not None:
+                self.register_theme(wallpaper)
+                self.wallpaper_source = path
+                self.wallpaper_signature = wallpaper_signature(path)
+                self.theme = "wallpaper"
+                return
+            self.wallpaper_source = ""
+            self.wallpaper_signature = None
+            choice = self._fallback_theme()
+        elif choice not in self.available_themes:
+            choice = self._fallback_theme()
+        self.theme = choice
+
+    def poll_wallpaper(self) -> None:
+        if self.theme_name not in ("auto", "wallpaper"):
+            return
+        wallpaper, path = load_wallpaper_theme()
+        signature = wallpaper_signature(path) if path else None
+        if path == self.wallpaper_source and signature == self.wallpaper_signature:
+            return
+        if wallpaper is None:
+            self.wallpaper_source = ""
+            self.wallpaper_signature = None
+            self.theme = self._fallback_theme()
+            return
+        self.register_theme(wallpaper)
+        self.wallpaper_source = path
+        self.wallpaper_signature = signature
+        if self.theme == "wallpaper":
+            self.theme = self._fallback_theme()
+        self.theme = "wallpaper"
+
+    def status_line(self, current: str, contest_id: str = "—") -> Text:
+        colors = self.current_theme
+        mode_color = str(colors.success or "#a3be8c")
+        background = str(colors.background or "#1e1e2e")
+        bar = Text()
+        bar.append(" NORMAL ", style=f"bold {background} on {mode_color}")
+        bar.append(" " if self.nerd_font else "▌ ", style=mode_color)
+        bar.append(f"#{contest_id} › {current}", style="bold")
+        right = f"{self.theme_name} · {datetime.now():%H:%M}"
+        gap = max(1, self.size.width - bar.cell_len - Text(right).cell_len - 2)
+        bar.append(" " * gap)
+        bar.append(right, style="dim")
+        return bar
 
     def action_cycle_theme(self) -> None:
         index = self.THEMES.index(self.theme_name) if self.theme_name in self.THEMES else 0
@@ -84,14 +128,25 @@ class AuditApp(App[None]):
         self._apply_theme()
         self.notify(label("theme", f"主题：{self.theme_name}（设置页可保存）", self.nerd_font))
 
+    def action_context_quit(self) -> None:
+        from ojaudit.tui.screens import HomeScreen
+
+        if isinstance(self.screen, HomeScreen):
+            self.exit()
+        else:
+            cancel = getattr(self.screen, "action_cancel", None)
+            back = getattr(self.screen, "action_back", None)
+            if callable(cancel):
+                cancel()
+            elif callable(back):
+                back()
+            else:
+                self.pop_screen()
+
     def action_help(self) -> None:
-        self.notify(
-            label(
-                "help",
-                "j/k 移动 · g/G 首尾 · Enter/l 进入 · Esc/h 返回 · a 全部 · t 主题 · q 退出",
-                self.nerd_font,
-            )
-        )
+        from ojaudit.tui.style_help import StyleHelpScreen
+
+        self.push_screen(StyleHelpScreen())
 
 
 def main(db_path: str | Path | None = None) -> None:

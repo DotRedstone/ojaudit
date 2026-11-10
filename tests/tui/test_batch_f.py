@@ -147,7 +147,7 @@ def test_contest_list_description_and_ui(tmp_path, monkeypatch):
     result = contest_list_description(local, contest)
     assert "提交 1" in result
     assert "已分析" in result
-    assert "H/M/L 1/0/0" in result
+    assert "线索 1/0/0" in result
     assert "复核 0/1" in result
 
     async def scenario():
@@ -155,13 +155,14 @@ def test_contest_list_description_and_ui(tmp_path, monkeypatch):
         async with app.run_test() as pilot:
             app.push_screen(ContestListScreen(local))
             await pilot.pause()
-            view = app.screen.query_one("#contests", ListView)
-            assert "H/M/L 1/0/0" in str(view.children[0].query_one(Label).render())
+            view = app.screen.query_one("#items", ListView)
+            row = str(view.children[0].query_one(Label).render())
+            assert "已分析" in row
+            assert "0/1" in row
+            assert app.screen.summaries[("synthetic", "42")].levels == (1, 0, 0)
             app.push_screen(AccountScreen())
             await pilot.pause()
-            assert "本机未保存 Cookie" in str(
-                app.screen.query_one("#account-state", Static).render()
-            )
+            assert "未登录" in str(app.screen.query_one("#account-state", Static).render())
             app.screen.open_index(1)
             await pilot.pause()
             assert isinstance(app.screen, UidDialog)

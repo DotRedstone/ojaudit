@@ -537,7 +537,7 @@ class HomeScreen(ShellScreen):
         ("tab", "切换面板"),
         ("1-4", "卡片"),
         ("c", "采集"),
-        ("o", "打开 ID"),
+        ("d", "剔除比赛"),
         ("q", "退出"),
     )
     TILES = (
@@ -554,6 +554,7 @@ class HomeScreen(ShellScreen):
         ("4", "tile(3)", "设置"),
         ("c", "collect", "采集新比赛"),
         ("o", "open_id", "打开比赛 ID"),
+        ("d", "toggle_excluded", "剔除所选比赛"),
     ]
     QUEUE_LIMIT = 50
 
@@ -621,7 +622,8 @@ class HomeScreen(ShellScreen):
         from ojaudit.tui.workflow import pending_entries
 
         colors = ui.palette(self.app)
-        contests = self.app.contests.list_contests(show_all=True)
+        # 被过滤规则或手动剔除的比赛不在首页出现，也不进待复核。
+        contests = self.app.contests.list_contests()
         pending = pending_entries(self.app.contests) if contests else []
         findings = [entry for entry in pending if entry.kind == "finding"]
         suspects = len(pending) - len(findings)
@@ -800,6 +802,12 @@ class HomeScreen(ShellScreen):
         else:
             self.app.push_screen(PersonScreen(data, "首页", entry.uid))
 
+    def action_toggle_excluded(self) -> None:
+        view = self.query_one("#recent", ListView)
+        index = view.index if view.index is not None else -1
+        if 0 <= index < len(self.recent):
+            toggle_excluded(self, self.recent[index].contest)
+
     def action_pending(self) -> None:
         from ojaudit.tui.pending_screen import PendingScreen
 
@@ -869,6 +877,7 @@ class ContestListScreen(TableScreen):
         ("c", "采集"),
         ("R", "重新分析"),
         ("S", "同步"),
+        ("d", "剔除/恢复"),
         ("a", "显示被过滤的"),
         ("/", "搜索"),
     )
@@ -879,6 +888,7 @@ class ContestListScreen(TableScreen):
         ("R", "analyze", "重新分析所选比赛"),
         ("x", "cancel_job", "取消后台任务"),
         ("S", "sync", "同步已参加的比赛"),
+        ("d", "toggle_excluded", "剔除 / 恢复所选比赛"),
     ]
     COLUMNS = (
         ui.Column("比赛"),
@@ -970,12 +980,35 @@ class ContestListScreen(TableScreen):
         self.show_all = not self.show_all
         self.reload()
 
+    def action_toggle_excluded(self) -> None:
+        view = self.query_one("#items", ListView)
+        row = self.selected_row(view.index if view.index is not None else -1)
+        if row is not None:
+            toggle_excluded(self, row.contest)
+
     def open_index(self, index: int) -> None:
         row = self.selected_row(index)
         if row is None:
             return
         summary = self.summaries.get((row.contest.platform, row.contest.contest_id))
         open_contest(self.app, row.contest, summary)
+
+
+def toggle_excluded(screen: Any, contest: Contest) -> None:
+    """像设管理者一样一键剔除比赛（不用写正则）；再按一次恢复。"""
+    try:
+        removed = screen.app.contests.toggle_excluded(contest)
+    except (OSError, TypeError, ValueError) as exc:
+        screen.notify(f"保存失败：{exc}", severity="error")
+        return
+    if removed:
+        screen.notify(f"已剔除「{contest.name}」：不再显示、不进待复核（比赛列表按 a 可找回）")
+    else:
+        screen.notify(f"已恢复「{contest.name}」")
+    if isinstance(screen, HomeScreen):
+        screen.refresh_home()
+    else:
+        screen.reload()
 
 
 def open_contest(app: Any, contest: Contest, summary: ContestSummary | None) -> None:

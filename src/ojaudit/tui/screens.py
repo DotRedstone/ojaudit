@@ -37,25 +37,29 @@ class ShellScreen(Screen):
     PATH = "首页"
 
     def shell(self, content: list[object]) -> ComposeResult:
-        yield Breadcrumb(self.PATH, id="breadcrumb")
+        hints = " · Enter/l 进入 · Esc/h 返回 · ? 帮助" if self.app.key_hints else ""
+        yield Breadcrumb(self.PATH + hints, id="breadcrumb")
         with Vertical(id="pane"):
             yield from content
         yield Static("", id="status")
         yield Footer()
 
     def on_mount(self) -> None:
-        self.query_one("#pane", Vertical).border_title = self.TITLE
+        pane = self.query_one("#pane", Vertical)
+        pane.border_title = self.TITLE
+        view = next(iter(self.query(ListView)), None)
+        if view is not None:
+            pane.border_subtitle = f"{len(view.children)} 项"
         self._update_status()
         for view in self.query(ListView):
             view.focus()
             break
 
     def _update_status(self) -> None:
-        app = self.app
         current = getattr(self, "CURRENT", self.TITLE)
-        self.query_one("#status", Static).update(
-            f" NORMAL  ❯  {current}   │  任务: {app.job_status}   │  主题: {app.theme_name} "
-        )
+        contest = getattr(self, "contest", None)
+        contest_id = str(contest.contest_id) if contest is not None else "—"
+        self.query_one("#status", Static).update(self.app.status_line(f"{current} · {self.app.job_status}", contest_id))
 
     def on_screen_resume(self) -> None:
         self._update_status()
@@ -178,7 +182,15 @@ class HomeScreen(ShellScreen):
             if not self.app.contests.db_path.is_file()
             else ""
         )
+        entries = self.app.contests.list_contests(show_all=True)
+        overview = Static(
+            "◈ ojaudit / review\n"
+            "本地优先的训练赛证据审核工作台\n"
+            f"本地比赛 {len(entries)}  ·  请通过 ojaudit login 管理登录",
+            id="home-overview",
+        )
         items: list[object] = [
+            overview,
             Static(hint),
             NavigationListView(*(ListItem(Label(item)) for item in self.OPTIONS)),
         ]
@@ -341,7 +353,8 @@ class ContestOverviewScreen(ShellScreen):
 
     def compose(self) -> ComposeResult:
         with Vertical():
-            yield Breadcrumb(self.PATH, id="breadcrumb")
+            hints = " · Enter/l 进入 · Esc/h 返回 · ? 帮助" if self.app.key_hints else ""
+            yield Breadcrumb(self.PATH + hints, id="breadcrumb")
             with Vertical(id="pane"):
                 yield Static("", id="summary")
                 yield NavigationListView(id="overview-options")
@@ -364,8 +377,10 @@ class ContestOverviewScreen(ShellScreen):
     def refresh_overview(self) -> None:
         stats = self.contests.stats(self.contest)
         self.query_one("#summary", Static).update(
-            f"线索 {stats.findings}   选手 {stats.participants}   "
-            f"题目 {stats.problems}   提交 {stats.submissions}"
+            "◈ 本地审核概览\\n"
+            f"参赛者 {stats.participants}  ·  提交 {stats.submissions}\\n"
+            f"检测线索 {stats.findings}  ·  题目 {stats.problems}\\n"
+            "线索为待审核提示，不代表违规结论"
         )
         counts = (
             stats.findings,

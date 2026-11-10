@@ -301,6 +301,7 @@ class NowcoderSource:
         # 并发选项仅作用于独立的 GET 源码请求；原有提交顺序不变。
         def read_code(item: tuple[dict[str, Any], Problem, str]) -> tuple[str, str, str, float]:
             raw, _problem, _phase = item
+            check()  # 已取消时，排队中的下载在发出请求前就放弃
             submission_id = str(raw.get("submissionId") or "")
             if not submission_id:
                 return "", "", "", 0.0

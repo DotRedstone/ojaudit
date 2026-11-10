@@ -95,3 +95,12 @@
 风格集中在 `src/ojaudit/tui/themes/nowcoder.tcss`：深色背景、单行面包屑、圆角框（聚焦变强调色）、半透明选中、淡色状态栏；状态栏左侧是 NORMAL 胶囊，中间是比赛与当前层，右侧是主题与本地时间。关闭 Nerd Font 时使用普通 `▌` 分隔符。一层一屏导航与现有按键行为未变，本分支不修复键位或数据功能。
 
 对照来源：`DotRedstone/nowcoder-collect` 的 `feat/hierarchical-review-workflow`，`rice_theme.py` 与 `review_tui.py` 的 Page/ReviewApp CSS。视觉截图冒烟与 JSON 校验见 `tests/tui/test_style.py`；SVG 均生成在测试临时目录，不提交用户数据。
+
+
+## 批次 E：设置与规则列表
+
+比赛筛选和人员名单设置页保留原有 `↑↓/j/k`、`Enter`、`Space`、`Ctrl+S` 等导航操作。选中列表项后，按 `a` 在比赛筛选新增白名单规则（在人员名单则新增管理者），按 `b` 新增黑名单规则，按 `d` 删除当前规则/管理者；`Enter` 编辑正则、UID 和姓名，`Space` 切换启用开关，`Ctrl+S` 保存。规则按顺序保留多条，黑名单优先，白名单为空时放行；删除或禁用规则不会误删同组其它条目。
+
+管理者按平台保存在 `hidden_people`。勾选启用时由采集/检测与排行策略排除，取消启用时从 `hidden_people` 移除；未启用条目及姓名保留在配置文件 `[people]` 的 `manager_entries` 中供以后重新启用。旧版逗号分隔的 UID 字段仍兼容；切换平台应单独保存后再编辑名单。全部示例使用合成数据。
+
+采集配置项 `collect.phase`、`collect.threads`、`collect.include_after`、`collect.auto_analyze`、`collect.retry_count`、`collect.readonly` 会被 CLI `collect` 读取。线程数限定为 1–16，重试次数为 0–10；只允许 GET 只读采集，若配置为非只读则显式拒绝；开启自动分析后在导入完成时启动本地分析。对于不存在的平台或比赛，`rank`/`export` 会直接报错，不会生成空排行榜文件。

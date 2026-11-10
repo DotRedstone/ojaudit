@@ -23,7 +23,7 @@ from ojaudit.tui.data import LocalContests
 from ojaudit.tui.icons import label
 from ojaudit.tui.rice_theme import load_wallpaper_theme, wallpaper_signature
 from ojaudit.tui.screens import HomeScreen
-from ojaudit.tui.workflow import analyze_local, persist_bundle
+from ojaudit.tui.workflow import analyze_local, local_codes, persist_bundle
 
 
 class AuditApp(App[None]):
@@ -216,6 +216,10 @@ class AuditApp(App[None]):
                     )
                     if key in parameters
                 }
+                if "known" in parameters:
+                    extra["known"] = await asyncio.to_thread(
+                        local_codes, self.contests.db_path, platform, contest_id
+                    )
                 bundle = await asyncio.to_thread(source.fetch_contest, None, contest_id, **extra)
                 self.job_progress = None
                 if self._cancel_job.is_set():

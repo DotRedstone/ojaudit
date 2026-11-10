@@ -8,6 +8,7 @@ Notes: 默认离线；只处理显式指定的数据库与文件，不接触 TUI
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import sqlite3
 import subprocess
@@ -15,7 +16,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ojaudit.cli_operations import nowcoder_source, plugins_command, save_cookie
+from ojaudit.cli_operations import known_codes, nowcoder_source, plugins_command, save_cookie
 from ojaudit.core.analysis import run_analysis
 from ojaudit.core.config import data_dir, load_config
 from ojaudit.core.filters import filter_contests, load_contest_filter
@@ -261,7 +262,16 @@ def _run(args: argparse.Namespace) -> None:
         elif args.command == "collect":
             collect_settings = load_config().get("collect", {})
             collect_settings = collect_settings if isinstance(collect_settings, dict) else {}
-            bundle = nowcoder_source().fetch_contest(None, args.contest)
+            source = nowcoder_source()
+            extra = {}
+            if "known" in inspect.signature(source.fetch_contest).parameters:
+                extra["known"] = known_codes(store, "nowcoder", args.contest)
+                if extra["known"]:
+                    print(
+                        f"增量采集：本地已有 {len(extra['known'])} 份源码，只下载新提交",
+                        file=sys.stderr,
+                    )
+            bundle = source.fetch_contest(None, args.contest, **extra)
             import_bundle(store, bundle)
             print(f"collected={bundle.contest.contest_id} submissions={len(bundle.submissions)}")
             if collect_settings.get("auto_analyze", False):

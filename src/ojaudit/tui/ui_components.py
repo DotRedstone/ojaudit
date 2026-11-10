@@ -35,4 +35,4 @@ class StatusRow(NavigateListItem):
 
     def __init__(self, text: str, *, kind: str = "") -> None:
         classes = f"status-row {kind}".strip()
-        super().__init__(Label(f"▎ {text}"), classes=classes)
+        super().__init__(Label(text), classes=classes)

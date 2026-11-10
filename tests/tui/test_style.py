@@ -16,6 +16,7 @@ from ojaudit.core.store import Store
 from ojaudit.tui.account_screen import AccountScreen
 from ojaudit.tui.app import AuditApp
 from ojaudit.tui.data import LocalContests
+from ojaudit.tui.pending_screen import PendingScreen
 from ojaudit.tui.ranking_screen import RankingScreen
 from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.review_screens import (
@@ -30,7 +31,6 @@ from ojaudit.tui.review_screens import (
 )
 from ojaudit.tui.rice_theme import load_wallpaper_theme, theme_from_dict
 from ojaudit.tui.screens import ContestListScreen, ContestOverviewScreen, MissingContestScreen
-from ojaudit.tui.pending_screen import PendingScreen
 from ojaudit.tui.settings_screen import SettingsScreen
 
 

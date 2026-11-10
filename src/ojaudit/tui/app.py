@@ -8,12 +8,15 @@ Notes: 独立入口，不改变现有 CLI 的行为。
 from __future__ import annotations
 
 import asyncio
+import inspect
 import sqlite3
+import time
 from pathlib import Path
 from threading import Event
 from typing import Any, ClassVar
 
 from textual.app import App
+from textual.binding import Binding
 
 from ojaudit.core.config import config_dir, data_dir, load_config
 from ojaudit.tui.data import LocalContests
@@ -27,7 +30,8 @@ class AuditApp(App[None]):
     TITLE = "ojaudit · 审核工作台"
     CSS_PATH = "themes/nowcoder.tcss"
     ENABLE_COMMAND_PALETTE = False
-    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+    BINDINGS: ClassVar[list[Any]] = [
+        Binding("ctrl+c,ctrl+q", "quit_app", "退出", priority=True),
         ("q", "context_quit", "返回/退出"),
         ("question_mark", "help", "帮助"),
         ("t", "cycle_theme", "切换主题"),
@@ -50,6 +54,8 @@ class AuditApp(App[None]):
         )
         self.contests = contests if contests is not None else LocalContests(selected)
         self.job_status = "空闲"
+        # 采集进度：(阶段, 已完成, 总数, 开始时间)；没有任务时为 None。
+        self.job_progress: tuple[str, int, int, float] | None = None
         self._job_task: asyncio.Task[None] | None = None
         self._cancel_job = Event()
         self.source_factory = None
@@ -166,6 +172,29 @@ class AuditApp(App[None]):
         self._cancel_job.set()
         self._publish_job("已请求取消，等待当前步骤安全结束")
 
+    def _progress(self, stage: str, done: int, total: int) -> None:
+        """数据源线程报告进度；界面最多每 0.2 秒刷新一次顶栏。"""
+        started = self.job_progress[3] if self.job_progress else time.monotonic()
+        if self.job_progress and self.job_progress[0] != stage:
+            started = time.monotonic()
+        self.job_progress = (stage, done, total, started)
+        now = time.monotonic()
+        if done in (0, total) or now - getattr(self, "_progress_drawn", 0.0) > 0.2:
+            self._progress_drawn = now
+            self.call_from_thread(self._publish_job, self.job_status)
+
+    def progress_text(self) -> str:
+        """顶栏显示的进度：阶段、计数、进度条与预计剩余时间。"""
+        if self.job_progress is None:
+            return ""
+        stage, done, total, started = self.job_progress
+        if not total:
+            return stage + "…"
+        elapsed = max(time.monotonic() - started, 0.001)
+        remaining = (total - done) * elapsed / done if done else None
+        eta = f" 剩余约 {int(remaining // 60)}:{int(remaining % 60):02d}" if remaining else ""
+        return f"{stage} {done}/{total} {done * 100 // total}%{eta}"
+
     async def _perform_workflow(self, contest_id: str, mode: str, platform: str) -> None:
         from ojaudit.cli_operations import nowcoder_source
         from ojaudit.core.schema import Contest
@@ -173,24 +202,37 @@ class AuditApp(App[None]):
         try:
             contest = Contest(platform, contest_id, contest_id)
             if mode != "analyze":
-                self._publish_job(f"{contest_id} · 正在采集")
+                self._publish_job(f"采集 {contest_id}")
                 source = (
                     self.source_factory() if self.source_factory is not None else nowcoder_source()
                 )
-                bundle = await asyncio.to_thread(source.fetch_contest, None, contest_id)
+                # 只有支持进度与取消的数据源才传入这两个参数（Source 协议本身不要求）。
+                parameters = inspect.signature(source.fetch_contest).parameters
+                extra = {
+                    key: value
+                    for key, value in (
+                        ("progress", self._progress),
+                        ("cancelled", self._cancel_job.is_set),
+                    )
+                    if key in parameters
+                }
+                bundle = await asyncio.to_thread(source.fetch_contest, None, contest_id, **extra)
+                self.job_progress = None
                 if self._cancel_job.is_set():
                     self._publish_job("采集后已取消", finished=True)
                     return
-                self._publish_job(f"{contest_id} · 正在保存提交")
+                self._publish_job(f"保存 {contest_id}")
                 contest = await asyncio.to_thread(persist_bundle, self.contests.db_path, bundle)
             if self._cancel_job.is_set():
                 self._publish_job("任务已取消", finished=True)
                 return
             if mode != "collect":
-                self._publish_job(f"{contest.contest_id} · 正在分析")
+                self._publish_job(f"分析 {contest.contest_id}")
                 await asyncio.to_thread(analyze_local, self.contests.db_path, contest)
-            self._publish_job(f"{contest.contest_id} · 任务完成", finished=True)
+            self._publish_job(f"{contest.contest_id} 已完成", finished=True)
             self.notify(f"比赛 {contest.contest_id} 已更新")
+        except InterruptedError:
+            self._publish_job("任务已取消", finished=True)
         except (RuntimeError, ValueError) as exc:
             # 数据源与核心层的这两类异常文字是给用户看的，不含 Cookie 或请求参数。
             self._publish_job("任务失败", finished=True)
@@ -198,8 +240,20 @@ class AuditApp(App[None]):
         except (OSError, TypeError, sqlite3.Error) as exc:
             self._publish_job(f"任务失败（{type(exc).__name__}）", finished=True)
             self.notify("采集或分析失败，请检查网络、登录状态和数据库", severity="error")
+        except Exception as exc:  # noqa: BLE001 - 后台任务出错不能让界面停在「正在采集」
+            self._publish_job(f"任务失败（内部错误 {type(exc).__name__}）", finished=True)
+            self.notify("采集或分析出现内部错误，请反馈", severity="error")
         finally:
+            self.job_progress = None
             self._job_task = None
+
+    def action_quit_app(self) -> None:
+        """Ctrl+C / Ctrl+Q：通知后台任务停止后退出，不留下仍在下载的线程。"""
+        self._cancel_job.set()
+        self.exit()
+
+    def on_unmount(self) -> None:
+        self._cancel_job.set()
 
     # ── 已参加比赛同步 ──────────────────────────────────
 
@@ -224,9 +278,13 @@ class AuditApp(App[None]):
         self.call_from_thread(self._publish_sync, "正在同步已参加的比赛")
         try:
             source = self.source_factory() if self.source_factory is not None else nowcoder_source()
-            uid = current_uid() or detect_and_save_uid()
+            # 以当前登录态为准识别 UID（并更新配置），识别失败时才用配置里的 UID。
+            try:
+                uid = detect_and_save_uid()
+            except (OSError, RuntimeError, ValueError, TypeError):
+                uid = current_uid()
             rows = source.list_joined(uid)
-            with Store(self.contests.db_path) as store:
+            with Store(self.contests.db_path) as store, store.transaction():
                 added = sum(
                     store.put_contest_listing(
                         "nowcoder",
@@ -237,10 +295,13 @@ class AuditApp(App[None]):
                     )
                     for row in rows
                 )
+                removed = store.prune_listings("nowcoder", {row["contest_id"] for row in rows})
         except (OSError, RuntimeError, ValueError, TypeError, sqlite3.Error):
             self.call_from_thread(self._publish_sync, "同步失败：检查网络或重新登录", True)
             return
-        message = f"已同步 {len(rows)} 场比赛" + (f"，新增 {added}" if added else "")
+        message = f"已同步 {len(rows)} 场比赛"
+        if added or removed:
+            message += f"（新增 {added}，移除 {removed}）"
         self.call_from_thread(self._publish_sync, message, True)
 
     def _publish_sync(self, message: str, finished: bool = False) -> None:
@@ -316,8 +377,8 @@ class AuditApp(App[None]):
     def action_context_quit(self) -> None:
         from ojaudit.tui.screens import HomeScreen
 
-        if isinstance(self.screen, HomeScreen):
-            self.exit()
+        if isinstance(self.screen, HomeScreen) or len(self.screen_stack) <= 2:
+            self.action_quit_app()
         else:
             cancel = getattr(self.screen, "action_cancel", None)
             back = getattr(self.screen, "action_back", None)
@@ -335,7 +396,11 @@ class AuditApp(App[None]):
 
 
 def main(db_path: str | Path | None = None) -> None:
-    AuditApp(db_path=db_path, auto_sync=True).run()
+    try:
+        AuditApp(db_path=db_path, auto_sync=True).run()
+    except KeyboardInterrupt:
+        # 终端直接发送 SIGINT 时安静退出，不打印堆栈。
+        pass
 
 
 if __name__ == "__main__":

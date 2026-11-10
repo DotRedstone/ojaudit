@@ -7,6 +7,8 @@ Notes: 不修改任何业务层、采集或检测逻辑。
 
 from __future__ import annotations
 
+from typing import Any
+
 from textual import events
 from textual.message import Message
 from textual.widgets import ListItem, ListView, Static
@@ -45,10 +47,22 @@ class NavigateListItem(ListItem):
 
 
 class Breadcrumb(Static):
-    """顶栏：单击回到上一级 Screen。"""
+    """顶栏：点击左侧路径返回上一级；后台任务运行时点击右侧状态可取消任务。"""
+
+    job_x = 10**6
 
     def on_click(self, event: events.Click) -> None:
         event.stop()
+        app: Any = self.app
+        if event.x >= self.job_x:
+            if getattr(app, "job_running", False):
+                from ojaudit.tui.popup import ConfirmPopup
+
+                app.push_screen(
+                    ConfirmPopup("后台任务", f"{app.job_status}\n取消这个任务？"),
+                    lambda ok: ok and app.cancel_workflow(),
+                )
+            return
         back = getattr(self.screen, "action_back", None)
         if callable(back):
             back()

@@ -21,6 +21,9 @@ Screen {
     border-subtitle-color: $text-muted;
 }
 #pane:focus-within { border: round $accent; }
+#breadcrumb:hover { background: $accent 20%; text-style: underline; }
+Footer { background: $panel; }
+#empty-guide { height: 4; padding: 1 2; color: $warning; }
 .pane-title { height: 2; padding: 0 1; text-style: bold; color: $accent; }
 #summary { height: 6; padding: 1 1; color: $foreground; }
 #home-overview {

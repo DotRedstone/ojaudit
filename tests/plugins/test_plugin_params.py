@@ -29,7 +29,7 @@ def test_builtin_manifests_are_discoverable():
         "nowcoder_timeline",
         "nowcoder_classify",
     }
-    assert set(exporters) == {"builtin_csv", "builtin_markdown", "builtin_html"}
+    assert set(exporters) == {"builtin_csv", "builtin_markdown", "builtin_html", "builtin_xlsx"}
     assert all(item.api_version == 1 for item in (*detectors.values(), *exporters.values()))
 
 

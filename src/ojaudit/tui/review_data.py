@@ -174,9 +174,11 @@ class ReviewData:
             *self.key,
         )
         current_keys = {finding_key(item) for item in current}
-        reviewed = {(row["run_id"], finding_key(row)): row for row in reviews}
+        reviewed = {}
+        for row in reviews:
+            reviewed.setdefault(finding_key(row), row)
         for item in current:
-            review = reviewed.get((item["run_id"], finding_key(item)), {})
+            review = reviewed.get(finding_key(item), {})
             item["status"] = review.get("status", DEFAULT_REVIEW_STATUS)
             item["note"] = review.get("note", "")
             item["is_stale"] = False

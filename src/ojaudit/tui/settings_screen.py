@@ -17,9 +17,9 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, ListView, Static
 
 from ojaudit.tui.icons import label
-from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView
 from ojaudit.tui.screens import ShellScreen
+from ojaudit.tui.ui_components import StatusRow
 from ojaudit.tui.settings_model import CATEGORIES, Option, SettingsModel
 
 
@@ -130,7 +130,7 @@ class SettingsScreen(ShellScreen):
         columns = Horizontal(
             NavigateListView(
                 *(
-                    ListItem(Label(label("settings", category, self.app.nerd_font)))
+                    StatusRow(label("settings", category, self.app.nerd_font))
                     for category in CATEGORIES
                 ),
                 id="categories",
@@ -181,14 +181,12 @@ class SettingsScreen(ShellScreen):
                 display = str(value)
             marker = "● " if self.model.changed(option) else "  "
             view.append(
-                ListItem(
-                    Label(
-                        label("settings", f"{marker}{option.title}   {display}", self.app.nerd_font)
-                    )
+                StatusRow(
+                    label("settings", f"{marker}{option.title}   {display}", self.app.nerd_font)
                 )
             )
         if not self.rows:
-            view.append(ListItem(Label("本类暂无可编辑项")))
+            view.append(StatusRow("本类暂无可编辑项"))
         view.call_after_refresh(setattr, view, "index", min(previous, len(self.rows) - 1))
         self.detail()
         self.status()

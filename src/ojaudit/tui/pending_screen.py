@@ -7,12 +7,13 @@ Notes: 只读取本地分析与人工标记，不执行网络请求。
 
 from __future__ import annotations
 
-from ojaudit.tui.interaction import NavigateListItem as ListItem
+from ojaudit.tui.icons import label
 from ojaudit.tui.interaction import NavigateListView as NavigationListView
 from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.review_screens import EvidenceScreen, PersonScreen
 from ojaudit.tui.screens import ShellScreen
 from ojaudit.tui.workflow import PendingEntry, pending_entries
+from ojaudit.tui.ui_components import StatusRow
 
 
 class PendingScreen(ShellScreen):
@@ -37,7 +38,7 @@ class PendingScreen(ShellScreen):
         self.reload()
 
     def reload(self) -> None:
-        from textual.widgets import Label, ListView
+        from textual.widgets import ListView
 
         self.entries = pending_entries(self.app.contests)
         view = self.query_one("#pending-items", ListView)
@@ -53,9 +54,11 @@ class PendingScreen(ShellScreen):
                 )
             else:
                 title = f"{prefix} · 存疑人员 · {entry.uid}"
-            view.append(ListItem(Label(title)))
+            kind = "level-high" if entry.kind == "finding" else "mark-suspect"
+            icon = "review" if entry.kind == "finding" else "suspect"
+            view.append(StatusRow(label(icon, title, self.app.nerd_font), kind=kind))
         if not self.entries:
-            view.append(ListItem(Label("暂无跨比赛待复核项")))
+            view.append(StatusRow("暂无跨比赛待复核项"))
         view.call_after_refresh(setattr, view, "index", 0)
 
     def open_index(self, index: int) -> None:

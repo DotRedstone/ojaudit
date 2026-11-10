@@ -140,19 +140,13 @@ class EntryDialog(ModalScreen[str | None]):
         Binding("h", "cancel", "取消"),
     ]
 
-    CSS = """
-    EntryDialog { align: center middle; }
-    #entry-dialog { width: 68; height: auto; border: round $accent;
-                    background: $panel; padding: 1 2; }
-    #entry-buttons { height: auto; }
-    """
 
     def __init__(self, *, login: bool = False) -> None:
         super().__init__()
         self.login = login
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="entry-dialog"):
+        with Vertical(id="entry-dialog", classes="dialog-box"):
             yield Label(
                 label(
                     "login" if self.login else "contest",

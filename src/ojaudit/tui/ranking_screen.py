@@ -43,11 +43,6 @@ class RankingScreen(ShellScreen):
         ("tab,shift+tab", "focus_next", "切换面板"),
         ("e", "export", "导出"),
     ]
-    CSS = """
-    #ranking-options { height: 7; border: round $panel; }
-    #ranking-preview { height: 1fr; border: round $panel; }
-    #ranking-warning { height: 3; padding: 0 1; color: $warning; }
-    """
 
     def __init__(self, data: ReviewData) -> None:
         super().__init__()

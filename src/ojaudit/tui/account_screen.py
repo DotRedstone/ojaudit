@@ -34,21 +34,17 @@ from ojaudit.tui.screens import ShellScreen
 class UidDialog(ModalScreen[str | None]):
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("escape", "cancel", "取消", priority=True),
+        Binding("h", "cancel", "取消"),
     ]
 
-    CSS = """
-    UidDialog { align: center middle; }
-    #uid-dialog { width: 66; height: auto; padding: 1 2;
-                  border: round $accent; background: $panel; }
-    """
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="uid-dialog"):
+        with Vertical(id="uid-dialog", classes="dialog-box"):
             yield Label("设置牛客 UID（仅接受数字）")
             yield Input(value=current_uid(), placeholder="牛客 UID", id="uid-value")
             with Horizontal():
-                yield Button("保存", id="uid-save", variant="primary")
-                yield Button("取消", id="uid-cancel")
+                yield Button(label("save", "保存", self.app.nerd_font), id="uid-save", variant="primary")
+                yield Button(label("cancel", "取消", self.app.nerd_font), id="uid-cancel")
 
     def on_mount(self) -> None:
         self.query_one("#uid-value", Input).focus()

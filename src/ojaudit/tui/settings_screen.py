@@ -26,13 +26,9 @@ from ojaudit.tui.settings_model import CATEGORIES, Option, SettingsModel
 class EditValue(ModalScreen[str | None]):
     BINDINGS: ClassVar[list[Binding]] = [
         Binding("escape", "cancel", "取消", priority=True),
+        Binding("h", "cancel", "取消"),
     ]
 
-    CSS = """
-    EditValue { align: center middle; }
-    #edit-dialog { width: 66; height: auto; padding: 1 2; border: round $accent;
-                   background: $panel; }
-    """
 
     def __init__(self, option: Option, value: Any) -> None:
         super().__init__()
@@ -40,7 +36,7 @@ class EditValue(ModalScreen[str | None]):
         self.current = str(value)
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="edit-dialog"):
+        with Vertical(id="edit-dialog", classes="dialog-box"):
             yield Label(
                 label(
                     "settings",
@@ -79,14 +75,9 @@ class ConfirmLeave(ModalScreen[bool]):
         Binding("h", "cancel", "继续编辑"),
     ]
 
-    CSS = """
-    ConfirmLeave { align: center middle; }
-    #confirm { width: 58; height: auto; border: round $warning;
-               background: $panel; padding: 1 2; }
-    """
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="confirm"):
+        with Vertical(id="confirm", classes="dialog-box"):
             yield Label(label("warning", "设置尚未保存，是否放弃更改？", self.app.nerd_font))
             with Horizontal():
                 yield Button(
@@ -129,15 +120,6 @@ class SettingsScreen(ShellScreen):
         ("tab", "focus_next", "切换窗格"),
         ("shift+tab", "focus_next", "切换窗格"),
     ]
-    CSS = """
-    #settings-columns { height: 1fr; margin: 1 2; }
-    #categories { width: 23; height: 1fr; border: round $panel; }
-    #options-pane { width: 1fr; height: 1fr; border: round $panel; }
-    #options-pane:focus-within, #categories:focus-within { border: round $accent; }
-    #settings-values { height: 1fr; }
-    #settings-detail { height: 5; padding: 0 1; }
-    #settings-help { height: 2; padding: 0 2; }
-    """
 
     def __init__(self, model: SettingsModel | None = None) -> None:
         super().__init__()

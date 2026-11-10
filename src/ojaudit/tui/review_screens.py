@@ -43,12 +43,6 @@ class ChoiceDialog(ModalScreen[tuple[str, str] | None]):
         Binding("h", "back", "取消"),
     ]
 
-    CSS = """
-    ChoiceDialog { align: center middle; background: $background 65%; }
-    #dialog { width: 68; height: auto; max-height: 18; padding: 1 2;
-              border: round $accent; background: $panel; }
-    #dialog Select, #dialog Input { margin-bottom: 1; }
-    """
 
     def __init__(
         self, title: str, options: tuple[tuple[str, str], ...], value: str = "", note: str = ""
@@ -60,7 +54,7 @@ class ChoiceDialog(ModalScreen[tuple[str, str] | None]):
         self.note = note
 
     def compose(self) -> ComposeResult:
-        with Vertical(id="dialog"):
+        with Vertical(id="dialog", classes="dialog-box"):
             yield Label(label("mark", self.heading, self.app.nerd_font))
             yield Select(
                 [(label, key) for label, key in self.options],

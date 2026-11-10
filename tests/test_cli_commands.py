@@ -1,7 +1,8 @@
 """
-Module: CLI R10 Tests
-Description: 合成旧库迁移、插件注册、采集 mock 与多格式导出。
+Module: Test / CLI commands
+Description: 旧库迁移、登录文件权限、模拟采集、比赛列表与插件登记命令。
 Scope: Test
+Notes: 只使用合成数据，不访问网络。
 """
 
 import json

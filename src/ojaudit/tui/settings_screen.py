@@ -223,7 +223,10 @@ class SettingsScreen(Chrome, Screen):
                 text.append("  只读", style=colors.muted)
             if option.description:
                 text.append("\n" + option.description, style=colors.fg)
-            default = option.default if option.default not in ("", None) else "空"
+            if isinstance(option.default, bool):
+                default = "开" if option.default else "关"
+            else:
+                default = option.default if option.default not in ("", None) else "空"
             text.append(f"\n默认值 {default}", style=colors.muted)
             self.query_one("#settings-detail", Static).update(text)
 

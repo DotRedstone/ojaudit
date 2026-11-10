@@ -1,8 +1,8 @@
 """
-Module: Test / batch F account and secondary features
-Description: 使用合成票据与本地 SQLite 验证账户、线索筛选和比赛列表。
+Module: Test / TUI account and lists
+Description: 账户页（UID、退出、离线扫码）、线索筛选与比赛列表摘要。
 Scope: Test
-Notes: 不使用真实 Cookie/UID，不向牛客发起网络请求。
+Notes: 只使用合成数据，不访问网络。
 """
 
 from __future__ import annotations

@@ -81,7 +81,15 @@ class ReviewData:
     def problems(self) -> list[dict[str, Any]]:
         return self._read(
             "SELECT problem_index, problem_id, title FROM problems "
-            "WHERE platform=? AND contest_id=? ORDER BY problem_index",
+            "WHERE platform=? AND contest_id=? "
+            "UNION ALL "
+            "SELECT DISTINCT s.problem_index, CAST(s.problem_index AS TEXT), "
+            "'题 ' || s.problem_index FROM submissions AS s "
+            "WHERE s.platform=? AND s.contest_id=? AND NOT EXISTS "
+            "(SELECT 1 FROM problems AS p WHERE p.platform=s.platform "
+            "AND p.contest_id=s.contest_id AND p.problem_index=s.problem_index) "
+            "ORDER BY problem_index",
+            *self.key,
             *self.key,
         )
 
@@ -174,9 +182,11 @@ class ReviewData:
             *self.key,
         )
         current_keys = {finding_key(item) for item in current}
-        reviewed = {(row["run_id"], finding_key(row)): row for row in reviews}
+        reviewed = {}
+        for row in reviews:
+            reviewed.setdefault(finding_key(row), row)
         for item in current:
-            review = reviewed.get((item["run_id"], finding_key(item)), {})
+            review = reviewed.get(finding_key(item), {})
             item["status"] = review.get("status", DEFAULT_REVIEW_STATUS)
             item["note"] = review.get("note", "")
             item["is_stale"] = False

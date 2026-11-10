@@ -50,6 +50,14 @@ class Option:
 
 
 STATIC_OPTIONS = (
+    Option(
+        "账户",
+        "storage.sqlite_path",
+        "SQLite 路径",
+        "text",
+        "",
+        description="留空使用 XDG 默认路径；CLI --db 优先于此设置",
+    ),
     Option("账户", "account.cookie_env", "Cookie 环境变量名", "text", "NOWCODER_COOKIE"),
     Option(
         "比赛筛选", "contest_filter.match_field", "匹配字段", "enum", "name", ("name", "name_id")
@@ -140,7 +148,7 @@ def generated_options(manifests: list[PluginManifest]) -> tuple[Option, ...]:
                 f"plugins.{plugin}.enabled",
                 f"{plugin} · 启用",
                 "bool",
-                False,
+                True,
                 description=f"版本 {manifest.version} · {manifest.origin}",
             )
         )
@@ -151,7 +159,7 @@ def generated_options(manifests: list[PluginManifest]) -> tuple[Option, ...]:
                     f"plugins.{plugin}.enabled",
                     f"{plugin} · 启用",
                     "bool",
-                    False,
+                    True,
                     description=manifest.description,
                 )
             )
@@ -193,7 +201,9 @@ class SettingsModel:
         db_path: str | Path | None = None,
     ) -> None:
         self.path = path
-        self.db_path = Path(db_path) if db_path is not None else data_dir() / "ojaudit.sqlite"
+        self.db_path = (
+            Path(db_path).expanduser() if db_path is not None else data_dir() / "ojaudit.sqlite"
+        )
         self.manifests = manifests if manifests is not None else plugin_manifests()
         self.options = generated_options(self.manifests)
         self.saved = load_config(path)

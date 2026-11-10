@@ -93,7 +93,18 @@ class LocalContests:
                 ).fetchone()[0]
             )
             return ContestStats(
-                findings, count("participants"), count("problems"), count("submissions")
+                findings,
+                count("participants"),
+                int(
+                    connection.execute(
+                        "SELECT COUNT(*) FROM ("
+                        "SELECT problem_index FROM problems WHERE platform=? AND contest_id=? "
+                        "UNION SELECT problem_index FROM submissions "
+                        "WHERE platform=? AND contest_id=?)",
+                        (*key, *key),
+                    ).fetchone()[0]
+                ),
+                count("submissions"),
             )
         finally:
             connection.close()

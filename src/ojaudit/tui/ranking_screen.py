@@ -101,7 +101,9 @@ class RankingScreen(Screen):
             )
         if not preview.children:
             preview.append(ListItem(Label("当前策略下无可展示人员")))
-        self.query_one("#status", Static).update(" NORMAL  ›  排行榜 · 非官方推导   │  e 导出")
+        self.query_one("#status", Static).update(
+            self.app.status_line("排行榜 · 非官方推导", self.data.contest.contest_id)
+        )
 
     def change(self, delta: int) -> None:
         view = self.query_one("#ranking-options", ListView)

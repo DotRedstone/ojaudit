@@ -1,0 +1,7 @@
+name = "nowcoder_classify"
+kind = "detector.classifier"
+version = "1.0.0"
+api_version = 1
+description = "牛客旧检测器确定性分级规则"
+languages = ["cpp", "python", "java"]
+module = "ojaudit.plugins.detectors.classify"

@@ -241,3 +241,43 @@ def test_refilled_list_keeps_visible_highlight(tmp_path):
             assert view.highlighted_child.has_class("-highlight")
 
     asyncio.run(scenario())
+
+
+def test_long_lists_mount_in_batches(tmp_path):
+    """长列表先挂载一批；移动到末尾附近、G 跳到末尾、搜索靠后的行都会加载后面的行。"""
+    from ojaudit.core.schema import Participant
+    from ojaudit.tui.interaction import CHUNK
+    from ojaudit.tui.review_data import ReviewData
+    from ojaudit.tui.review_screens import PeopleScreen
+
+    db = tmp_path / "many.sqlite"
+    count = CHUNK * 2 + 50
+    with Store(db) as store:
+        store.import_contest(
+            Contest("nowcoder", "1", "合成大赛"),
+            [Participant("nowcoder", "1", f"u{i:04d}", f"选手{i:04d}") for i in range(count)],
+        )
+    local = LocalContests(db)
+    data = ReviewData(local, Contest("nowcoder", "1", "合成大赛"))
+
+    async def scenario():
+        app = AuditApp(local)
+        async with app.run_test(size=(120, 30)) as pilot:
+            app.push_screen(PeopleScreen(data, "首页"))
+            await pilot.pause()
+            screen = app.screen
+            view = screen.query_one("#items", ListView)
+            assert len(screen.rows) == count
+            assert view.mounted_count() == CHUNK, "只先挂载一批"
+            view.index = CHUNK - 5
+            await pilot.pause()
+            assert view.mounted_count() == CHUNK * 2, "接近末尾时追加下一批"
+            target = screen.rows[-1]["name"]
+            assert screen._jump_to(str(target))
+            await pilot.pause()
+            assert view.mounted_count() == count and view.index == count - 1
+            await pilot.press("g")
+            await pilot.press("shift+g")
+            assert view.index == count - 1
+
+    asyncio.run(scenario())

@@ -51,8 +51,12 @@ def final_ranking(data: ReviewData, policy: RankingOptions) -> FinalRanking:
 
 
 def ranking_table(
-    data: ReviewData, policy: RankingOptions, table: TableOptions | None = None
+    data: ReviewData,
+    policy: RankingOptions,
+    table: TableOptions | None = None,
+    ranking: FinalRanking | None = None,
 ) -> RankingTable:
+    """ranking 已算好时直接传入，避免重复推导。"""
     problems = [int(p["problem_index"]) for p in data.problems()]
     # 开始时间以数据库为准（与 CLI 一致），列表传入的比赛对象可能不带时间。
     rows = data._read(
@@ -60,7 +64,8 @@ def ranking_table(
     )
     start = rows[0]["start_time"] if rows and rows[0]["start_time"] else None
     name = rows[0]["name"] if rows else data.contest.name
-    return build_table(final_ranking(data, policy), problems, table, start, f"{name} 排行榜")
+    ranking = ranking if ranking is not None else final_ranking(data, policy)
+    return build_table(ranking, problems, table, start, f"{name} 排行榜")
 
 
 def pending_warnings(data: ReviewData) -> tuple[str, ...]:

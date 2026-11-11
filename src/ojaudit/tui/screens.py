@@ -27,9 +27,9 @@ from ojaudit.tui import ui
 from ojaudit.tui.contest_list_data import ContestSummary, contest_summary
 from ojaudit.tui.data import LocalContests
 from ojaudit.tui.icons import glyph, label
+from ojaudit.tui.interaction import LazyRows, refill
 from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView as NavigationListView
-from ojaudit.tui.interaction import refill
 from ojaudit.tui.popup import ConfirmPopup, InputPopup, SearchLine
 from ojaudit.tui.splitter import start_drag
 
@@ -354,6 +354,8 @@ class ShellScreen(Chrome, Screen):
 
     def action_last(self) -> None:
         view = self._list()
+        if isinstance(view, NavigationListView):
+            view.load_all()
         if view is not None and view.children:
             view.index = len(view.children) - 1
 
@@ -373,8 +375,14 @@ class ShellScreen(Chrome, Screen):
         view = self._list()
         if view is None:
             return False
+        if isinstance(view, NavigationListView):
+            view.load_all()
         for index, item in enumerate(view.children):
-            if query.casefold() in str(item.query_one(Label).render()).casefold():
+            if item.has_class("-gone"):
+                continue
+            # 刚追加的行尚未挂载，查不到子控件，用创建时记下的标签。
+            label = getattr(item, "row_label", None) or item.query_one(Label)
+            if query.casefold() in str(label.render()).casefold():
                 view.index = index
                 return True
         return False
@@ -447,14 +455,20 @@ class TableScreen(ShellScreen):
 
     def on_mount(self) -> None:
         self.reload()
+        self._fresh = True
         super().on_mount()
 
     def on_screen_resume(self) -> None:
-        self.reload()
+        # 首次显示紧跟在 on_mount 之后，数据刚读过；从下层页面返回时才重新读取。
+        if getattr(self, "_fresh", False):
+            self._fresh = False
+        else:
+            self.reload()
         super().on_screen_resume()
 
     def on_layout_change(self) -> None:
-        self.reload()
+        # 尺寸变化只按新宽度重新排版，不重新查询数据库。
+        self.reload(requery=False)
         super().on_layout_change()
 
     def items(self) -> list[Any]:
@@ -476,7 +490,7 @@ class TableScreen(ShellScreen):
             self.sort = (column, not self.sort[1])
         else:
             self.sort = (column, False)
-        self.reload()
+        self.reload(requery=False)
 
     def action_cycle_sort(self) -> None:
         """s：当前列升序 → 降序 → 下一可排序列。"""
@@ -489,7 +503,7 @@ class TableScreen(ShellScreen):
             self.sort = (self.sort[0], True)
         else:
             self.sort = (columns[(columns.index(self.sort[0]) + 1) % len(columns)], False)
-        self.reload()
+        self.reload(requery=False)
 
     def ordered(self, rows: list[Any]) -> list[Any]:
         if self.sort is None:
@@ -508,16 +522,21 @@ class TableScreen(ShellScreen):
         depth = len(self.query_one("#frame-left", StackFrame).pages())
         return max(self.app.size.width - 6 - depth, 40)
 
-    def reload(self) -> None:
+    def reload(self, requery: bool = True) -> None:
         colors = ui.palette(self.app)
         width = self.row_width()
         view = self.query_one("#items", ListView)
-        self.rows = self.ordered(self.items())
+        if requery or not hasattr(self, "_items"):
+            self._items = self.items()
+        self.rows = self.ordered(self._items)
         self.query_one(".thead", Static).update(
             ui.table_header(self.COLUMNS, width, colors.muted, self.sort, colors.accent)
         )
-        lines = [ui.table_row(self.cells(row), self.COLUMNS, width) for row in self.rows]
-        refill(view, lines or [Text(self.EMPTY, style=colors.muted)])
+        rows = self.rows
+        lines = LazyRows(
+            len(rows), lambda i: ui.table_row(self.cells(rows[i]), self.COLUMNS, width)
+        )
+        refill(view, lines if rows else [Text(self.EMPTY, style=colors.muted)])
         self.refresh_chrome()
 
     def selected_row(self, index: int) -> Any:

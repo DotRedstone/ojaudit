@@ -267,10 +267,11 @@ class FindingsScreen(ReviewListScreen):
             7: str(row["status"]),
         }.get(column)
 
-    def reload(self) -> None:
-        self._load_people()
-        self._problem_titles = self.titles()
-        super().reload()
+    def reload(self, requery: bool = True) -> None:
+        if requery or not hasattr(self, "_problem_titles"):
+            self._load_people()
+            self._problem_titles = self.titles()
+        super().reload(requery)
         colors = ui.palette(self.app)
         tabs = Text()
         self.tab_spans = []
@@ -930,12 +931,12 @@ class PeopleScreen(ReviewListScreen):
             self.picked.remove(uid)
         else:
             self.picked.append(uid)
-        self.reload()
+        self.reload(requery=False)
         self.action_down()
 
     def action_clear_picks(self) -> None:
         self.picked = []
-        self.reload()
+        self.reload(requery=False)
 
     def action_activate(self) -> None:
         if len(self.picked) > 1:

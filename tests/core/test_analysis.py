@@ -50,7 +50,7 @@ def test_config_precedence_and_stale_keys_are_ignored():
     assert not config.enable_template
     assert "nowcoder_template" not in active
     assert engine_config(settings, threshold=0.2)[0].threshold == 0.2
-    assert engine_config({})[0].threshold == 0.5
+    assert engine_config({})[0].threshold == 0.0, "默认不再用原文指纹过滤"
 
 
 def test_invalid_or_disabled_settings_fail_clearly():

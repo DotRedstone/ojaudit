@@ -204,13 +204,45 @@ def _mixed_sample(rng, people=40):
 
 
 def test_shortcuts_match_exhaustive_comparison():
-    """指纹初筛与「必然排除」跳过都只省计算：结果等于全部比对后按指纹阈值过滤。"""
-    rng = random.Random(7)
-    sample = _mixed_sample(rng)
-    full = analyze(sample, EngineConfig(threshold=0.0), exhaustive=True)
-    expected = [row for row in full if row["similarity"] >= 0.5]
-    assert analyze(sample, EngineConfig(threshold=0.5)) == expected
-    assert expected
+    """倒排索引找候选与「必然排除」跳过都只省计算：结果等于全部两两比对。"""
+    for seed in range(6):
+        rng = random.Random(seed)
+        sample = _mixed_sample(rng)
+        full = analyze(sample, EngineConfig(), exhaustive=True)
+        assert analyze(sample, EngineConfig()) == full
+        assert full
+        # 设了指纹下限时，等于全部比对后再按下限过滤。
+        expected = [row for row in full if row["similarity"] >= 0.5]
+        assert analyze(sample, EngineConfig(threshold=0.5)) == expected
+
+
+def test_renamed_copy_is_not_dropped_by_fingerprint():
+    """整体改名的抄袭：原文指纹相似度低，但词法归一后几乎相同，必须成为线索。"""
+    original = """
+#include <bits/stdc++.h>
+using namespace std;
+int main() {
+    int count; cin >> count;
+    vector<long long> values(count);
+    for (int index = 0; index < count; index++) cin >> values[index];
+    long long answer = LLONG_MIN, running = 0;
+    for (int index = 0; index < count; index++) {
+        running = max(values[index], running + values[index]);
+        answer = max(answer, running);
+    }
+    cout << answer << endl;
+}
+"""
+    renamed = (
+        original.replace("count", "n").replace("values", "a").replace("index", "i")
+        .replace("answer", "res").replace("running", "cur")
+    )  # fmt: skip
+    rng = random.Random(5)
+    others = [sub(f"x{i}", _random_code(rng)) for i in range(6)]
+    sample = [sub("a", original, when=100), sub("b", renamed, when=5000), *others]
+    rows = analyze(sample)
+    assert [row["pair"] for row in rows] == [["a", "b"]]
+    assert rows[0]["similarity"] < 0.5, "原文指纹相似度确实很低"
 
 
 def test_large_contest_finishes_quickly():
@@ -219,3 +251,15 @@ def test_large_contest_finishes_quickly():
     started = time.perf_counter()
     analyze(sample)
     assert time.perf_counter() - started < 15
+
+
+def test_similarity_upper_bound_never_below_ratio():
+    """快速上界必须不低于真实相似度，否则「上界不够就跳过」会漏掉线索。"""
+    from ojaudit.plugins.detectors.engine import _upper
+    from ojaudit.plugins.detectors.tokens import ratio
+
+    rng = random.Random(11)
+    for _ in range(500):
+        left = [rng.choice("abcdef") for _ in range(rng.randint(0, 60))]
+        right = [rng.choice("abcdef") for _ in range(rng.randint(0, 60))]
+        assert _upper(left, right) >= ratio(left, right) - 1e-12

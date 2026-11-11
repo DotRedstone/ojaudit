@@ -2,7 +2,7 @@ name = "builtin_pair"
 kind = "detector.pair"
 version = "2.0.0"
 api_version = 1
-description = "Winnowing 指纹初筛：只有指纹相似度达到阈值的选手对才会进入精细比对"
+description = "Winnowing 指纹相似度：作为线索的参考指标；可设下限作为额外过滤条件"
 languages = ["cpp", "python", "java", "other"]
 module = "ojaudit.plugins.detectors.fingerprint"
 
@@ -10,9 +10,9 @@ module = "ojaudit.plugins.detectors.fingerprint"
 
 [params.threshold]
 type = "float"
-label = "指纹相似度阈值"
-description = "Jaccard 相似度低于该值的选手对不产生线索；命令行 --threshold 优先"
-default = 0.5
+label = "指纹相似度下限"
+description = "额外要求原文指纹 Jaccard 不低于该值；0 表示不限制（推荐，变量改名会拉低指纹相似度）；命令行 --threshold 优先"
+default = 0.0
 min = 0
 max = 1
 

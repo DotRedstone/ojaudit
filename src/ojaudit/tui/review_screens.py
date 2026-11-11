@@ -340,10 +340,13 @@ SCORE_LABELS = {
 
 
 class SyncScroll(ScrollableContainer):
-    """两侧代码同步滚动：任一侧滚动时，另一侧滚到相同位置。"""
+    """多栏代码同步滚动：任一栏滚动时，其余栏滚到相同位置。"""
 
-    partner: SyncScroll | None = None
     _syncing = False
+
+    def __init__(self, *children: Any, **kwargs: Any) -> None:
+        super().__init__(*children, **kwargs)
+        self.partners: list[SyncScroll] = []
 
     def watch_scroll_y(self, old: float, new: float) -> None:
         super().watch_scroll_y(old, new)
@@ -354,12 +357,14 @@ class SyncScroll(ScrollableContainer):
         self._sync()
 
     def _sync(self) -> None:
-        partner = self.partner
-        if partner is None or self._syncing or not partner.display:
+        if self._syncing:
             return
-        partner._syncing = True
-        partner.scroll_to(self.scroll_x, self.scroll_y, animate=False)
-        partner._syncing = False
+        for partner in self.partners:
+            if not partner.display:
+                continue
+            partner._syncing = True
+            partner.scroll_to(self.scroll_x, self.scroll_y, animate=False)
+            partner._syncing = False
 
 
 # 视图开关：(按键, 名称, ViewOptions 字段)。
@@ -473,7 +478,7 @@ class EvidenceScreen(ShellScreen):
             self.query_one("#pane-left", SyncScroll),
             self.query_one("#pane-right", SyncScroll),
         )
-        left.partner, right.partner = right, left
+        left.partners, right.partners = [right], [left]
         self.render_evidence()
 
     def on_layout_change(self) -> None:
@@ -886,16 +891,57 @@ class PeopleScreen(ReviewListScreen):
     PAGE_ICON = "people"
     TITLE = "选手"
     HINTS = (
-        ("↵", "查看"),
+        ("↵", "查看/对比"),
+        ("space", "多选"),
+        ("x", "清空选择"),
         ("a", "设为/取消管理者"),
         ("s", "排序"),
-        ("/", "搜索"),
         ("←", "返回"),
     )
     BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
         *TableScreen.BINDINGS,
         ("a", "toggle_manager", "设为 / 取消管理者"),
+        ("x", "clear_picks", "清空多选"),
     ]
+
+    def __init__(self, data: ReviewData, path: str) -> None:
+        super().__init__(data, path)
+        # 空格多选的选手（按选中顺序）；选了两人以上时回车一起打开对比。
+        self.picked: list[str] = []
+
+    def subtitle(self) -> str:
+        base = f"{len(self.rows)} 人"
+        if self.picked:
+            hint = "↵ 一起对比" if len(self.picked) > 1 else "再选一人即可对比"
+            return f"{base} · 已选 {len(self.picked)} 人（{hint}，x 清空）"
+        return base + " · 空格多选后回车一起对比代码"
+
+    def _current(self) -> dict[str, Any] | None:
+        view = self.query_one("#items", ListView)
+        return self.selected_row(view.index if view.index is not None else -1)
+
+    def action_space(self) -> None:
+        person = self._current()
+        if not person:
+            return
+        uid = str(person["uid"])
+        if uid in self.picked:
+            self.picked.remove(uid)
+        else:
+            self.picked.append(uid)
+        self.reload()
+        self.action_down()
+
+    def action_clear_picks(self) -> None:
+        self.picked = []
+        self.reload()
+
+    def action_activate(self) -> None:
+        if len(self.picked) > 1:
+            self.app.push_screen(CompareScreen(self.data, list(self.picked)))
+        else:
+            self.action_open()
+
     DEFAULT_SORT = (4, True)
     COLUMNS = (
         ui.Column("姓名"),
@@ -937,10 +983,20 @@ class PeopleScreen(ReviewListScreen):
 
     def cells(self, row: dict[str, Any]) -> Sequence[str | Text]:
         colors = ui.palette(self.app)
+        name = ui.person_text(
+            str(row["name"]), str(row["uid"]), row["mark"], row["hidden"], colors, False
+        )
+        picked = getattr(self, "picked", [])
+        if picked:
+            uid = str(row["uid"])
+            mark = (
+                Text(f"{picked.index(uid) + 1} ", style=f"bold {colors.bg} on {colors.accent}")
+                if uid in picked
+                else Text("  ")
+            )
+            name = mark + Text(" ") + name
         return [
-            ui.person_text(
-                str(row["name"]), str(row["uid"]), row["mark"], row["hidden"], colors, False
-            ),
+            name,
             Text(str(row["uid"]), style=colors.muted),
             str(row["solved"]),
             str(row["submitted"]),
@@ -1365,3 +1421,124 @@ class CodeScreen(ShellScreen):
 
     def action_review(self) -> None:
         review_person(self, str(self.current["uid"]), self.render_code)
+
+
+class CompareScreen(ShellScreen):
+    """多名选手同一题的代表代码并排对照：↑↓ 换题，各栏同步滚动；与其他人相同的行高亮。"""
+
+    PAGE_ICON = "code"
+    TITLE = "代码对比"
+    HINTS = (
+        ("↑↓", "换题"),
+        ("f", "统一格式"),
+        ("c", "去注释"),
+        ("i", "忽略头文件"),
+        ("←", "返回"),
+    )
+    BINDINGS: ClassVar[list[tuple[str, str, str]]] = [
+        ("escape,h,left", "back", "返回"),
+        ("j,down,n", "next", "下一题"),
+        ("k,up,p", "previous", "上一题"),
+        ("f", "toggle_view('normalize')", "统一格式"),
+        ("c", "toggle_view('comments')", "去注释"),
+        ("i", "toggle_view('boilerplate')", "忽略头文件与 IO 样板"),
+    ]
+    MIN_SHARED = 6  # 太短的行（括号、return 0 之类）不算「相同」
+
+    def __init__(self, data: ReviewData, uids: list[str]) -> None:
+        super().__init__()
+        self.data = data
+        self.contest = data.contest
+        self.uids = uids
+        self.options = _view_options()
+        attempted = {int(row["problem_index"]) for uid in uids for row in data.submissions(uid)}
+        self.problems = [
+            p for p in data.problems() if int(p["problem_index"]) in attempted
+        ] or data.problems()
+        self.position = 0
+
+    def page_title(self) -> str:
+        return f"对比 {len(self.uids)} 人"
+
+    def subtitle(self) -> str:
+        if not self.problems:
+            return "这些选手没有提交"
+        problem = self.problems[self.position]
+        label = ui.problem_label(problem["problem_index"])
+        return f"{label} {problem['title']} · 第 {self.position + 1} / {len(self.problems)} 题"
+
+    def compose(self) -> ComposeResult:
+        yield from self.chrome_top()
+        with Vertical(id="body"), Horizontal(id="compare-panes"):
+            for index in range(len(self.uids)):
+                with SyncScroll(id=f"compare-{index}", classes="source-pane compare-pane"):
+                    yield Static("", id=f"compare-code-{index}")
+        yield from self.chrome_bottom()
+
+    def on_mount(self) -> None:
+        panes = list(self.query(".compare-pane").results(SyncScroll))
+        for pane in panes:
+            pane.partners = [other for other in panes if other is not pane]
+        self.render_compare()
+        super().on_mount()
+
+    def on_layout_change(self) -> None:
+        self.render_compare()
+
+    def render_compare(self) -> None:
+        colors = ui.palette(self.app)
+        if not self.problems:
+            self.refresh_chrome()
+            return
+        index = int(self.problems[self.position]["problem_index"])
+        sides = []
+        for uid in self.uids:
+            row = self.data.representative(uid, index)
+            lines = prepare_lines(row["code"], row["language"], self.options) if row else []
+            sides.append((uid, row, lines))
+
+        def key(line: str) -> str:
+            return " ".join(line.split())
+
+        counts: Counter[str] = Counter()
+        for _uid, _row, lines in sides:
+            counts.update({key(line) for line in lines if len(key(line)) >= self.MIN_SHARED})
+        for position, (uid, row, lines) in enumerate(sides):
+            pane = self.query_one(f"#compare-{position}", SyncScroll)
+            person = self.data.person(uid)
+            title = ui.person_text(
+                str(person["name"]), uid, person["mark"], person["hidden"], colors, False
+            )
+            code = self.query_one(f"#compare-code-{position}", Static)
+            if row is None:
+                title.append(" · 未提交", style=colors.muted)
+                pane.border_title = title
+                pane.border_subtitle = ""
+                code.update(Text("这名选手没有提交这道题", style=colors.muted))
+                continue
+            title.append(f" · {row['verdict']} · {ui.clock(row['submit_time'])}", style=colors.fg)
+            pane.border_title = title
+            shared = {
+                number
+                for number, line in enumerate(lines, 1)
+                if len(key(line)) >= self.MIN_SHARED and counts[key(line)] > 1
+            }
+            pane.border_subtitle = f"与其他人相同 {len(shared)} / {len(lines)} 行"
+            code.update(_syntax(self.app, "\n".join(lines), row["language"], shared))
+        self.refresh_chrome()
+
+    def _move(self, step: int) -> None:
+        if self.problems:
+            self.position = (self.position + step) % len(self.problems)
+            self.render_compare()
+
+    def action_next(self) -> None:
+        self._move(1)
+
+    def action_previous(self) -> None:
+        self._move(-1)
+
+    def action_toggle_view(self, field: str) -> None:
+        self.options = replace(self.options, **{field: not getattr(self.options, field)})
+        _save_view_options(self.options)
+        self.render_compare()

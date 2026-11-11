@@ -59,7 +59,7 @@ class QrLoginScreen(Popup):
     ]
     WIDTH = 50
     ICON = "login"
-    HINTS = (("r", "刷新二维码", "retry"), ("esc", "取消", "cancel"))
+    HINTS = (("r", "刷新二维码", "retry"), ("←", "取消", "cancel"))
 
     def __init__(self, login: Callable[..., None] | None = None) -> None:
         super().__init__("微信扫码登录牛客")
@@ -120,7 +120,7 @@ class QrLoginScreen(Popup):
     def _failed(self, message: str) -> None:
         colors = ui.palette(self.app)
         self.query_one("#qr-status", Static).update(Text(message, style=colors.danger))
-        self.set_hints([("r", "重试", "retry"), ("esc", "关闭", "cancel")])
+        self.set_hints([("r", "重试", "retry"), ("←", "关闭", "cancel")])
 
     def _success(self, uid: str) -> None:
         self.done = True

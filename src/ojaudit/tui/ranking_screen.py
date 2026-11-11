@@ -22,7 +22,7 @@ from ojaudit.core.ranking import RankingOptions
 from ojaudit.core.ranking_table import TableOptions
 from ojaudit.tui import ui
 from ojaudit.tui.interaction import NavigateListItem as ListItem
-from ojaudit.tui.interaction import NavigateListView
+from ojaudit.tui.interaction import NavigateListView, refill
 from ojaudit.tui.ranking_data import export_ranking, final_ranking, pending_warnings, ranking_table
 from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.screens import ShellScreen
@@ -201,8 +201,7 @@ class RankingScreen(ShellScreen):
         self.query_one("#ranking-main .thead", Static).update(
             ui.table_header(columns, total, colors.muted)
         )
-        selected = preview.index or 0
-        preview.clear()
+        lines = []
         for cells, mark in zip(table.rows, table.marks):
             styled: list[Text] = []
             for header, value in zip(table.headers, cells):
@@ -215,12 +214,8 @@ class RankingScreen(ShellScreen):
                     styled.append(Text(str(value), style=colors.muted))
                 else:
                     styled.append(Text(str(value), style=colors.fg))
-            preview.append(ListItem(Label(ui.table_row(styled, columns, total))))
-        if not preview.children:
-            preview.append(ListItem(Label(Text("当前策略下无可展示人员", style=colors.muted))))
-        preview.call_after_refresh(
-            setattr, preview, "index", min(selected, len(preview.children) - 1)
-        )
+            lines.append(ui.table_row(styled, columns, total))
+        refill(preview, lines or [Text("当前策略下无可展示人员", style=colors.muted)])
         self.query_one(
             "#ranking-main"
         ).border_subtitle = f"{len(table.rows)} 人 · {len(table.headers)} 列 · {TABLE[-1][1][self.table_indices[-1]]}"

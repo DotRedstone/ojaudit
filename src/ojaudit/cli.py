@@ -163,6 +163,16 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument(
             "--times", action="store_true", help="展示用时（配合 --per-problem 时按题）"
         )
+    reviews = sub.add_parser("reviews", help="导出 / 合并导入人工复核结果（多人分头排查后汇总）")
+    reviews.add_argument("action", choices=["export", "import"])
+    reviews.add_argument("file", type=Path, help="导出写到 / 导入读取的 JSON 文件")
+    reviews.add_argument(
+        "--contest",
+        action="append",
+        default=[],
+        metavar="平台/比赛ID",
+        help="只导出这些比赛（可重复）；默认全部有人工结论的比赛",
+    )
     plugins = sub.add_parser("plugins", help="插件登记")
     plugins.add_argument("action", choices=["list", "install", "enable", "disable"])
     plugins.add_argument("spec", nargs="?")
@@ -290,6 +300,26 @@ def _run(args: argparse.Namespace) -> None:
                 print("updated")
         elif args.command in {"export", "rank"}:
             _export(store, args)
+        elif args.command == "reviews":
+            from ojaudit.core.review_exchange import (
+                export_reviews,
+                import_reviews,
+                read_reviews,
+                write_reviews,
+            )
+
+            if args.action == "export":
+                keys = [tuple(item.split("/", 1)) for item in args.contest] or None
+                if keys and any(len(key) != 2 for key in keys):
+                    raise ValueError("--contest 格式为 平台/比赛ID，例如 nowcoder/143786")
+                data = export_reviews(store, keys)  # type: ignore[arg-type]
+                path = write_reviews(data, args.file)
+                print(f"exported={path} contests={len(data['contests'])}")
+            else:
+                report = import_reviews(store, read_reviews(args.file), args.file.name)
+                print(report.summary())
+                for contest, who, local, imported, chosen in report.conflicts:
+                    print(f"冲突\t{contest}\t{who}\t本地 {local}\t导入 {imported}\t采用 {chosen}")
         elif args.command == "collect":
             collect_settings = load_config().get("collect", {})
             collect_settings = collect_settings if isinstance(collect_settings, dict) else {}

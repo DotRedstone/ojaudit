@@ -25,6 +25,8 @@ ojaudit rank 123456                # 导出 Excel 榜单（非官方；--cheater
 | `hidden add\|remove\|list [--platform --uid --nickname]` | 全局管理者名单；检测前剔除，排行榜按策略处理。 |
 | `rank <比赛ID> [--platform P] [--format xlsx\|md\|csv\|html] [--output F]` | 导出最终排名，默认 Excel（中文表头、作弊者整行标红）。策略 `--cheaters drop\|mark`、`--suspects keep\|mark\|drop`、`--managers drop\|mark`、`--inactive keep\|drop`（剔除一次都未提交的人）。表格列 `--per-problem`（各题得分）、`--attempts`（提交次数）、`--times`（用时），可组合；没有人带标记时不输出标记列。默认写到 `$XDG_DATA_HOME/ojaudit/exports/<平台>/<比赛>/ranking.<格式>`，与 TUI 相同。 |
 | `export <平台> <比赛> [--output F] [--format]` | `rank` 的旧形式，保留兼容。 |
+| `reviews export <文件> [--contest 平台/比赛ID ...]` | 导出人工复核结果（人员结论、线索复核、管理者）为 JSON，默认全部有结论的比赛。 |
+| `reviews import <文件>` | 合并导入：取更重的结论（作弊 > 存疑 > 正常），备注合并，打印冲突清单。 |
 | `migrate <file.json>` | 导入 JSON 包：`contest`（platform、contest_id、name）、`participants`（uid、name）、`submissions`（submission_id、uid、problem_index、language、verdict、score、submit_time、phase、code，可选 problem_title）。 |
 | `migrate --from-nowcoder-collect [--db 旧库] [--reviews F]` | 只读导入旧 nowcoder-collect SQLite（默认 `~/.dsh/nowcoder/nowcoder.db`），不修改原库；未知结构直接报错。`--reviews` 接收复核记录数组（run_id、uid_a、uid_b、problem_index、language、status、updated_at，note 可选）；记录不含比赛 ID，按双方 UID、题号、语言在旧库提交中定位比赛，无法唯一确定的逐条列在标准错误输出中，不导入。导入的复核在 TUI 中先显示为历史记录，重新分析出同一线索后自动沿用。 |
 | `plugins list\|install\|enable\|disable` | 第三方插件登记。`install <地址>@<commit>` 只检出固定 commit 并校验 `plugin.toml`，**不执行插件代码**；安全约束见 [插件接口](plugin-api.md)。 |

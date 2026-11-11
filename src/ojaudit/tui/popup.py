@@ -379,6 +379,24 @@ class ConfirmPopup(Popup):
         self.dismiss(False)
 
 
+class InfoPopup(Popup):
+    """只读信息（如导入结果摘要）：Enter / ← / Esc 关闭。"""
+
+    WIDTH = 76
+    ICON = "success"
+    HINTS: ClassVar[Sequence[Hint]] = (("↵", "知道了", "cancel"),)
+    BINDINGS: ClassVar[list[Binding]] = [
+        Binding("enter,space", "cancel", "关闭", priority=True),
+    ]
+
+    def __init__(self, title: str, message: Text | str) -> None:
+        super().__init__(title)
+        self.message = message
+
+    def compose(self) -> ComposeResult:
+        yield self.frame(Static(self.message, classes="popup-message"))
+
+
 class SearchLine(ModalScreen[str | None]):
     """nvim 风格：屏幕底部一行 /，边输入边跳到第一处匹配；enter 保留位置，esc 取消。"""
 

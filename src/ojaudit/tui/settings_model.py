@@ -550,6 +550,23 @@ class SettingsModel:
                 "action",
                 description="用导出的 TOML 文件替换当前设置与管理者名单，立即生效",
             ),
+            Option("数据", "data.reviews", "复核结果", "header"),
+            Option(
+                "数据",
+                "data.reviews_export",
+                "导出复核结果",
+                "action",
+                description="把所有比赛的人员结论、线索复核与管理者名单导出为 JSON，"
+                "发给一起排查的人；不含代码与 Cookie",
+            ),
+            Option(
+                "数据",
+                "data.reviews_import",
+                "导入复核结果（合并）",
+                "action",
+                description="合并别人导出的复核结果：作弊 > 存疑 > 正常取更重的结论，"
+                "备注合并并注明来源，不同的结论列为冲突供复查",
+            ),
             Option(
                 "数据",
                 "data.contests",
@@ -839,3 +856,21 @@ class SettingsModel:
         with Store(self.db_path) as store:
             store.clear_contest_data(platform, contest_id)
         self.contests = self._read_contests()
+
+    def export_reviews(self, destination: str | Path) -> tuple[Path, int]:
+        from ojaudit.core.review_exchange import export_reviews, write_reviews
+
+        with Store(self.db_path) as store:
+            data = export_reviews(store)
+        return write_reviews(data, destination), len(data["contests"])
+
+    def import_reviews(self, source: str | Path) -> Any:
+        from ojaudit.core.review_exchange import import_reviews, read_reviews
+
+        data = read_reviews(source)
+        with Store(self.db_path) as store:
+            report = import_reviews(store, data, Path(source).name)
+        self.contests = self._read_contests()
+        self.managers = self._read_managers()
+        self._baseline = (*self._baseline[:2], list(self.managers), *self._baseline[3:])
+        return report

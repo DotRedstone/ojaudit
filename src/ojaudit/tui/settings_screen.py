@@ -24,7 +24,7 @@ from ojaudit.tui import ui
 from ojaudit.tui.icons import label
 from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView, refill
-from ojaudit.tui.popup import ConfirmPopup, InputPopup, MenuPopup
+from ojaudit.tui.popup import ConfirmPopup, InfoPopup, InputPopup, MenuPopup
 from ojaudit.tui.screens import Chrome
 from ojaudit.tui.settings_model import CATEGORIES, Option, SettingsModel
 from ojaudit.tui.splitter import Splitter, start_drag
@@ -409,6 +409,10 @@ class SettingsScreen(Chrome, Screen):
             self._export_config()
         elif option.key == "data.import":
             self._import_config()
+        elif option.key == "data.reviews_export":
+            self._export_reviews()
+        elif option.key == "data.reviews_import":
+            self._import_reviews()
         elif option.kind == "contest":
             self._delete_contest(option)
         elif option.kind == "excluded":
@@ -584,6 +588,81 @@ class SettingsScreen(Chrome, Screen):
                 input_id="import-path",
             ),
             confirm,
+        )
+
+    def _export_reviews(self) -> None:
+        def done(path: str | None) -> None:
+            if not path:
+                return
+            try:
+                target, count = self.model.export_reviews(path.strip())
+            except (OSError, ValueError, sqlite3.Error) as exc:
+                self.notify(f"导出失败：{exc}", severity="error")
+                return
+            from ojaudit.tui.ranking_screen import copy_to_clipboard
+
+            copy_to_clipboard(self.app, str(target))
+            self.notify(f"已导出 {count} 场比赛的复核结果，路径已复制：{target}")
+
+        self.app.push_screen(
+            InputPopup(
+                "导出复核结果",
+                str(Path.home() / "ojaudit-reviews.json"),
+                note="人员结论、线索复核与管理者名单；不含代码与 Cookie",
+                validate=lambda text: None if text.strip() else "请输入文件路径",
+                input_id="reviews-export-path",
+            ),
+            done,
+        )
+
+    def _import_reviews(self) -> None:
+        from ojaudit.core.review_exchange import read_reviews
+
+        def check(text: str) -> str | None:
+            if not text.strip():
+                return "请输入文件路径"
+            try:
+                read_reviews(text.strip())
+            except ValueError as exc:
+                return str(exc)
+            return None
+
+        def info(text: str) -> str:
+            data = read_reviews(text.strip())
+            people = sum(len(c.get("people", [])) for c in data["contests"])
+            findings = sum(len(c.get("findings", [])) for c in data["contests"])
+            return f"{len(data['contests'])} 场比赛 · 人员结论 {people} · 线索复核 {findings}"
+
+        def apply(path: str | None) -> None:
+            if not path:
+                return
+            try:
+                report = self.model.import_reviews(path.strip())
+            except (OSError, ValueError, sqlite3.Error) as exc:
+                self.notify(f"导入失败：{exc}", severity="error")
+                return
+            self.reload()
+            colors = ui.palette(self.app)
+            text = Text(report.summary(), style=colors.fg)
+            if report.conflicts:
+                text.append("\n\n结论不一致（已取更重的一方）：", style=f"bold {colors.warn}")
+                for contest, who, local, imported, chosen in report.conflicts[:12]:
+                    text.append(f"\n{contest} · {who}", style=colors.fg)
+                    text.append(f"  本地 {local} / 导入 {imported} → {chosen}", style=colors.muted)
+                if len(report.conflicts) > 12:
+                    text.append(f"\n… 另有 {len(report.conflicts) - 12} 处", style=colors.muted)
+            self.app.push_screen(InfoPopup("复核结果已合并", text))
+
+        self.app.push_screen(
+            InputPopup(
+                "导入复核结果",
+                str(Path.home() / "ojaudit-reviews.json"),
+                note="选择别人导出的复核结果 JSON",
+                validate=check,
+                info=info,
+                input_id="reviews-import-path",
+            ),
+            apply,
         )
 
     def _delete_contest(self, option: Option) -> None:

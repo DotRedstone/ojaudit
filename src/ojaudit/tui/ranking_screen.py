@@ -21,8 +21,8 @@ from textual.widgets import Label, ListView, Static
 from ojaudit.core.ranking import RankingOptions
 from ojaudit.core.ranking_table import TableOptions
 from ojaudit.tui import ui
+from ojaudit.tui.interaction import LazyRows, NavigateListView, refill
 from ojaudit.tui.interaction import NavigateListItem as ListItem
-from ojaudit.tui.interaction import NavigateListView, refill
 from ojaudit.tui.ranking_data import export_ranking, final_ranking, pending_warnings, ranking_table
 from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.screens import ShellScreen
@@ -184,8 +184,9 @@ class RankingScreen(ShellScreen):
 
         # 预览与导出用同一张表：列随「表格内容」变化，没有任何标记时不显示标记列。
         policy = self.policy()
-        self.preview_rows = list(final_ranking(self.data, policy).rows)
-        table = ranking_table(self.data, policy, self.table_options())
+        ranking = final_ranking(self.data, policy)
+        self.preview_rows = list(ranking.rows)
+        table = ranking_table(self.data, policy, self.table_options(), ranking)
         columns = []
         for header, kind in zip(table.headers, table.kinds):
             if header == "姓名":
@@ -201,8 +202,9 @@ class RankingScreen(ShellScreen):
         self.query_one("#ranking-main .thead", Static).update(
             ui.table_header(columns, total, colors.muted)
         )
-        lines = []
-        for cells, mark in zip(table.rows, table.marks):
+
+        def line(position: int) -> Text:
+            cells, mark = table.rows[position], table.marks[position]
             styled: list[Text] = []
             for header, value in zip(table.headers, cells):
                 if header == "姓名":
@@ -214,8 +216,13 @@ class RankingScreen(ShellScreen):
                     styled.append(Text(str(value), style=colors.muted))
                 else:
                     styled.append(Text(str(value), style=colors.fg))
-            lines.append(ui.table_row(styled, columns, total))
-        refill(preview, lines or [Text("当前策略下无可展示人员", style=colors.muted)])
+            return ui.table_row(styled, columns, total)
+
+        # 只渲染挂载的行（预览上千人时其余行在滚动到时再生成）。
+        lines = LazyRows(len(table.rows), line)
+        refill(
+            preview, lines if table.rows else [Text("当前策略下无可展示人员", style=colors.muted)]
+        )
         self.query_one(
             "#ranking-main"
         ).border_subtitle = f"{len(table.rows)} 人 · {len(table.headers)} 列 · {TABLE[-1][1][self.table_indices[-1]]}"

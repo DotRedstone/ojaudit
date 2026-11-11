@@ -83,8 +83,8 @@ class PendingScreen(TableScreen):
                 self._pairs[(*key, *pair)] = value
         return self._filtered(self.FILTERS[self.filter_index])
 
-    def reload(self) -> None:
-        super().reload()
+    def reload(self, requery: bool = True) -> None:
+        super().reload(requery)
         colors = ui.palette(self.app)
         tabs = Text()
         self.tab_spans = []

@@ -38,6 +38,16 @@ def quick_note(uid: str) -> str:
     return f"随 {uid} 认定作弊一并处理"
 
 
+def _representative_key(row: dict[str, Any]) -> tuple[Any, ...]:
+    """代表提交：最高分 → 最长代码 → 最早提交 → 提交 ID。"""
+    return (
+        -float(row["score"]),
+        -len(row["code"]),
+        int(row["submit_time"]),
+        str(row["submission_id"]),
+    )
+
+
 def _items(rows: Any) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
@@ -143,21 +153,18 @@ class ReviewData:
             items = [item for item in items if item["language"] == language]
         if not items:
             return None
-        return min(
-            items,
-            key=lambda row: (
-                -float(row["score"]),
-                -len(row["code"]),
-                int(row["submit_time"]),
-                str(row["submission_id"]),
-            ),
-        )
+        return min(items, key=_representative_key)
 
     def representatives(self, problem_index: int, order: str = "time") -> list[dict[str, Any]]:
+        # 一次读出这道题的全部提交再分组（以前每人查一次，千人比赛要好几秒）。
+        by_uid: dict[str, list[dict[str, Any]]] = {}
+        for row in self.submissions(problem_index=problem_index):
+            by_uid.setdefault(str(row["uid"]), []).append(row)
         entries: list[dict[str, Any]] = []
         for person in self.people():
-            item = self.representative(person["uid"], problem_index)
-            if item is not None:
+            items = by_uid.get(str(person["uid"]))
+            if items:
+                item = min(items, key=_representative_key)
                 item["hidden"] = person["hidden"]
                 item["mark"] = person["mark"]
                 entries.append(item)

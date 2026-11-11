@@ -19,7 +19,7 @@ ojaudit rank 123456                # 导出 Excel 榜单（非官方；--cheater
 | `login [--qr]` | `--qr` 在终端显示二维码，用微信扫码登录并自动识别 UID；不带参数时交互粘贴 Cookie（不经命令行参数）。保存到 `$XDG_CONFIG_HOME/ojaudit/nowcoder.cookie`，权限 0600。 |
 | `collect <比赛ID>` | 用牛客数据源只读采集并在一个事务中入库；读取设置中的 `collect.*`（并发线程、速率上限、超时、重试、增量采集），开启 `collect.auto_analyze` 时随后自动分析。重新采集时默认只下载本地没有的源码。 |
 | `contests [--all]` | 列出本地比赛；默认应用比赛筛选规则，`--all` 显示全部。 |
-| `analyze <比赛ID> [--platform P] [--threshold T] [--json-out F]` | 运行检测并写入新一轮分析。`--threshold` 为指纹相似度阈值，优先于设置。参数说明见 [检测](detection.md)。 |
+| `analyze <比赛ID> [--platform P] [--threshold T] [--json-out F]` | 运行检测并写入新一轮分析。`--threshold` 为额外的指纹相似度下限（默认 0，不过滤），优先于设置。参数说明见 [检测](detection.md)。 |
 | `mark <平台> <比赛> <UID> normal\|suspect\|cheater [--note]` | 人工标记选手。 |
 | `review <run_id> <UID_A> <UID_B> <题号> <语言> <状态> [--note]` | 复核一条线索，状态为 已核查 / 无需跟进 / 需进一步核实。 |
 | `hidden add\|remove\|list [--platform --uid --nickname]` | 全局管理者名单；检测前剔除，排行榜按策略处理。 |

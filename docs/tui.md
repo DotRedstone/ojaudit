@@ -29,7 +29,7 @@
 
 长列表先挂载前 200 行，选中或滚动接近末尾时再追加下一批；搜索与 `G` 跳到末尾会先加载全部（`interaction.refill` / `LazyRows`）。打开页面只读一次数据库，窗口尺寸变化只重新排版。
 
-排版原语（列对齐、徽章、进度条、提示栏）在 `src/ojaudit/tui/ui.py`，弹窗与搜索行在 `popup.py`，分隔条在 `splitter.py`，样式集中在 `themes/nowcoder.tcss`。
+排版原语（列对齐、徽章、进度条、提示栏）在 `src/ojaudit/tui/ui.py`，弹窗与搜索行在 `popup.py`，分隔条在 `splitter.py`，样式集中在 `themes/nowcoder.tcss`。代码对照的规范化与对齐算法在 `core/code_diff.py`，`tui/code_view.py` 只负责着色与排版。界面只依赖 `core/`，不承载查询或业务规则；`textual` 仅在安装 `ojaudit[tui]` 时引入。
 
 ## 导航
 

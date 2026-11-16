@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### 工程
+- 代码对照算法下沉到 `core.code_diff`：规范化、头文件忽略、变量名对齐、按行对齐与差异统计不再属于界面包；`tui/code_view.py` 只保留渲染（语法高亮、底色、行号），测试随之移到 `tests/core/test_code_diff.py`。
 - 查询层下沉到 `core.query`：`tui/data.py`、`tui/review_data.py`、`tui/contest_list_data.py`、`tui/ranking_data.py`、`tui/workflow.py` 与 `tui/ui.py` 的展示语义移入 `core/query/`（`contests` / `reviews` / `contest_list` / `ranking_view` / `workflow` / `levels`）。`tui/` 从此只放渲染与交互，`tests/core` 也不再依赖界面包。
 - 凭据与扫码登录下沉到 `core.account`：`cookie_file` / `save_cookie` / `current_uid` / `set_uid` / `logged_in_locally` / `logout` / `login_with_qr` / `detect_and_save_uid` 与二维码终端渲染全部与界面无关，CLI 与 TUI 共用；`ojaudit login --qr` 不再依赖 TUI 包。删除 `tui/account_service.py`，`cli_operations` 只负责数据源构造与插件登记。
 - TUI 依赖改为可选：`textual` 从必装依赖移入 `[project.optional-dependencies] tui`。只装核心依赖时全部子命令照常可用（`migrate` / `contests` / `analyze` / `rank` / `export` / `reviews` / `collect` / `login` 等），裸命令 `ojaudit` 会提示 `pip install 'ojaudit[tui]'`。`[dev]` 与新增的 `[all]` 仍包含 Textual。

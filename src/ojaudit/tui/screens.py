@@ -660,7 +660,7 @@ class HomeScreen(ShellScreen):
         self.query_one(f"#tile-{index}", Static).update(body)
 
     def refresh_home(self) -> None:
-        from ojaudit.tui.account_service import current_uid, logged_in_locally
+        from ojaudit.core.account import current_uid, logged_in_locally
         from ojaudit.tui.workflow import pending_entries
 
         colors = ui.palette(self.app)

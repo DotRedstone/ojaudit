@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from ojaudit import cli
-from ojaudit.cli_operations import save_cookie
+from ojaudit.core.account import save_cookie
 from ojaudit.core.analysis import run_analysis
 from ojaudit.core.ingest import migrate_nowcoder
 from ojaudit.core.schema import Contest, Participant, Submission

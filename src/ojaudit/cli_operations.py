@@ -1,8 +1,8 @@
 """
 Module: CLI / operations
-Description: 牛客凭据保存、数据源构造与插件登记。
+Description: 数据源构造与插件登记；凭据与扫码登录已下沉到 core.account。
 Scope: CLI
-Notes: Cookie 文件权限 0600；第三方插件只登记，不导入执行。
+Notes: 第三方插件只登记，不导入执行。
 """
 
 from __future__ import annotations
@@ -14,24 +14,10 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from ojaudit.core.account import cookie_file
 from ojaudit.core.config import config_dir, load_config
 from ojaudit.core.plugins import discover_manifests, parse_manifest
 from ojaudit.plugins.sources.nowcoder import NowcoderSource
-
-
-def cookie_file() -> Path:
-    return config_dir() / "nowcoder.cookie"
-
-
-def save_cookie(cookie: str) -> None:
-    if not cookie.strip() or "\n" in cookie or "\r" in cookie:
-        raise ValueError("Cookie 无效")
-    path = cookie_file()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as stream:
-        stream.write(cookie.strip())
-    os.chmod(path, 0o600)
 
 
 def nowcoder_source():

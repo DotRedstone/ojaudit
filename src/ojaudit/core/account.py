@@ -1,8 +1,8 @@
 """
-Module: TUI / account service
-Description: 在本地终端完成牛客扫码认证并管理 UID 与本机凭据。
-Scope: TUI
-Notes: 二维码只在终端生成和显示；Cookie 不进入 TUI 控件、日志或截图。
+Module: Core / account
+Description: 牛客本机凭据、UID 配置与扫码登录；与界面无关，CLI 与 TUI 共用。
+Scope: Core
+Notes: Cookie 文件权限 0600；二维码只在本地生成，票据不外发；日志与提示不含凭据。
 """
 
 from __future__ import annotations
@@ -10,23 +10,41 @@ from __future__ import annotations
 import base64
 import http.cookiejar
 import json
+import os
 import re
 import sys
 import time
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import qrcode
 
-from ojaudit.cli_operations import cookie_file, save_cookie
-from ojaudit.core.config import load_config, save_config
+from ojaudit.core.config import config_dir, load_config, save_config
 
 BASE = "https://www.nowcoder.com"
 QR_ENDPOINT = BASE + "/oauth2/login/wechat_qr_code"
 STATUS_ENDPOINT = BASE + "/oauth2/login/wechat_mp_status"
 HEADERS = {"User-Agent": "ojaudit/0.1", "Referer": BASE + "/login"}
+
+
+def cookie_file() -> Path:
+    """本机 Cookie 文件路径（不存在时也可安全返回）。"""
+    return config_dir() / "nowcoder.cookie"
+
+
+def save_cookie(cookie: str) -> None:
+    """写入 Cookie 文件，权限固定 0600，拒绝空值与换行注入。"""
+    if not cookie.strip() or "\n" in cookie or "\r" in cookie:
+        raise ValueError("Cookie 无效")
+    path = cookie_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        stream.write(cookie.strip())
+    os.chmod(path, 0o600)
 
 
 def current_uid() -> str:

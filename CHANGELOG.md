@@ -3,7 +3,8 @@
 ## Unreleased
 
 ### 工程
-- TUI 依赖改为可选：`textual` 从必装依赖移入 `[project.optional-dependencies] tui`。只装核心依赖时全部子命令照常可用（`migrate` / `contests` / `analyze` / `rank` / `export` / `reviews` / `collect` 等），裸命令 `ojaudit` 会提示 `pip install 'ojaudit[tui]'`。`[dev]` 与新增的 `[all]` 仍包含 Textual。
+- 凭据与扫码登录下沉到 `core.account`：`cookie_file` / `save_cookie` / `current_uid` / `set_uid` / `logged_in_locally` / `logout` / `login_with_qr` / `detect_and_save_uid` 与二维码终端渲染全部与界面无关，CLI 与 TUI 共用；`ojaudit login --qr` 不再依赖 TUI 包。删除 `tui/account_service.py`，`cli_operations` 只负责数据源构造与插件登记。
+- TUI 依赖改为可选：`textual` 从必装依赖移入 `[project.optional-dependencies] tui`。只装核心依赖时全部子命令照常可用（`migrate` / `contests` / `analyze` / `rank` / `export` / `reviews` / `collect` / `login` 等），裸命令 `ojaudit` 会提示 `pip install 'ojaudit[tui]'`。`[dev]` 与新增的 `[all]` 仍包含 Textual。
 - 新增子进程级回归测试，覆盖「未安装 TUI 时 CLI 仍可执行」与安装提示文案。
 
 ## 0.1.0 - 2026-11-16

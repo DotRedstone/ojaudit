@@ -267,7 +267,7 @@ class AuditApp(App[None]):
 
     def sync_joined(self, force: bool = False) -> None:
         """后台拉取账号参加过的比赛，登记为「未采集」；每次启动自动一次，S 键可手动刷新。"""
-        from ojaudit.tui.account_service import logged_in_locally
+        from ojaudit.core.account import logged_in_locally
 
         if (self.synced_joined and not force) or not (self.auto_sync or force):
             return
@@ -280,8 +280,8 @@ class AuditApp(App[None]):
 
     def _sync_joined(self) -> None:
         from ojaudit.cli_operations import nowcoder_source
+        from ojaudit.core.account import current_uid, detect_and_save_uid
         from ojaudit.core.store import Store
-        from ojaudit.tui.account_service import current_uid, detect_and_save_uid
 
         self.call_from_thread(self._publish_sync, "正在同步已参加的比赛")
         try:

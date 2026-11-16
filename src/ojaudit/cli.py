@@ -207,19 +207,32 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(1) from None
 
 
+_TUI_HINT = "未安装 TUI 依赖。安装后可进入界面：pip install 'ojaudit[tui]'"
+
+
 def _run(args: argparse.Namespace) -> None:
     if args.command is None:
         from importlib import import_module
 
         try:
             entry = import_module("ojaudit.tui.app").main
+        except ModuleNotFoundError as exc:
+            # 缺 textual 是安装形态问题，给出可执行的修复提示；其余导入错误保持原行为。
+            if exc.name == "textual" or (exc.name or "").startswith("ojaudit.tui"):
+                raise SystemExit(_TUI_HINT) from None
+            raise
         except (ImportError, AttributeError) as exc:
             raise SystemExit("TUI 入口尚未就绪，请使用 ojaudit --help") from exc
         entry(db_path=args.db)
         return
     if args.command == "login":
         if args.qr:
-            from ojaudit.tui.account_service import detect_and_save_uid, login_with_qr
+            try:
+                from ojaudit.tui.account_service import detect_and_save_uid, login_with_qr
+            except ModuleNotFoundError as exc:
+                if exc.name == "textual" or (exc.name or "").startswith("ojaudit.tui"):
+                    raise SystemExit(_TUI_HINT) from None
+                raise
 
             login_with_qr()
             try:

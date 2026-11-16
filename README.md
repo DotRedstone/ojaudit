@@ -5,9 +5,12 @@
 ## 安装
 
 - Nix：`nix run github:DotRedstone/ojaudit`（需在对应版本公开且 flake 输出可用时）
-- pipx：`pipx install .`
-- uv：`uv tool install .`
+- pipx：`pipx install 'ojaudit[tui]'`
+- uv：`uv tool install 'ojaudit[tui]'`
+- 只需要命令行：`pipx install ojaudit`（不装 Textual，`ojaudit` 各子命令照常可用）
 - 开发：`python -m pip install -e '.[dev]'`
+
+命令行是完整功能入口；终端界面（TUI）是可选扩展，安装 `ojaudit[tui]` 后才能用裸命令 `ojaudit` 进入。
 
 ## 快速开始
 

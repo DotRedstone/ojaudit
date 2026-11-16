@@ -1,7 +1,7 @@
 """
-Module: TUI / ranking data
-Description: 把 TUI 的只读比赛数据交给 core.ranking 推导、排名与导出，并汇总待处理提醒。
-Scope: TUI
+Module: Core / query / ranking view
+Description: 把只读比赛数据交给 core.ranking 推导、排名与导出，并汇总待处理提醒。
+Scope: Core
 Notes: 推导规则只在 core.ranking 中实现，CLI 与 TUI 结果一致。
 """
 
@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ojaudit.core.people import HiddenPerson
+from ojaudit.core.query.reviews import ReviewData
 from ojaudit.core.ranking import (
     FinalRanking,
     RankingOptions,
@@ -19,7 +20,6 @@ from ojaudit.core.ranking import (
 )
 from ojaudit.core.ranking import export_ranking as export_rows
 from ojaudit.core.ranking_table import RankingTable, TableOptions, build_table
-from ojaudit.tui.review_data import ReviewData
 
 
 def derived_rows(data: ReviewData) -> list[dict]:

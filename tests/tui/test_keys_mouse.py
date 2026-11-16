@@ -11,10 +11,10 @@ import asyncio
 
 from textual.widgets import Input, ListView
 
+from ojaudit.core.query.contests import LocalContests
 from ojaudit.core.schema import Contest, Submission
 from ojaudit.core.store import Store
 from ojaudit.tui.app import AuditApp
-from ojaudit.tui.data import LocalContests
 from ojaudit.tui.review_screens import ReviewPopup
 from ojaudit.tui.screens import ContestListScreen, ContestOverviewScreen, EntryDialog, HomeScreen
 from ojaudit.tui.settings_model import SettingsModel
@@ -245,9 +245,9 @@ def test_refilled_list_keeps_visible_highlight(tmp_path):
 
 def test_long_lists_mount_in_batches(tmp_path):
     """长列表先挂载一批；移动到末尾附近、G 跳到末尾、搜索靠后的行都会加载后面的行。"""
+    from ojaudit.core.query.reviews import ReviewData
     from ojaudit.core.schema import Participant
     from ojaudit.tui.interaction import CHUNK
-    from ojaudit.tui.review_data import ReviewData
     from ojaudit.tui.review_screens import PeopleScreen
 
     db = tmp_path / "many.sqlite"

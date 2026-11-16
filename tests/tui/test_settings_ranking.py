@@ -14,13 +14,13 @@ from textual.widgets import Label, ListView, Static
 from ojaudit.core.config import load_config
 from ojaudit.core.filters import ContestFilter, load_contest_filter
 from ojaudit.core.plugins import parse_manifest
+from ojaudit.core.query.contests import LocalContests
+from ojaudit.core.query.ranking_view import export_ranking, final_ranking, pending_warnings
+from ojaudit.core.query.reviews import ReviewData
 from ojaudit.core.ranking import RankingOptions
 from ojaudit.core.store import Store
 from ojaudit.tui.app import AuditApp
-from ojaudit.tui.data import LocalContests
-from ojaudit.tui.ranking_data import export_ranking, final_ranking, pending_warnings
 from ojaudit.tui.ranking_screen import RankingScreen
-from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.settings_model import CATEGORIES, SettingsModel
 from ojaudit.tui.settings_screen import ConfirmLeave, SettingsScreen
 

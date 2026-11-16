@@ -11,10 +11,10 @@ import json
 from textual.widgets import Input
 
 from ojaudit.core.filters import ContestFilter
+from ojaudit.core.query.contests import LocalContests
+from ojaudit.core.query.reviews import ReviewData
 from ojaudit.core.store import Store
 from ojaudit.tui.app import AuditApp
-from ojaudit.tui.data import LocalContests
-from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.review_screens import (
     CodeScreen,
     EvidenceScreen,

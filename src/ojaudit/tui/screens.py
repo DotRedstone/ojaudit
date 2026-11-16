@@ -22,10 +22,10 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Label, ListView, Static
 
+from ojaudit.core.query.contest_list import ContestSummary, contest_summary
+from ojaudit.core.query.contests import LocalContests
 from ojaudit.core.schema import Contest
 from ojaudit.tui import ui
-from ojaudit.tui.contest_list_data import ContestSummary, contest_summary
-from ojaudit.tui.data import LocalContests
 from ojaudit.tui.icons import glyph, label
 from ojaudit.tui.interaction import LazyRows, refill
 from ojaudit.tui.interaction import NavigateListItem as ListItem
@@ -661,7 +661,7 @@ class HomeScreen(ShellScreen):
 
     def refresh_home(self) -> None:
         from ojaudit.core.account import current_uid, logged_in_locally
-        from ojaudit.tui.workflow import pending_entries
+        from ojaudit.core.query.workflow import pending_entries
 
         colors = ui.palette(self.app)
         # 被过滤规则或手动剔除的比赛不在首页出现，也不进待复核。
@@ -752,7 +752,7 @@ class HomeScreen(ShellScreen):
         )
 
     def _queue_row(self, entry: Any, width: int) -> Text:
-        from ojaudit.tui.review_data import ReviewData
+        from ojaudit.core.query.reviews import ReviewData
 
         colors = ui.palette(self.app)
         key = (entry.contest.platform, entry.contest.contest_id)
@@ -830,7 +830,7 @@ class HomeScreen(ShellScreen):
             widget = widget.parent  # type: ignore[assignment]
 
     def open_queue(self, entry: Any) -> None:
-        from ojaudit.tui.review_data import ReviewData
+        from ojaudit.core.query.reviews import ReviewData
         from ojaudit.tui.review_screens import EvidenceScreen, PersonScreen
 
         data = ReviewData(self.app.contests, entry.contest)
@@ -1186,7 +1186,7 @@ class ContestOverviewScreen(ShellScreen):
         self.app.cancel_workflow()
 
     def open_index(self, index: int) -> None:
-        from ojaudit.tui.review_data import ReviewData
+        from ojaudit.core.query.reviews import ReviewData
         from ojaudit.tui.review_screens import FindingsScreen, PeopleScreen, ProblemsScreen
 
         if index not in (0, 1, 2, 3):

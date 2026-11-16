@@ -1,7 +1,7 @@
 """
-Module: TUI / workflow
+Module: Core / query / workflow
 Description: 后台采集、入库与分析的同步步骤，以及跨比赛待复核条目。
-Scope: TUI
+Scope: Core
 Notes: 在后台线程中运行；每步独立打开 Store，不跨线程共享连接。
 """
 
@@ -13,10 +13,10 @@ from typing import Any
 
 from ojaudit.core.analysis import run_analysis
 from ojaudit.core.ingest import import_bundle
+from ojaudit.core.query.contests import LocalContests
+from ojaudit.core.query.reviews import ReviewData
 from ojaudit.core.schema import Contest
 from ojaudit.core.store import Store
-from ojaudit.tui.data import LocalContests
-from ojaudit.tui.review_data import ReviewData
 
 
 @dataclass(frozen=True)

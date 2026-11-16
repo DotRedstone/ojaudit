@@ -1,7 +1,7 @@
 """
-Module: TUI / data
+Module: Core / query / contests
 Description: 从本地数据库只读加载比赛及总览统计。
-Scope: TUI
+Scope: Core
 Notes:
 - 不创建或迁移数据库；缺失数据库视为空数据。
 - 不触发数据源插件或网络请求。

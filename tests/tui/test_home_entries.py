@@ -10,10 +10,10 @@ import stat
 
 from textual.widgets import Input, ListView
 
+from ojaudit.core.query.contests import LocalContests
 from ojaudit.core.store import Store
 from ojaudit.tui.account_screen import AccountScreen
 from ojaudit.tui.app import AuditApp
-from ojaudit.tui.data import LocalContests
 from ojaudit.tui.screens import ContestOverviewScreen, EntryDialog, HomeScreen, MissingContestScreen
 
 

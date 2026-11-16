@@ -4,6 +4,8 @@
 
 数据流：采集 → 标准化存储 → 比赛筛选 → 管理者过滤 → 确定性分析 → 人工复核与人员标记 → 排名与导出。
 
+分层约定：**命令行是完整入口，终端界面只是可选前端**。`core/`、`plugins/`、`cli.py` 不导入 `tui/`；`tui/` 单向依赖 `core/`，且 `textual` 仅在安装 `ojaudit[tui]` 时引入。
+
 ## 模块边界
 
 - core.schema：平台无关数据对象与字段约束。
@@ -17,7 +19,8 @@
 - core.ranking：人员标记/隐藏名单策略与最终排名。
 - core.plugins：插件清单校验和发现；不隐式执行第三方代码。
 - core.analysis：一次比赛分析的完整流程（配置与参数校验、排除管理者、运行检测、写库），CLI 与 TUI 共用。
+- core.query：界面无关的读写模型 —— `contests`（比赛列表与统计）、`reviews`（复核面板数据）、`contest_list`（总览摘要）、`ranking_view`（榜单视图与待处理提醒）、`workflow`（采集入库分析编排与待复核条目）、`levels`（等级、标记、题号与时间语义）。
 - plugins/：内置或外部能力实现。
-- tui/：Textual Screen 栈与交互界面。
+- tui/：Textual Screen 栈与交互界面；只放渲染与交互，不承载查询或业务规则。`tui.ui` 仅保留排版原语，展示语义转发自 `core.query.levels`。
 
 模块权威接口见 data-model.md 与 plugin-api.md。阶段进度唯一来源为 roadmap.md。

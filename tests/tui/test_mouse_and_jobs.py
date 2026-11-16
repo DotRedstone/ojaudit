@@ -15,11 +15,11 @@ import threading
 import pytest
 from textual.widgets import ListView
 
+from ojaudit.core.query.contests import LocalContests
 from ojaudit.core.schema import Contest, Participant, Submission
 from ojaudit.core.store import Store
 from ojaudit.plugins.sources.nowcoder import NowcoderSource
 from ojaudit.tui.app import AuditApp
-from ojaudit.tui.data import LocalContests
 from ojaudit.tui.popup import ConfirmPopup, InputPopup
 from ojaudit.tui.screens import ContestListScreen, HomeScreen
 from ojaudit.tui.settings_model import CATEGORIES, SettingsModel

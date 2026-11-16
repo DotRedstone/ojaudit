@@ -1,7 +1,7 @@
 """
-Module: TUI / contest list overview
+Module: Core / query / contest list
 Description: 汇总本地比赛日期、采集/分析状态、线索分级与复核进度。
-Scope: TUI
+Scope: Core
 Notes: 只读本机 SQLite；不将推导榜单误写成官方排名。
 """
 
@@ -10,10 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from ojaudit.core.query.contests import ContestStats, LocalContests
+from ojaudit.core.query.levels import level_rank
+from ojaudit.core.query.reviews import ReviewData
 from ojaudit.core.schema import Contest
-from ojaudit.tui.data import ContestStats, LocalContests
-from ojaudit.tui.review_data import ReviewData
-from ojaudit.tui.ui import level_rank
 
 
 @dataclass(frozen=True, slots=True)

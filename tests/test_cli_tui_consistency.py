@@ -9,12 +9,12 @@ from types import SimpleNamespace
 
 from ojaudit.cli import _export
 from ojaudit.core.config import data_dir
+from ojaudit.core.query.contests import LocalContests
+from ojaudit.core.query.ranking_view import derived_rows, export_ranking, final_ranking
+from ojaudit.core.query.reviews import ReviewData
 from ojaudit.core.ranking import RankingOptions, contest_ranking
 from ojaudit.core.schema import Contest
 from ojaudit.core.store import Store
-from ojaudit.tui.data import LocalContests
-from ojaudit.tui.ranking_data import derived_rows, export_ranking, final_ranking
-from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.settings_model import SettingsModel, plugin_manifests
 
 

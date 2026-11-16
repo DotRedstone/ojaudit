@@ -15,10 +15,10 @@ from ojaudit import cli
 from ojaudit.core.account import save_cookie
 from ojaudit.core.analysis import run_analysis
 from ojaudit.core.ingest import migrate_nowcoder
+from ojaudit.core.query.contests import LocalContests
+from ojaudit.core.query.reviews import ReviewData
 from ojaudit.core.schema import Contest, Participant, Submission
 from ojaudit.core.store import Store
-from ojaudit.tui.data import LocalContests
-from ojaudit.tui.review_data import ReviewData
 
 
 def test_legacy_sqlite_and_reviews_readonly(tmp_path):

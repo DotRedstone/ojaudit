@@ -8,10 +8,10 @@ Notes: 只使用合成数据，不访问网络。
 import json
 
 from ojaudit.core.ingest import import_json
+from ojaudit.core.query.contests import LocalContests
+from ojaudit.core.query.reviews import ReviewData
 from ojaudit.core.schema import Contest
 from ojaudit.core.store import Store
-from ojaudit.tui.data import LocalContests
-from ojaudit.tui.review_data import ReviewData
 
 
 def test_json_migration_problems_and_legacy_fallback(tmp_path):

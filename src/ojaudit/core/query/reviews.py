@@ -1,7 +1,7 @@
 """
-Module: TUI / review data
+Module: Core / query / reviews
 Description: 读取本地证据与提交历史并通过核心 Store 保存人工结论。
-Scope: TUI
+Scope: Core
 Notes:
 - 查询只访问本地 SQLite；写入限于核心 Store 的人工记录接口。
 - 检测结果与人工记录分离，不重新分析或覆盖历史结果。
@@ -14,11 +14,11 @@ import sqlite3
 from datetime import UTC, datetime
 from typing import Any
 
+from ojaudit.core.query.contests import LocalContests
+from ojaudit.core.query.levels import level_rank, level_weight
 from ojaudit.core.reviews import DEFAULT_REVIEW_STATUS, finding_key
 from ojaudit.core.schema import Contest, is_accepted
 from ojaudit.core.store import Store
-from ojaudit.tui.data import LocalContests
-from ojaudit.tui.ui import level_rank, level_weight
 
 # 复核只有「作弊 / 存疑 / 正常」三种结论（外加撤销）；线索状态与人员标记都由它推出。
 VERDICTS = ("cheater", "suspect", "normal")

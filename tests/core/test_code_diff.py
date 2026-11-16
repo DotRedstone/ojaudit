@@ -1,11 +1,11 @@
 """
-Module: Test / TUI code view
+Module: Test / Core code diff
 Description: 代码规范化、头文件忽略、变量名对齐与按行对齐。
 Scope: Test
-Notes: 只使用合成代码。
+Notes: 只使用合成代码；本模块测 core.code_diff 的纯算法，不涉及渲染。
 """
 
-from ojaudit.tui.code_view import align, format_lines, rename, variable_mapping
+from ojaudit.core.code_diff import align, format_lines, rename, variable_mapping
 
 A = """#include <bits/stdc++.h>
 using namespace std;

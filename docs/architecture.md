@@ -19,6 +19,7 @@
 - core.ranking：人员标记/隐藏名单策略与最终排名。
 - core.plugins：插件清单校验和发现；不隐式执行第三方代码。
 - core.analysis：一次比赛分析的完整流程（配置与参数校验、排除管理者、运行检测、写库），CLI 与 TUI 共用。
+- core.code_diff：代码对照算法 —— 规范化格式、忽略头文件与样板、变量名对齐、按行对齐与差异统计；只处理文本，渲染在 `tui/code_view.py`。
 - core.query：界面无关的读写模型 —— `contests`（比赛列表与统计）、`reviews`（复核面板数据）、`contest_list`（总览摘要）、`ranking_view`（榜单视图与待处理提醒）、`workflow`（采集入库分析编排与待复核条目）、`levels`（等级、标记、题号与时间语义）。
 - plugins/：内置或外部能力实现。
 - tui/：Textual Screen 栈与交互界面；只放渲染与交互，不承载查询或业务规则。`tui.ui` 仅保留排版原语，展示语义转发自 `core.query.levels`。

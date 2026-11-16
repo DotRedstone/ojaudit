@@ -74,8 +74,32 @@ def test_core_command_runs_without_tui(tmp_path):
     assert "textual" not in result.stderr.lower()
 
 
-def test_login_qr_hints_tui_extra():
-    """扫码登录当前复用 TUI 包内的服务层，缺依赖时给出同一安装提示。"""
-    result = _run_cli("login", "--qr")
-    assert result.returncode != 0
-    assert "ojaudit[tui]" in result.stderr
+def test_login_qr_does_not_require_tui():
+    """扫码登录的服务层已在 core，缺 TUI 依赖时仍可导入并调用。"""
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.pathsep.join([str(ROOT / "src"), str(ROOT)]),
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+    script = (
+        _BLOCKER
+        + "\n"
+        + textwrap.dedent(
+            """
+        from ojaudit.core.account import detect_and_save_uid, login_with_qr
+
+        assert callable(login_with_qr) and callable(detect_and_save_uid)
+        print("ok")
+        """
+        )
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        check=False,
+        text=True,
+        env=env,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "ok" in result.stdout

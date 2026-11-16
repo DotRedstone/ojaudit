@@ -16,11 +16,9 @@ from types import SimpleNamespace
 import pytest
 from textual.widgets import Label, ListView, Static
 
-from ojaudit.cli_operations import cookie_file
-from ojaudit.core.store import Store
-from ojaudit.tui.account_screen import AccountScreen, UidDialog
-from ojaudit.tui.account_service import (
+from ojaudit.core.account import (
     _wechat_url,
+    cookie_file,
     current_uid,
     logged_in_locally,
     login_with_qr,
@@ -28,6 +26,8 @@ from ojaudit.tui.account_service import (
     qr_terminal_text,
     set_uid,
 )
+from ojaudit.core.store import Store
+from ojaudit.tui.account_screen import AccountScreen, UidDialog
 from ojaudit.tui.app import AuditApp
 from ojaudit.tui.contest_list_data import contest_list_description
 from ojaudit.tui.data import LocalContests

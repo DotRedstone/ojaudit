@@ -10,6 +10,7 @@
 - core.store：SQLite 连接、schema 迁移与全部写入；写入经 `transaction()`，嵌套调用并入最外层事务，失败整体回滚。
 - core.ingest：数据源包、JSON 导入包、旧 nowcoder-collect 库 → 标准对象 → 单事务写入。
 - core.config：XDG 配置路径及 TOML 读写。
+- core.account：牛客本机凭据（Cookie 0600）、UID 配置与扫码登录；CLI 与 TUI 共用，不依赖界面。
 - core.filters：比赛正则白黑名单、规则外手动打开标记。
 - core.people：全局隐藏人员名单与检测输入过滤。
 - core.reviews：线索复核状态与失效提示。

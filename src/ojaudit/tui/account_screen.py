@@ -17,9 +17,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import Label, Static
 
-from ojaudit.cli_operations import save_cookie
-from ojaudit.tui import ui
-from ojaudit.tui.account_service import (
+from ojaudit.core.account import (
     current_uid,
     detect_and_save_uid,
     logged_in_locally,
@@ -27,8 +25,10 @@ from ojaudit.tui.account_service import (
     logout,
     qr_half_blocks,
     qr_matrix,
+    save_cookie,
     set_uid,
 )
+from ojaudit.tui import ui
 from ojaudit.tui.icons import label
 from ojaudit.tui.interaction import NavigateListItem as ListItem
 from ojaudit.tui.interaction import NavigateListView

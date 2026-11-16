@@ -16,7 +16,8 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ojaudit.cli_operations import known_codes, nowcoder_source, plugins_command, save_cookie
+from ojaudit.cli_operations import known_codes, nowcoder_source, plugins_command
+from ojaudit.core.account import save_cookie
 from ojaudit.core.analysis import run_analysis
 from ojaudit.core.config import data_dir, load_config
 from ojaudit.core.filters import filter_contests, load_contest_filter
@@ -227,12 +228,7 @@ def _run(args: argparse.Namespace) -> None:
         return
     if args.command == "login":
         if args.qr:
-            try:
-                from ojaudit.tui.account_service import detect_and_save_uid, login_with_qr
-            except ModuleNotFoundError as exc:
-                if exc.name == "textual" or (exc.name or "").startswith("ojaudit.tui"):
-                    raise SystemExit(_TUI_HINT) from None
-                raise
+            from ojaudit.core.account import detect_and_save_uid, login_with_qr
 
             login_with_qr()
             try:

@@ -14,12 +14,12 @@ import time
 
 from textual.widgets import ListView, Static
 
+from ojaudit.core.account import qr_half_blocks, qr_matrix
 from ojaudit.core.config import load_config, save_config
 from ojaudit.core.schema import Contest, Submission
 from ojaudit.core.store import Store
 from ojaudit.tui import account_screen
 from ojaudit.tui.account_screen import QrLoginScreen
-from ojaudit.tui.account_service import qr_half_blocks, qr_matrix
 from ojaudit.tui.app import AuditApp
 from ojaudit.tui.data import LocalContests
 from ojaudit.tui.popup import ConfirmPopup, SearchLine
@@ -123,9 +123,7 @@ def test_splitter_drag_resizes_and_remembers(tmp_path, monkeypatch):
 
 def test_joined_contests_sync_and_confirm_collect(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    monkeypatch.setattr(
-        "ojaudit.tui.account_service.detect_and_save_uid", lambda: "1234", raising=True
-    )
+    monkeypatch.setattr("ojaudit.core.account.detect_and_save_uid", lambda: "1234", raising=True)
     db = tmp_path / "s.sqlite"
     with Store(db) as store:
         store.import_contest(

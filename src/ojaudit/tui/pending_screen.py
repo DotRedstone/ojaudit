@@ -14,11 +14,11 @@ from rich.text import Text
 from textual import events
 from textual.widgets import Static
 
+from ojaudit.core.query.reviews import ReviewData, pair_key, pair_scores
+from ojaudit.core.query.workflow import PendingEntry, is_pending, review_entries
 from ojaudit.tui import ui
-from ojaudit.tui.review_data import ReviewData, pair_key, pair_scores
 from ojaudit.tui.review_screens import EvidenceScreen, PersonScreen, level_chip, status_text
 from ojaudit.tui.screens import TableScreen
-from ojaudit.tui.workflow import PendingEntry, is_pending, review_entries
 
 
 class PendingScreen(TableScreen):

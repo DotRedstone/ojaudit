@@ -19,11 +19,11 @@ from textual.app import App
 from textual.binding import Binding
 
 from ojaudit.core.config import config_dir, data_dir, load_config
-from ojaudit.tui.data import LocalContests
+from ojaudit.core.query.contests import LocalContests
+from ojaudit.core.query.workflow import analyze_local, local_codes, persist_bundle
 from ojaudit.tui.icons import label
 from ojaudit.tui.rice_theme import load_wallpaper_theme, wallpaper_signature
 from ojaudit.tui.screens import HomeScreen
-from ojaudit.tui.workflow import analyze_local, local_codes, persist_bundle
 
 
 class AuditApp(App[None]):

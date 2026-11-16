@@ -26,11 +26,11 @@ from ojaudit.core.account import (
     qr_terminal_text,
     set_uid,
 )
+from ojaudit.core.query.contest_list import contest_list_description
+from ojaudit.core.query.contests import LocalContests
 from ojaudit.core.store import Store
 from ojaudit.tui.account_screen import AccountScreen, UidDialog
 from ojaudit.tui.app import AuditApp
-from ojaudit.tui.contest_list_data import contest_list_description
-from ojaudit.tui.data import LocalContests
 from ojaudit.tui.review_screens import FindingsScreen
 from ojaudit.tui.screens import ContestListScreen
 

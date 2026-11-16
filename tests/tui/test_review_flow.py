@@ -14,12 +14,12 @@ from pathlib import Path
 from textual.widgets import ListView, Static
 
 from ojaudit.core.config import load_config
+from ojaudit.core.query.contests import LocalContests
+from ojaudit.core.query.reviews import ReviewData
 from ojaudit.core.schema import Contest, Participant, Problem, Submission
 from ojaudit.core.store import Store
 from ojaudit.tui.app import AuditApp
-from ojaudit.tui.data import LocalContests
 from ojaudit.tui.pending_screen import PendingScreen
-from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.review_screens import EvidenceScreen, FindingsScreen, nowcoder_links
 from ojaudit.tui.settings_model import SettingsModel
 from ojaudit.tui.settings_screen import SettingsScreen

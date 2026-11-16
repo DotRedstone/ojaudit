@@ -16,12 +16,12 @@ from textual.widgets import ListView, Static
 
 from ojaudit.core.account import qr_half_blocks, qr_matrix
 from ojaudit.core.config import load_config, save_config
+from ojaudit.core.query.contests import LocalContests
 from ojaudit.core.schema import Contest, Submission
 from ojaudit.core.store import Store
 from ojaudit.tui import account_screen
 from ojaudit.tui.account_screen import QrLoginScreen
 from ojaudit.tui.app import AuditApp
-from ojaudit.tui.data import LocalContests
 from ojaudit.tui.popup import ConfirmPopup, SearchLine
 from ojaudit.tui.screens import ContestListScreen
 from ojaudit.tui.settings_model import CATEGORIES, SettingsModel

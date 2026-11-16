@@ -11,11 +11,11 @@ import asyncio
 
 from textual.widgets import Footer, Static
 
+from ojaudit.core.query.contests import LocalContests
+from ojaudit.core.query.reviews import ReviewData
 from ojaudit.core.store import Store
 from ojaudit.tui.app import AuditApp
-from ojaudit.tui.data import LocalContests
 from ojaudit.tui.ranking_screen import RankingScreen
-from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.review_screens import FindingsScreen, PeopleScreen, ProblemsScreen, ReviewPopup
 from ojaudit.tui.screens import (
     ContestListScreen,

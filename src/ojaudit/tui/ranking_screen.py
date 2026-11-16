@@ -18,13 +18,18 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Label, ListView, Static
 
+from ojaudit.core.query.ranking_view import (
+    export_ranking,
+    final_ranking,
+    pending_warnings,
+    ranking_table,
+)
+from ojaudit.core.query.reviews import ReviewData
 from ojaudit.core.ranking import RankingOptions
 from ojaudit.core.ranking_table import TableOptions
 from ojaudit.tui import ui
 from ojaudit.tui.interaction import LazyRows, NavigateListView, refill
 from ojaudit.tui.interaction import NavigateListItem as ListItem
-from ojaudit.tui.ranking_data import export_ranking, final_ranking, pending_warnings, ranking_table
-from ojaudit.tui.review_data import ReviewData
 from ojaudit.tui.screens import ShellScreen
 from ojaudit.tui.splitter import Splitter
 

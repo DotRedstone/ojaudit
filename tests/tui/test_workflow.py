@@ -8,14 +8,14 @@ Notes: 只使用合成数据，不访问网络。
 import asyncio
 import threading
 
+from ojaudit.core.query.contests import LocalContests
+from ojaudit.core.query.workflow import pending_entries
 from ojaudit.core.schema import Contest, Participant, Problem, Submission
 from ojaudit.core.store import Store
 from ojaudit.plugins.sources.nowcoder import NowcoderBundle
 from ojaudit.tui.app import AuditApp
-from ojaudit.tui.data import LocalContests
 from ojaudit.tui.pending_screen import PendingScreen
 from ojaudit.tui.screens import ContestOverviewScreen, MissingContestScreen
-from ojaudit.tui.workflow import pending_entries
 
 
 def bundle():

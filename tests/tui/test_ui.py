@@ -7,10 +7,10 @@ Notes: 仅使用合成数据。
 
 from rich.text import Text
 
+from ojaudit.core.query.contest_list import contest_summary
+from ojaudit.core.query.contests import LocalContests
 from ojaudit.core.store import Store
 from ojaudit.tui import ui
-from ojaudit.tui.contest_list_data import contest_summary
-from ojaudit.tui.data import LocalContests
 
 
 def test_levels_merge_chinese_and_english_names():

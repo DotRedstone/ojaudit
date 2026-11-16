@@ -5,32 +5,60 @@ Scope: TUI
 Notes:
 - 所有宽度按终端单元格（中文占两格）计算，避免列错位。
 - 颜色取自当前 Textual 主题，跟随壁纸主题变化；本模块不读写任何数据。
+- 等级、题号与时间等展示语义位于 core.query.levels；此处转发，界面代码统一从 ui 取用。
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Any
 
 from rich.cells import cell_len
 from rich.text import Text
 
+from ojaudit.core.query.levels import (
+    LEVEL_WEIGHT,
+    MARK_NAMES,
+    clock,
+    duration,
+    is_high_priority,
+    level_name,
+    level_rank,
+    level_weight,
+    percent,
+    problem_label,
+)
 from ojaudit.core.schema import is_accepted
 
-# 检测等级：旧检测器输出中文分级，示例数据和外部插件可能输出 high/medium/low。
-# rank 越小越需要优先复核；未知等级排在最后。
-_LEVELS: dict[str, tuple[str, int]] = {
-    "实锤": ("实锤", 0),
-    "high": ("高", 0),
-    "中偏强": ("中偏强", 1),
-    "medium": ("中", 1),
-    "存疑": ("存疑", 2),
-    "low": ("低", 2),
-    "排除": ("排除", 3),
-}
-MARK_NAMES = {"normal": "正常", "suspect": "存疑", "cheater": "作弊者"}
+__all__ = [
+    "LEVEL_WEIGHT",
+    "MARK_NAMES",
+    "Column",
+    "Palette",
+    "Reversed",
+    "bar",
+    "chip",
+    "clock",
+    "column_at",
+    "dot",
+    "duration",
+    "fit",
+    "is_high_priority",
+    "keybar",
+    "layout",
+    "level_name",
+    "level_rank",
+    "level_weight",
+    "palette",
+    "percent",
+    "person_text",
+    "problem_label",
+    "progress",
+    "table_header",
+    "table_row",
+    "verdict_color",
+]
 
 
 class Reversed:
@@ -49,41 +77,6 @@ class Reversed:
 
     def __hash__(self) -> int:
         return hash(self.value)
-
-
-def problem_label(index: object) -> str:
-    """题号显示为 A、B、…、Z、AA（与比赛页面一致）。"""
-    try:
-        number = int(index)  # type: ignore[call-overload]
-    except (TypeError, ValueError):
-        return str(index)
-    label = ""
-    number += 1
-    while number > 0:
-        number, rest = divmod(number - 1, 26)
-        label = chr(ord("A") + rest) + label
-    return label
-
-
-LEVEL_WEIGHT = {0: 3, 1: 2, 2: 1}
-
-
-def level_weight(level: object) -> int:
-    """人物对嫌疑度的计分：实锤 3、中偏强 2、存疑 1。"""
-    return LEVEL_WEIGHT.get(level_rank(level), 0)
-
-
-def level_rank(level: object) -> int:
-    return _LEVELS.get(str(level).strip().lower(), _LEVELS.get(str(level), ("", 9)))[1]
-
-
-def level_name(level: object) -> str:
-    raw = str(level).strip()
-    return _LEVELS.get(raw.lower(), _LEVELS.get(raw, (raw, 9)))[0]
-
-
-def is_high_priority(level: object) -> bool:
-    return level_rank(level) <= 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -276,38 +269,6 @@ def progress(done: int, total: int, colors: Palette, width: int = 8) -> Text:
     text = bar(done / total, width, colors.ok if done == total else colors.accent, colors.surface)
     text.append(f" {done}/{total}", style=colors.fg if done < total else colors.ok)
     return text
-
-
-def percent(value: object) -> str:
-    try:
-        return f"{float(value):.0%}"  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return str(value)
-
-
-def clock(timestamp: object) -> str:
-    """提交时间统一为毫秒；过小的值视为合成或相对时间，原样显示。"""
-    try:
-        value = int(timestamp)  # type: ignore[call-overload]
-    except (TypeError, ValueError):
-        return str(timestamp)
-    if value < 10**11:
-        return str(value)
-    return datetime.fromtimestamp(value / 1000).astimezone().strftime("%m-%d %H:%M:%S")
-
-
-def duration(seconds: object) -> str:
-    try:
-        total = round(float(seconds))  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return "—"
-    hours, rest = divmod(total, 3600)
-    minutes, secs = divmod(rest, 60)
-    if hours:
-        return f"{hours} 时 {minutes} 分"
-    if minutes:
-        return f"{minutes} 分 {secs} 秒"
-    return f"{secs} 秒"
 
 
 def verdict_color(verdict: str, colors: Palette) -> str:

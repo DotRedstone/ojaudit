@@ -22,6 +22,14 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, ScrollableContainer, Vertical, VerticalScroll
 from textual.widgets import ListView, Static
 
+from ojaudit.core.query.reviews import (
+    VERDICT_NAMES,
+    VERDICT_OF,
+    ReviewData,
+    finding_verdict,
+    pair_key,
+    pair_scores,
+)
 from ojaudit.core.ranking_table import format_time
 from ojaudit.core.reviews import DEFAULT_REVIEW_STATUS
 from ojaudit.core.schema import is_accepted
@@ -37,14 +45,6 @@ from ojaudit.tui.code_view import (
     variable_mapping,
 )
 from ojaudit.tui.popup import ChoiceNotePopup, MenuPopup
-from ojaudit.tui.review_data import (
-    VERDICT_NAMES,
-    VERDICT_OF,
-    ReviewData,
-    finding_verdict,
-    pair_key,
-    pair_scores,
-)
 from ojaudit.tui.screens import ShellScreen, TableScreen
 from ojaudit.tui.splitter import Splitter
 

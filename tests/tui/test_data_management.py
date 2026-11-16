@@ -14,10 +14,10 @@ from textual.widgets import ListView
 
 from ojaudit.core.config import load_config, save_config
 from ojaudit.core.filters import load_contest_filter
+from ojaudit.core.query.contests import LocalContests
 from ojaudit.core.schema import Contest, Participant, Submission
 from ojaudit.core.store import Store
 from ojaudit.tui.app import AuditApp
-from ojaudit.tui.data import LocalContests
 from ojaudit.tui.screens import ContestListScreen
 from ojaudit.tui.settings_model import CATEGORIES, SettingsModel
 
@@ -175,7 +175,7 @@ def test_delete_contest_data_from_settings(tmp_path, monkeypatch):
         assert store.contest_exists("nowcoder", "2"), "比赛条目保留在列表中"
     entry = next(e for e in LocalContests(db).list_contests() if e.contest.contest_id == "2")
     assert entry.contest.name == "新生练习"
-    from ojaudit.tui.contest_list_data import contest_summary
+    from ojaudit.core.query.contest_list import contest_summary
 
     assert contest_summary(LocalContests(db), entry.contest).state == "未采集"
     assert [

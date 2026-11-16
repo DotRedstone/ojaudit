@@ -10,7 +10,7 @@
       packages = forAllSystems (system: pkgs: {
         default = pkgs.python312Packages.buildPythonApplication {
           pname = "ojaudit";
-          version = "0.1.0-dev0";
+          version = "0.1.0";
           pyproject = true;
           src = self;
           build-system = [ pkgs.python312Packages.hatchling ];
